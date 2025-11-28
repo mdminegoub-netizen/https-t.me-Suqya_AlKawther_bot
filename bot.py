@@ -24,6 +24,9 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
+# ضع هنا ID حسابك في تيليجرام لتصلك إشعارات المستخدمين الجدد
+ADMIN_ID = 931350292  # غيّره لو احتجت
+
 # ملف اللوج
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -425,6 +428,9 @@ ADHKAR_GENERAL_TEXT = (
 
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
+
+    # نتحقق هل المستخدم جديد قبل استدعاء get_user_record
+    is_new = str(user.id) not in data
     get_user_record(user)
 
     update.message.reply_text(
@@ -434,6 +440,22 @@ def start_command(update: Update, context: CallbackContext):
         "اختر من القائمة أسفل الشاشة ما يناسبك:",
         reply_markup=MAIN_KEYBOARD,
     )
+
+    # إشعار للأدمن عند دخول مستخدم جديد لأول مرة
+    if is_new and ADMIN_ID:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    "👤 مستخدم جديد دخل بوت سُقيا الكوثر:\n\n"
+                    f"الاسم: {user.full_name}\n"
+                    f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
+                    f"ID: `{user.id}`"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"Error notifying admin about new user: {e}")
 
 
 def help_command(update: Update, context: CallbackContext):
@@ -449,6 +471,7 @@ def help_command(update: Update, context: CallbackContext):
 
 # =================== قسم منبّه الماء ===================
 
+# (كل ما تحت هذا التعليق بقي كما هو بدون أي تعديل)
 
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -724,7 +747,6 @@ def handle_reminders_off(update: Update, context: CallbackContext):
 
 # =================== قسم ورد القرآن ===================
 
-
 def open_quran_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
@@ -862,7 +884,6 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 
     ensure_today_quran(record)
     record["quran_pages_today"] = 0
-    # نترك الهدف كما هو، ويمكنه تغييره من «تعيين ورد اليوم 📌»
     save_data()
 
     update.message.reply_text(
