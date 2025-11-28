@@ -97,8 +97,6 @@ def get_user_record(user):
             # تقدم اليوم
             "today_date": None,
             "today_cups": 0,
-            # تاريخ الاستخدام (لأجل إحصائياتي)
-            "history": {},  # {"2025-01-01": 6, "2025-01-02": 4, ...}
         }
     else:
         record = data[user_id]
@@ -125,11 +123,13 @@ def get_all_user_ids():
 # =================== أزرار البوت ===================
 
 BTN_WATER_MAIN = "منبّه الماء 💧"
+BTN_STATS = "إحصائياتي 📈"
+BTN_ADHKAR = "أذكاري 📿"
+BTN_QURAN_WIRD = "وردي القرآني 📖"
 
 BTN_WATER_LOG = "سجلت كوب ماء 🥤"
 BTN_WATER_STATUS = "مستواي اليوم 📊"
 BTN_WATER_SETTINGS = "إعدادات الماء ⚙️"
-BTN_STATS = "إحصائياتي 📈"
 
 BTN_WATER_NEED = "حساب احتياج الماء 🧮"
 BTN_WATER_REM_ON = "تشغيل التذكير ⏰"
@@ -143,7 +143,8 @@ BTN_CANCEL = "إلغاء ❌"
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_ADHKAR), KeyboardButton(BTN_QURAN_WIRD)],
     ],
     resize_keyboard=True,
 )
@@ -151,7 +152,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
 WATER_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_STATUS)],
-        [KeyboardButton(BTN_WATER_SETTINGS), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_WATER_SETTINGS)],
         [KeyboardButton(BTN_BACK)],
     ],
     resize_keyboard=True,
@@ -180,17 +181,8 @@ GENDER_KB = ReplyKeyboardMarkup(
 
 
 def ensure_today_progress(record):
-    """تصفير العدّاد إذا تغيّر اليوم + حفظ تاريخ اليوم السابق في الإحصائيات."""
+    """تصفير العدّاد إذا تغيّر اليوم."""
     today_str = datetime.now(timezone.utc).date().isoformat()
-    old_date = record.get("today_date")
-    # لو كان فيه يوم سابق مختلف وله أكواب، نخزّنه في history
-    if old_date and old_date != today_str:
-        history = record.get("history", {})
-        # لا نكتب إلا إذا ما تم تخزينه من قبل
-        if old_date not in history:
-            history[old_date] = record.get("today_cups", 0)
-            record["history"] = history
-
     if record.get("today_date") != today_str:
         record["today_date"] = today_str
         record["today_cups"] = 0
@@ -231,57 +223,6 @@ def format_status_text(record):
 
     return text
 
-
-def format_stats_text(record):
-    """نص إحصائياتي 📈."""
-    ensure_today_progress(record)
-    cups_goal = record.get("cups_goal")
-    today_cups = record.get("today_cups", 0)
-    history = record.get("history", {})
-
-    # إجمالي الأكواب
-    total_past = sum(history.values()) if isinstance(history, dict) else 0
-    total_all = total_past + today_cups
-
-    # عدد الأيام المسجَّلة
-    days_with_data = len([d for d, v in history.items() if v > 0]) if isinstance(history, dict) else 0
-    if today_cups > 0:
-        days_with_data += 1
-
-    # أفضل يوم
-    best_day_text = "لا توجد بيانات كافية بعد."
-    if isinstance(history, dict) and history:
-        # نبحث عن اليوم الذي شُرب فيه أعلى عدد أكواب
-        best_date, best_cups = max(history.items(), key=lambda x: x[1])
-        # تنسيق التاريخ للعرض
-        try:
-            d = datetime.fromisoformat(best_date).date()
-            best_date_human = d.strftime("%Y-%m-%d")
-        except Exception:
-            best_date_human = best_date
-        best_day_text = f"أفضل يوم كان بتاريخ {best_date_human} بعدد {best_cups} كوب تقريبًا."
-
-    text_lines = []
-
-    text_lines.append("📈 *ملخّص استخدامك لمنبّه الماء:*")
-    text_lines.append("")
-
-    text_lines.append(f"🔹 مجموع الأكواب المسجّلة حتى الآن: {total_all} كوب.")
-    text_lines.append(f"🔹 عدد الأيام التي سجّلت فيها شرب الماء: {days_with_data} يوم تقريبًا.")
-
-    text_lines.append("")
-    text_lines.append(f"🔹 أكواب اليوم الحالي: {today_cups} كوب" + (f" من {cups_goal} كوب." if cups_goal else "."))
-
-    text_lines.append("")
-    text_lines.append(f"🔹 {best_day_text}")
-
-    text_lines.append("")
-    text_lines.append(
-        "استمر في تسجيل أكوابك يوميًا، ومع الوقت ستلاحظ نمط تقدّمك وتُحفَّز أكثر على الالتزام 🤍."
-    )
-
-    return "\n".join(text_lines)
-
 # =================== أوامر البوت ===================
 
 
@@ -290,22 +231,24 @@ def start_command(update: Update, context: CallbackContext):
     get_user_record(user)
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
-        "هذا بوت منبّه الماء 💧.\n"
-        "سأساعدك تحسب احتياجك من الماء وتتابع شربك خلال اليوم.\n\n"
-        "اضغط على زر «منبّه الماء 💧» للبدء.",
+        "أهلاً بك في *بوت سقيا الكوثر* 💧\n"
+        "يساعدك على تنظيم شرب الماء، ومتابعة صحتك، مع مساحات إيمانية مثل الأذكار والورد القرآني.\n\n"
+        "ابدأ من هنا:\n"
+        "• «منبّه الماء 💧» لحساب احتياجك ومتابعة شربك.\n"
+        "• «إحصائياتي 📈» لرؤية بياناتك بشكل مرتب.\n"
+        "• «أذكاري 📿» و «وردي القرآني 📖» للجانب الإيماني.\n",
         reply_markup=MAIN_KEYBOARD,
+        parse_mode="Markdown",
     )
 
 
 def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "استخدم الأزرار أسفل الشاشة للتنقّل.\n"
-        "• منبّه الماء 💧 → للدخول لجميع المزايا.\n"
-        "داخل المنبّه يمكنك:\n"
-        "• تسجيل كوب ماء 🥤\n"
-        "• معرفة مستواك اليوم 📊\n"
-        "• معرفة إحصائياتك 📈\n"
-        "• إعداد احتياجك وتذكيرات الماء ⚙️",
+        "طريقة استخدام البوت:\n\n"
+        "• «منبّه الماء 💧» للدخول إلى جميع مزايا الماء (تسجيل الأكواب، معرفة مستواك اليوم، إعدادات الماء).\n"
+        "• «إحصائياتي 📈» لعرض ملخص عن بياناتك الصحية المتعلقة بالماء.\n"
+        "• «أذكاري 📿» لمساحة أذكار وتسبيح.\n"
+        "• «وردي القرآني 📖» لمتابعة وردك اليومي من القرآن.\n",
         reply_markup=MAIN_KEYBOARD,
     )
 
@@ -316,7 +259,10 @@ def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
     update.message.reply_text(
-        "اختر ما يناسبك من خيارات الماء:",
+        "من هنا تدير منبّه الماء:\n"
+        "• سجّل كل كوب تشربه\n"
+        "• تابع مستواك اليومي\n"
+        "• اضبط إعدادات واحتياج الماء",
         reply_markup=WATER_MENU_KB,
     )
 
@@ -339,7 +285,7 @@ def handle_water_need_start(update: Update, context: CallbackContext):
     WAITING_WEIGHT.discard(user_id)
 
     update.message.reply_text(
-        "أولاً: اختر جنسك:",
+        "أولاً: اختر جنسِك:",
         reply_markup=GENDER_KB,
     )
 
@@ -503,17 +449,6 @@ def handle_status(update: Update, context: CallbackContext):
     )
 
 
-def handle_stats(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user)
-    text = format_stats_text(record)
-    update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=WATER_MENU_KB,
-    )
-
-
 def handle_reminders_on(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
@@ -577,7 +512,7 @@ def water_reminder_job(context: CallbackContext):
             bot.send_message(
                 chat_id=uid,
                 text=(
-                    "💧 تذكير بلطف:\n"
+                    "💧 تذكير لطيف:\n"
                     "خذ الآن رشفة أو كوب ماء إن استطعت.\n\n"
                     f"شربت حتى الآن: {today_cups} من {cups_goal} كوب.\n"
                     f"المتبقي لهذا اليوم تقريبًا: {remaining} كوب."
@@ -585,6 +520,128 @@ def water_reminder_job(context: CallbackContext):
             )
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
+
+# =================== إحصائياتي ===================
+
+
+def handle_stats(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+
+    ensure_today_progress(record)
+
+    gender = record.get("gender")
+    gender_text = None
+    if gender == "male":
+        gender_text = "ذكر"
+    elif gender == "female":
+        gender_text = "أنثى"
+
+    age = record.get("age")
+    weight = record.get("weight")
+    water_liters = record.get("water_liters")
+    cups_goal = record.get("cups_goal")
+    reminders_on = record.get("reminders_on", False)
+    today_cups = record.get("today_cups", 0)
+
+    created_at = record.get("created_at")
+    days_since = None
+    if created_at:
+        try:
+            created_dt = datetime.fromisoformat(created_at)
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            days_since = (now.date() - created_dt.date()).days
+        except Exception:
+            days_since = None
+
+    text_lines = [
+        "📈 *ملخص بياناتك في سقيا الكوثر*:\n",
+        f"👤 الاسم: {record.get('first_name') or 'غير محدد'}",
+        f"🔹 اسم المستخدم: @{record.get('username')}" if record.get("username") else "🔹 اسم المستخدم: غير متوفر",
+        "",
+        "⚙️ *بيانات الإعدادات:*",
+        f"• الجنس: {gender_text or 'لم يتم تحديده بعد'}",
+        f"• العمر: {age if age is not None else 'غير محدد'}",
+        f"• الوزن: {weight if weight is not None else 'غير محدد'}",
+        f"• الاحتياج اليومي من الماء: {water_liters} لتر" if water_liters else "• الاحتياج اليومي من الماء: لم يُحسب بعد",
+        f"• الهدف اليومي: {cups_goal} كوب" if cups_goal else "• الهدف اليومي: لم يُحدد بعد",
+        f"• حالة التذكير: {'مفعّل ⏰' if reminders_on else 'متوقف 📴'}",
+        "",
+    ]
+
+    if days_since is not None:
+        text_lines.append(f"📅 مدة استخدامك للبوت تقريبًا: {days_since} يومًا.")
+        text_lines.append("")
+
+    if cups_goal:
+        percent = min(int(today_cups / cups_goal * 100), 100)
+        text_lines.append("📊 *إنجازك اليوم:*")
+        text_lines.append(f"• الأكواب التي شربتها اليوم: {today_cups} من {cups_goal} كوب.")
+        text_lines.append(f"• النسبة التقريبية: {percent}%.")
+        remaining = max(cups_goal - today_cups, 0)
+        if remaining > 0:
+            text_lines.append(f"• المتبقي لهدفك اليومي: {remaining} كوب.")
+        else:
+            text_lines.append("• أحسنت، وصلت إلى هدفك اليومي من الماء اليوم 🎉.")
+    else:
+        text_lines.append(
+            "لم تقم بتحديد احتياجك بعد.\n"
+            "ابدأ من: «منبّه الماء 💧» → «إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮»."
+        )
+
+    update.message.reply_text(
+        "\n".join(text_lines),
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+# =================== أذكاري ===================
+
+
+def handle_adhkar(update: Update, context: CallbackContext):
+    """
+    في هذه المرحلة نجعل «أذكاري 📿» بداية بسيطة برسالة تعريفية،
+    ويمكن لاحقًا إضافة أذكار الصباح والمساء مع عدّاد للتسبيح.
+    """
+    text = (
+        "📿 *قسم أذكاري:*\n\n"
+        "هنا ستكون مساحة للأذكار والتسبيح:\n"
+        "• أذكار الصباح والمساء.\n"
+        "• أذكار النوم والاستيقاظ.\n"
+        "• تسبيح بعد الصلاة.\n\n"
+        "في الإصدارات القادمة بإذن الله سيتم إضافة عدّاد تسبيح مدمج داخل الأذكار التي تحتاج عددًا معينًا.\n"
+        "اجعل لسانك رطبًا بذكر الله في كل وقت 🤍."
+    )
+    update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+# =================== وردي القرآني ===================
+
+
+def handle_quran_wird(update: Update, context: CallbackContext):
+    """
+    بداية بسيطة لقسم الورد القرآني، يمكن لاحقًا تطويره
+    لمتابعة عدد الصفحات / الأجزاء يوميًا.
+    """
+    text = (
+        "📖 *وردي القرآني:*\n\n"
+        "رتّب لنفسك وردًا ثابتًا من القرآن ولو قليلًا، المهم الاستمرار.\n\n"
+        "أفكار يمكنك تطبيقها:\n"
+        "• صفحة بعد كل صلاة.\n"
+        "• حزب في اليوم.\n"
+        "• قراءة ربع جزء ثابت قبل النوم.\n\n"
+        "في التحديثات القادمة يمكن إضافة نظام بسيط لتتبع التقدّم في وردك اليومي بإذن الله 🤍."
+    )
+    update.message.reply_text(
+        text,
+        parse_mode="Markdown",
+        reply_markup=MAIN_KEYBOARD,
+    )
 
 # =================== هاندلر الرسائل ===================
 
@@ -595,7 +652,7 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
-    get_user_record(user)  # يتأكد من وجوده
+    record = get_user_record(user)  # يتأكد من وجوده
 
     # زر الإلغاء العام
     if text == BTN_CANCEL:
@@ -627,6 +684,18 @@ def handle_text(update: Update, context: CallbackContext):
         open_water_menu(update, context)
         return
 
+    if text == BTN_STATS:
+        handle_stats(update, context)
+        return
+
+    if text == BTN_ADHKAR:
+        handle_adhkar(update, context)
+        return
+
+    if text == BTN_QURAN_WIRD:
+        handle_quran_wird(update, context)
+        return
+
     if text == BTN_BACK:
         msg.reply_text(
             "تم الرجوع للقائمة الرئيسية.",
@@ -645,10 +714,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_WATER_SETTINGS:
         open_water_settings(update, context)
-        return
-
-    if text == BTN_STATS:
-        handle_stats(update, context)
         return
 
     # إعدادات الماء
