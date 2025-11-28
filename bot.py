@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import random
 from datetime import datetime, timezone, timedelta, time
 from threading import Thread
 
@@ -29,20 +28,6 @@ DATA_FILE = "water_users.json"
 WAITING_GENDER = set()
 WAITING_AGE = set()
 WAITING_WEIGHT = set()
-WAITING_CUPS_ADJUST = set()  # تعديل عدد الأكواب اليوم
-
-# حالات الأذكار / السبحة
-WAITING_TASBIH_TYPE = set()
-WAITING_TASBIH_SESSION = set()
-WAITING_GUIDED_TASBIH = set()  # تسبيح موجّه بعد الصلاة
-
-# حالة السبحة لكل مستخدم (السبحة الحرّة)
-# { user_id: {"phrase": str, "count": int, "target": int} }
-TASBIH_STATE = {}
-
-# حالة التسبيح الموجّه بعد الصلاة
-# { user_id: {"sequence": [(phrase, target), ...], "idx": int, "count": int} }
-GUIDED_TASBIH_STATE = {}
 
 # ملف اللوج
 logging.basicConfig(
@@ -58,7 +43,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "Suqya-AlKawther bot is running ✅"
+    return "Water-bot is running ✅"
 
 
 def run_flask():
@@ -112,6 +97,8 @@ def get_user_record(user):
             # تقدم اليوم
             "today_date": None,
             "today_cups": 0,
+            # تاريخ الاستخدام (لأجل إحصائياتي)
+            "history": {},  # {"2025-01-01": 6, "2025-01-02": 4, ...}
         }
     else:
         record = data[user_id]
@@ -137,15 +124,12 @@ def get_all_user_ids():
 
 # =================== أزرار البوت ===================
 
-# القسم الرئيسي
 BTN_WATER_MAIN = "منبّه الماء 💧"
-BTN_ZIKR_MAIN = "أذكاري اليومية 🕊"
 
-# الماء
 BTN_WATER_LOG = "سجلت كوب ماء 🥤"
 BTN_WATER_STATUS = "مستواي اليوم 📊"
-BTN_WATER_ADJUST = "تعديل عدد الأكواب اليوم 🧾"
 BTN_WATER_SETTINGS = "إعدادات الماء ⚙️"
+BTN_STATS = "إحصائياتي 📈"
 
 BTN_WATER_NEED = "حساب احتياج الماء 🧮"
 BTN_WATER_REM_ON = "تشغيل التذكير ⏰"
@@ -154,27 +138,12 @@ BTN_WATER_REM_OFF = "إيقاف التذكير 📴"
 BTN_GENDER_MALE = "🧔‍♂️ ذكر"
 BTN_GENDER_FEMALE = "👩 أنثى"
 
-# الأذكار
-BTN_ZIKR_MORNING = "أذكار الصباح 🌅"
-BTN_ZIKR_EVENING = "أذكار المساء 🌙"
-BTN_ZIKR_AFTER_PRAYER = "أذكار بعد الصلاة 🙏"
-BTN_TASBIH = "سبحة الأذكار 📿"
-
-# أزرار السبحة الحرّة
-BTN_TASBIH_SUBHAN = "سبحان الله"
-BTN_TASBIH_ALHAMD = "الحمد لله"
-BTN_TASBIH_AKBAR = "الله أكبر"
-BTN_TASBIH_ASTG = "أستغفر الله"
-
-BTN_TASBIH_PLUS = "➕ تسبيحة"
-BTN_TASBIH_END = "إنهاء التسبيح ✅"
-
 BTN_BACK = "رجوع ⬅"
 BTN_CANCEL = "إلغاء ❌"
 
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_ZIKR_MAIN)],
+        [KeyboardButton(BTN_WATER_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -182,8 +151,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
 WATER_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_STATUS)],
-        [KeyboardButton(BTN_WATER_ADJUST)],
-        [KeyboardButton(BTN_WATER_SETTINGS)],
+        [KeyboardButton(BTN_WATER_SETTINGS), KeyboardButton(BTN_STATS)],
         [KeyboardButton(BTN_BACK)],
     ],
     resize_keyboard=True,
@@ -208,78 +176,21 @@ GENDER_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-ZIKR_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ZIKR_MORNING), KeyboardButton(BTN_ZIKR_EVENING)],
-        [KeyboardButton(BTN_ZIKR_AFTER_PRAYER), KeyboardButton(BTN_TASBIH)],
-        [KeyboardButton(BTN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-TASBIH_CHOICE_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_TASBIH_SUBHAN), KeyboardButton(BTN_TASBIH_ALHAMD)],
-        [KeyboardButton(BTN_TASBIH_AKBAR), KeyboardButton(BTN_TASBIH_ASTG)],
-        [KeyboardButton(BTN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-TASBIH_SESSION_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_TASBIH_PLUS)],
-        [KeyboardButton(BTN_TASBIH_END)],
-        [KeyboardButton(BTN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-# =================== أذكار جاهزة ===================
-
-MORNING_ADHKAR = [
-    (
-        "🌅 *أذكار الصباح المختصرة:*\n\n"
-        "1️⃣ «أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-        "له الملك وله الحمد وهو على كل شيء قدير».\n\n"
-        "2️⃣ «اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، "
-        "فلك الحمد ولك الشكر».\n\n"
-        "3️⃣ «أعوذ بكلمات الله التامات من شر ما خلق» ثلاث مرات.\n\n"
-        "4️⃣ «بسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n\n"
-        "ردّد ما تيسّر منها بهدوء، وخذي/خذ نفسًا عميقًا بين كل ذكر وآخر 🤍."
-    ),
-]
-
-EVENING_ADHKAR = [
-    (
-        "🌙 *أذكار المساء المختصرة:*\n\n"
-        "1️⃣ «أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-        "له الملك وله الحمد وهو على كل شيء قدير».\n\n"
-        "2️⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، "
-        "فلك الحمد ولك الشكر».\n\n"
-        "3️⃣ «أعوذ بكلمات الله التامات من شر ما خلق» ثلاث مرات.\n\n"
-        "4️⃣ «حسبي الله لا إله إلا هو، عليه توكلت وهو رب العرش العظيم» سبع مرات.\n\n"
-        "يمكنك استخدام «سبحة الأذكار 📿» لو حابّة/حاب تتابع العدّ بسهولة 🌿."
-    ),
-]
-
-AFTER_PRAYER_ADHKAR_TEXT = (
-    "🙏 *أذكار بعد الصلاة المكتوبة:*\n\n"
-    "• «أستغفر الله» ثلاثًا.\n"
-    "• «اللهم أنت السلام ومنك السلام، تباركت يا ذا الجلال والإكرام».\n\n"
-    "ثم التسبيح:\n"
-    "• سبحان الله 33 مرة.\n"
-    "• الحمد لله 33 مرة.\n"
-    "• الله أكبر 34 مرة.\n\n"
-    "سأساعدك الآن على التسبيح خطوة بخطوة بالعدّاد 📿."
-)
-
 # =================== دوال مساعدة ===================
 
 
 def ensure_today_progress(record):
-    """تصفير العدّاد إذا تغيّر اليوم."""
+    """تصفير العدّاد إذا تغيّر اليوم + حفظ تاريخ اليوم السابق في الإحصائيات."""
     today_str = datetime.now(timezone.utc).date().isoformat()
+    old_date = record.get("today_date")
+    # لو كان فيه يوم سابق مختلف وله أكواب، نخزّنه في history
+    if old_date and old_date != today_str:
+        history = record.get("history", {})
+        # لا نكتب إلا إذا ما تم تخزينه من قبل
+        if old_date not in history:
+            history[old_date] = record.get("today_cups", 0)
+            record["history"] = history
+
     if record.get("today_date") != today_str:
         record["today_date"] = today_str
         record["today_cups"] = 0
@@ -295,7 +206,7 @@ def format_status_text(record):
     if not cups_goal:
         return (
             "لم تقم بعد بحساب احتياجك من الماء.\n"
-            "اذهب إلى «إعدادات الماء ⚙️» ثم اختر «حساب احتياج الماء 🧮» أولًا."
+            "اذهب إلى «إعدادات الماء ⚙️» ثم اختر «حساب احتياج الماء 🧮» أولاً."
         )
 
     remaining = max(cups_goal - today_cups, 0)
@@ -320,6 +231,57 @@ def format_status_text(record):
 
     return text
 
+
+def format_stats_text(record):
+    """نص إحصائياتي 📈."""
+    ensure_today_progress(record)
+    cups_goal = record.get("cups_goal")
+    today_cups = record.get("today_cups", 0)
+    history = record.get("history", {})
+
+    # إجمالي الأكواب
+    total_past = sum(history.values()) if isinstance(history, dict) else 0
+    total_all = total_past + today_cups
+
+    # عدد الأيام المسجَّلة
+    days_with_data = len([d for d, v in history.items() if v > 0]) if isinstance(history, dict) else 0
+    if today_cups > 0:
+        days_with_data += 1
+
+    # أفضل يوم
+    best_day_text = "لا توجد بيانات كافية بعد."
+    if isinstance(history, dict) and history:
+        # نبحث عن اليوم الذي شُرب فيه أعلى عدد أكواب
+        best_date, best_cups = max(history.items(), key=lambda x: x[1])
+        # تنسيق التاريخ للعرض
+        try:
+            d = datetime.fromisoformat(best_date).date()
+            best_date_human = d.strftime("%Y-%m-%d")
+        except Exception:
+            best_date_human = best_date
+        best_day_text = f"أفضل يوم كان بتاريخ {best_date_human} بعدد {best_cups} كوب تقريبًا."
+
+    text_lines = []
+
+    text_lines.append("📈 *ملخّص استخدامك لمنبّه الماء:*")
+    text_lines.append("")
+
+    text_lines.append(f"🔹 مجموع الأكواب المسجّلة حتى الآن: {total_all} كوب.")
+    text_lines.append(f"🔹 عدد الأيام التي سجّلت فيها شرب الماء: {days_with_data} يوم تقريبًا.")
+
+    text_lines.append("")
+    text_lines.append(f"🔹 أكواب اليوم الحالي: {today_cups} كوب" + (f" من {cups_goal} كوب." if cups_goal else "."))
+
+    text_lines.append("")
+    text_lines.append(f"🔹 {best_day_text}")
+
+    text_lines.append("")
+    text_lines.append(
+        "استمر في تسجيل أكوابك يوميًا، ومع الوقت ستلاحظ نمط تقدّمك وتُحفَّز أكثر على الالتزام 🤍."
+    )
+
+    return "\n".join(text_lines)
+
 # =================== أوامر البوت ===================
 
 
@@ -328,22 +290,22 @@ def start_command(update: Update, context: CallbackContext):
     get_user_record(user)
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
-        "هذا بوت *سُقيا الكوثر* 💧\n"
-        "يساعدك على تنظيم شرب الماء، ومرافقتك بأذكار يومية تقوي قلبك وتقربك من الله.\n\n"
-        "يمكنك البدء من:\n"
-        "• «منبّه الماء 💧» لمتابعة شربك للماء.\n"
-        "• «أذكاري اليومية 🕊» لأذكار الصباح والمساء وبعد الصلاة والسبحة.\n\n"
-        "اختر ما يناسبك من الأزرار بالأسفل.",
+        "هذا بوت منبّه الماء 💧.\n"
+        "سأساعدك تحسب احتياجك من الماء وتتابع شربك خلال اليوم.\n\n"
+        "اضغط على زر «منبّه الماء 💧» للبدء.",
         reply_markup=MAIN_KEYBOARD,
-        parse_mode="Markdown",
     )
 
 
 def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "استخدم الأزرار أسفل الشاشة للتنقّل:\n\n"
-        "• منبّه الماء 💧 → حساب احتياجك من الماء، وتسجيل الأكواب، ومعرفة مستواك اليوم.\n"
-        "• أذكاري اليومية 🕊 → أذكار الصباح والمساء وبعد الصلاة، مع سبحة أذكار بسيطة.\n",
+        "استخدم الأزرار أسفل الشاشة للتنقّل.\n"
+        "• منبّه الماء 💧 → للدخول لجميع المزايا.\n"
+        "داخل المنبّه يمكنك:\n"
+        "• تسجيل كوب ماء 🥤\n"
+        "• معرفة مستواك اليوم 📊\n"
+        "• معرفة إحصائياتك 📈\n"
+        "• إعداد احتياجك وتذكيرات الماء ⚙️",
         reply_markup=MAIN_KEYBOARD,
     )
 
@@ -375,10 +337,9 @@ def handle_water_need_start(update: Update, context: CallbackContext):
     WAITING_GENDER.add(user_id)
     WAITING_AGE.discard(user_id)
     WAITING_WEIGHT.discard(user_id)
-    WAITING_CUPS_ADJUST.discard(user_id)
 
     update.message.reply_text(
-        "أولًا: اختر جنسك:",
+        "أولاً: اختر جنسك:",
         reply_markup=GENDER_KB,
     )
 
@@ -542,76 +503,12 @@ def handle_status(update: Update, context: CallbackContext):
     )
 
 
-def handle_adjust_cups_start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    record = get_user_record(update.effective_user)
-
-    if not record.get("cups_goal"):
-        update.message.reply_text(
-            "قبل تعديل الأكواب، احسب احتياجك من الماء من خلال:\n"
-            "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
-            reply_markup=WATER_MENU_KB,
-        )
-        return
-
-    ensure_today_progress(record)
-
-    WAITING_CUPS_ADJUST.add(user_id)
-    WAITING_GENDER.discard(user_id)
-    WAITING_AGE.discard(user_id)
-    WAITING_WEIGHT.discard(user_id)
-
-    update.message.reply_text(
-        f"أرسل عدد الأكواب التي شربتها اليوم حتى الآن.\n"
-        f"مثال: 3\n\n"
-        f"هدفك اليومي الحالي: {record.get('cups_goal', 0)} كوب.",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_adjust_cups_input(update: Update, context: CallbackContext):
+def handle_stats(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id
-    text = update.message.text.strip()
     record = get_user_record(user)
-
-    if text == BTN_CANCEL:
-        WAITING_CUPS_ADJUST.discard(user_id)
-        update.message.reply_text(
-            "تم إلغاء تعديل الأكواب. رجعناك للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
-        )
-        return
-
-    if not record.get("cups_goal"):
-        WAITING_CUPS_ADJUST.discard(user_id)
-        update.message.reply_text(
-            "لا يوجد هدف يومي محدد بعد.\n"
-            "اذهب إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
-            reply_markup=WATER_MENU_KB,
-        )
-        return
-
-    try:
-        cups = int(text)
-        if cups < 0:
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسل رقمًا صحيحًا للأكواب، مثال: 4",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    ensure_today_progress(record)
-    record["today_cups"] = cups
-    save_data()
-
-    WAITING_CUPS_ADJUST.discard(user_id)
-
-    status_text = format_status_text(record)
+    text = format_stats_text(record)
     update.message.reply_text(
-        f"تم تعديل عدد الأكواب المسجّلة إلى: {cups} كوب.\n\n{status_text}",
+        text,
         parse_mode="Markdown",
         reply_markup=WATER_MENU_KB,
     )
@@ -650,309 +547,6 @@ def handle_reminders_off(update: Update, context: CallbackContext):
         "تم إيقاف تذكيرات الماء 📴\n"
         "يمكنك تشغيلها مرة أخرى في أي وقت.",
         reply_markup=WATER_SETTINGS_KB,
-    )
-
-# =================== وظائف الأذكار ===================
-
-
-def open_zikr_menu(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "هذا قسم أذكاري اليومية 🕊\n"
-        "يمكنك اختيار أذكار الصباح، المساء، بعد الصلاة، أو الدخول إلى سبحة الأذكار.",
-        reply_markup=ZIKR_MENU_KB,
-    )
-
-
-def send_morning_adhkar(update: Update, context: CallbackContext):
-    text = random.choice(MORNING_ADHKAR)
-    update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=ZIKR_MENU_KB,
-    )
-
-
-def send_evening_adhkar(update: Update, context: CallbackContext):
-    text = random.choice(EVENING_ADHKAR)
-    update.message.reply_text(
-        text,
-        parse_mode="Markdown",
-        reply_markup=ZIKR_MENU_KB,
-    )
-
-
-def start_guided_tasbih_after_prayer(update: Update, context: CallbackContext):
-    """بدء تسبيح موجّه بعد الصلاة: سبحان الله 33، ثم الحمد لله 33، ثم الله أكبر 34."""
-    user_id = update.effective_user.id
-
-    GUIDED_TASBIH_STATE[user_id] = {
-        "sequence": [
-            (BTN_TASBIH_SUBHAN, 33),
-            (BTN_TASBIH_ALHAMD, 33),
-            (BTN_TASBIH_AKBAR, 34),
-        ],
-        "idx": 0,
-        "count": 0,
-    }
-
-    WAITING_GUIDED_TASBIH.add(user_id)
-    WAITING_TASBIH_TYPE.discard(user_id)
-    WAITING_TASBIH_SESSION.discard(user_id)
-    TASBIH_STATE.pop(user_id, None)
-
-    phrase, target = GUIDED_TASBIH_STATE[user_id]["sequence"][0]
-
-    update.message.reply_text(
-        f"سنبدأ الآن تسبيح بعد الصلاة بالتسلسل:\n\n"
-        f"أولًا: *{phrase}* عدد {target} مرة.\n\n"
-        "اضغط «➕ تسبيحة» في كل مرة تذكر فيها، "
-        "وعند الانتهاء يمكنك الضغط على «إنهاء التسبيح ✅».",
-        parse_mode="Markdown",
-        reply_markup=TASBIH_SESSION_KB,
-    )
-
-
-def send_after_prayer_adhkar(update: Update, context: CallbackContext):
-    # نرسل النص المكتوب، ثم نبدأ مباشرة التسبيح الموجّه
-    update.message.reply_text(
-        AFTER_PRAYER_ADHKAR_TEXT,
-        parse_mode="Markdown",
-        reply_markup=ZIKR_MENU_KB,
-    )
-    # بدء التسبيح الموجّه
-    start_guided_tasbih_after_prayer(update, context)
-
-
-def handle_guided_tasbih(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    state = GUIDED_TASBIH_STATE.get(user_id)
-    if not state:
-        WAITING_GUIDED_TASBIH.discard(user_id)
-        update.message.reply_text(
-            "انتهت جلسة تسبيح بعد الصلاة. يمكنك إعادة تشغيلها من «أذكار بعد الصلاة 🙏».",
-            reply_markup=ZIKR_MENU_KB,
-        )
-        return
-
-    if text == BTN_BACK:
-        WAITING_GUIDED_TASBIH.discard(user_id)
-        GUIDED_TASBIH_STATE.pop(user_id, None)
-        open_zikr_menu(update, context)
-        return
-
-    if text == BTN_TASBIH_END:
-        phrase, target = state["sequence"][state["idx"]]
-        count = state["count"]
-        WAITING_GUIDED_TASBIH.discard(user_id)
-        GUIDED_TASBIH_STATE.pop(user_id, None)
-
-        update.message.reply_text(
-            f"انتهت جلسة التسبيح بعد الصلاة 🙏\n\n"
-            f"آخر ذكر كنت عليه: *{phrase}*، بعدد {count} من {target}.\n"
-            "جزاك الله خيرًا، وداوم على هذا الذكر بعد كل صلاة قدر استطاعتك 🤍.",
-            parse_mode="Markdown",
-            reply_markup=ZIKR_MENU_KB,
-        )
-        return
-
-    if text == BTN_TASBIH_PLUS:
-        seq = state["sequence"]
-        idx = state["idx"]
-        phrase, target = seq[idx]
-
-        state["count"] += 1
-        count = state["count"]
-
-        if count < target:
-            remaining = target - count
-            update.message.reply_text(
-                f"📿 الذكر الحالي: *{phrase}*\n"
-                f"العدّاد: {count} / {target}.\n"
-                f"تبقّى لك تقريبًا {remaining} تسبيحات لهذا الذكر.",
-                parse_mode="Markdown",
-                reply_markup=TASBIH_SESSION_KB,
-            )
-            return
-        else:
-            # انتهى هذا الذكر، ننتقل للذي بعده إن وجد
-            idx += 1
-            if idx >= len(seq):
-                # انتهت السلسلة كاملة
-                WAITING_GUIDED_TASBIH.discard(user_id)
-                GUIDED_TASBIH_STATE.pop(user_id, None)
-                update.message.reply_text(
-                    "ما شاء الله، أكملت تسبيح بعد الصلاة كاملًا:\n"
-                    "• سبحان الله 33 مرة.\n"
-                    "• الحمد لله 33 مرة.\n"
-                    "• الله أكبر 34 مرة.\n\n"
-                    "نسأل الله أن يشرح صدرك ويثبت قلبك 🤍.",
-                    reply_markup=ZIKR_MENU_KB,
-                )
-                return
-            else:
-                # ننتقل للذكر التالي
-                state["idx"] = idx
-                state["count"] = 0
-                next_phrase, next_target = seq[idx]
-                update.message.reply_text(
-                    f"أحسنت، انتهيت من *{phrase}* 👏\n\n"
-                    f"الآن ننتقل إلى:\n"
-                    f"*{next_phrase}* عدد {next_target} مرة.\n"
-                    "استمر بالضغط على «➕ تسبيحة» للمتابعة.",
-                    parse_mode="Markdown",
-                    reply_markup=TASBIH_SESSION_KB,
-                )
-                return
-
-    # أي شيء آخر أثناء التسبيح الموجّه
-    update.message.reply_text(
-        "داخل تسبيح بعد الصلاة:\n"
-        "• استخدم «➕ تسبيحة» لزيادة العدّ.\n"
-        "• أو «إنهاء التسبيح ✅» لإنهاء الجلسة.\n"
-        "• أو «رجوع ⬅» للعودة لقسم الأذكار.",
-        reply_markup=TASBIH_SESSION_KB,
-    )
-
-# =================== سبحة الأذكار (الحرة) ===================
-
-
-def start_tasbih_choice(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    WAITING_TASBIH_TYPE.add(user_id)
-    WAITING_TASBIH_SESSION.discard(user_id)
-    WAITING_GUIDED_TASBIH.discard(user_id)
-    TASBIH_STATE.pop(user_id, None)
-    GUIDED_TASBIH_STATE.pop(user_id, None)
-
-    update.message.reply_text(
-        "اختر الذِّكر الذي تريد التسبيح به:\n"
-        "يمكنك بعدها الضغط على «➕ تسبيحة» لزيادة العدّ.",
-        reply_markup=TASBIH_CHOICE_KB,
-    )
-
-
-def handle_tasbih_choice(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    if text == BTN_BACK:
-        WAITING_TASBIH_TYPE.discard(user_id)
-        TASBIH_STATE.pop(user_id, None)
-        open_zikr_menu(update, context)
-        return
-
-    if text not in {
-        BTN_TASBIH_SUBHAN,
-        BTN_TASBIH_ALHAMD,
-        BTN_TASBIH_AKBAR,
-        BTN_TASBIH_ASTG,
-    }:
-        update.message.reply_text(
-            "رجاءً اختر الذِّكر من الأزرار أمامك.",
-            reply_markup=TASBIH_CHOICE_KB,
-        )
-        return
-
-    # تحديد الهدف التقريبي (يمكن تغييره لاحقًا لو حبيت)
-    if text == BTN_TASBIH_ASTG:
-        target = 100
-    else:
-        target = 33
-
-    TASBIH_STATE[user_id] = {
-        "phrase": text,
-        "count": 0,
-        "target": target,
-    }
-
-    WAITING_TASBIH_TYPE.discard(user_id)
-    WAITING_TASBIH_SESSION.add(user_id)
-
-    update.message.reply_text(
-        f"بدأنا سبحة الأذكار 📿\n\n"
-        f"الذكر: *{text}*\n"
-        f"الهدف التقريبي: {target} تسبيحات.\n\n"
-        "اضغط «➕ تسبيحة» في كل مرة تذكر فيها، "
-        "وعند الانتهاء اضغط «إنهاء التسبيح ✅».",
-        parse_mode="Markdown",
-        reply_markup=TASBIH_SESSION_KB,
-    )
-
-
-def handle_tasbih_session(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    state = TASBIH_STATE.get(user_id)
-    if not state:
-        WAITING_TASBIH_SESSION.discard(user_id)
-        update.message.reply_text(
-            "انتهت جلسة التسبيح الحالية. يمكنك البدء من جديد من «سبحة الأذكار 📿».",
-            reply_markup=ZIKR_MENU_KB,
-        )
-        return
-
-    if text == BTN_BACK:
-        WAITING_TASBIH_SESSION.discard(user_id)
-        TASBIH_STATE.pop(user_id, None)
-        open_zikr_menu(update, context)
-        return
-
-    if text == BTN_TASBIH_END:
-        phrase = state["phrase"]
-        count = state["count"]
-        target = state["target"]
-
-        WAITING_TASBIH_SESSION.discard(user_id)
-        TASBIH_STATE.pop(user_id, None)
-
-        update.message.reply_text(
-            f"انتهت جلسة التسبيح 🙏\n\n"
-            f"الذكر: *{phrase}*\n"
-            f"عدد ما سبحت به: {count} من {target} (تقريبًا).\n\n"
-            "الأجر عند الله أعظم من العدّ، استمر على الذكر كلما تذكّرت 🤍.",
-            parse_mode="Markdown",
-            reply_markup=ZIKR_MENU_KB,
-        )
-        return
-
-    if text == BTN_TASBIH_PLUS:
-        state["count"] += 1
-        count = state["count"]
-        target = state["target"]
-        phrase = state["phrase"]
-
-        remaining = max(target - count, 0)
-
-        msg = (
-            f"📿 الذكر: *{phrase}*\n"
-            f"العدّاد الآن: {count} / {target}.\n"
-        )
-
-        if remaining > 0:
-            msg += f"تبقى لك تقريبًا {remaining} تسبيحات لتصل للهدف."
-        else:
-            msg += "ما شاء الله، تجاوزت الهدف المحدد لهذا الذكر 🤍."
-
-        update.message.reply_text(
-            msg,
-            parse_mode="Markdown",
-            reply_markup=TASBIH_SESSION_KB,
-        )
-        return
-
-    # أي شيء آخر داخل جلسة التسبيح
-    update.message.reply_text(
-        "استخدم الأزرار:\n"
-        "• «➕ تسبيحة» لزيادة العدّ.\n"
-        "• «إنهاء التسبيح ✅» عند الانتهاء.\n"
-        "• «رجوع ⬅» للعودة لقسم الأذكار.",
-        reply_markup=TASBIH_SESSION_KB,
     )
 
 # =================== تذكيرات الماء (JobQueue) ===================
@@ -1001,19 +595,13 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
-    record = get_user_record(user)  # يتأكد من وجوده
+    get_user_record(user)  # يتأكد من وجوده
 
     # زر الإلغاء العام
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
         WAITING_AGE.discard(user_id)
         WAITING_WEIGHT.discard(user_id)
-        WAITING_CUPS_ADJUST.discard(user_id)
-        WAITING_TASBIH_TYPE.discard(user_id)
-        WAITING_TASBIH_SESSION.discard(user_id)
-        WAITING_GUIDED_TASBIH.discard(user_id)
-        TASBIH_STATE.pop(user_id, None)
-        GUIDED_TASBIH_STATE.pop(user_id, None)
 
         msg.reply_text(
             "تم الإلغاء. رجعناك للقائمة الرئيسية.",
@@ -1034,40 +622,12 @@ def handle_text(update: Update, context: CallbackContext):
         handle_weight_input(update, context)
         return
 
-    if user_id in WAITING_CUPS_ADJUST:
-        handle_adjust_cups_input(update, context)
-        return
-
-    # حالات الأذكار
-    if user_id in WAITING_GUIDED_TASBIH:
-        handle_guided_tasbih(update, context)
-        return
-
-    if user_id in WAITING_TASBIH_TYPE:
-        handle_tasbih_choice(update, context)
-        return
-
-    if user_id in WAITING_TASBIH_SESSION:
-        handle_tasbih_session(update, context)
-        return
-
     # الأزرار الرئيسية
     if text == BTN_WATER_MAIN:
         open_water_menu(update, context)
         return
 
-    if text == BTN_ZIKR_MAIN:
-        open_zikr_menu(update, context)
-        return
-
     if text == BTN_BACK:
-        # تنظيف حالات التسبيح أيضًا
-        WAITING_TASBIH_TYPE.discard(user_id)
-        WAITING_TASBIH_SESSION.discard(user_id)
-        WAITING_GUIDED_TASBIH.discard(user_id)
-        TASBIH_STATE.pop(user_id, None)
-        GUIDED_TASBIH_STATE.pop(user_id, None)
-
         msg.reply_text(
             "تم الرجوع للقائمة الرئيسية.",
             reply_markup=MAIN_KEYBOARD,
@@ -1083,12 +643,12 @@ def handle_text(update: Update, context: CallbackContext):
         handle_status(update, context)
         return
 
-    if text == BTN_WATER_ADJUST:
-        handle_adjust_cups_start(update, context)
-        return
-
     if text == BTN_WATER_SETTINGS:
         open_water_settings(update, context)
+        return
+
+    if text == BTN_STATS:
+        handle_stats(update, context)
         return
 
     # إعدادات الماء
@@ -1104,26 +664,9 @@ def handle_text(update: Update, context: CallbackContext):
         handle_reminders_off(update, context)
         return
 
-    # أزرار الأذكار
-    if text == BTN_ZIKR_MORNING:
-        send_morning_adhkar(update, context)
-        return
-
-    if text == BTN_ZIKR_EVENING:
-        send_evening_adhkar(update, context)
-        return
-
-    if text == BTN_ZIKR_AFTER_PRAYER:
-        send_after_prayer_adhkar(update, context)
-        return
-
-    if text == BTN_TASBIH:
-        start_tasbih_choice(update, context)
-        return
-
     # أي نص آخر
     msg.reply_text(
-        "اختر من الأزرار الموجودة أسفل الشاشة لنكمل معًا 💧🕊",
+        "اختر من الأزرار الموجودة أسفل الشاشة لنكمل معًا 💧",
         reply_markup=MAIN_KEYBOARD,
     )
 
@@ -1156,7 +699,7 @@ def main():
     # تشغيل Flask في ثريد منفصل (لـ Render)
     Thread(target=run_flask, daemon=True).start()
 
-    logger.info("Suqya Al-Kawther bot is starting...")
+    logger.info("Water bot is starting...")
     updater.start_polling()
     updater.idle()
 
