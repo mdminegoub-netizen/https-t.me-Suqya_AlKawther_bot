@@ -31,7 +31,7 @@ DATA_FILE = "suqya_users.json"
 ADMIN_ID = 931350292   # ضع معرفك الصحيح هنا
 
 # مشرفة النساء
-FEMALE_ADMIN_ID = 931350292  # ضع معرف المشرفة هنا
+FEMALE_ADMIN_ID = 8395818573  # ضع معرف المشرفة هنا
 
 # حالات نظام الدعم
 WAITING_SUPPORT = set()
