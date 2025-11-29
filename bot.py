@@ -1946,8 +1946,20 @@ if user_id in WAITING_SUPPORT:
         open_memos_menu(update, context)
         return
         
-     if text == BTN_SUPPORT:
-    return support_start(update, context)
+         if text == BTN_SUPPORT:
+              if record.get("gender") == "female":
+                  msg.reply_text(
+                "👩‍🦰 رسالتك سيتم توجيهها الآن إلى المشرفة، يرجى كتابة رسالتك ✍️",
+                reply_markup=SUPPORT_CANCEL_KB,
+            )
+        else:
+            msg.reply_text(
+                "📩 قم الآن بكتابة رسالتك للدعم ✍️",
+                reply_markup=SUPPORT_CANCEL_KB,
+            )
+
+        WAITING_SUPPORT.add(user_id)
+        return
 
     if text == BTN_WATER_MAIN:
         open_water_menu(update, context)
