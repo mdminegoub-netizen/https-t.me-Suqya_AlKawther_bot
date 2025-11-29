@@ -1945,6 +1945,7 @@ if user_id in WAITING_SUPPORT:
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
         return
+        
      if text == BTN_SUPPORT:
     return support_start(update, context)
 
@@ -1954,10 +1955,6 @@ if user_id in WAITING_SUPPORT:
 
     if text == BTN_STATS:
         handle_stats(update, context)
-        return
-
-    if text == BTN_SUPPORT:
-        handle_contact_support(update, context)
         return
 
     if text == BTN_BACK_MAIN:
