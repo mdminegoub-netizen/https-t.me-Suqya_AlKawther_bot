@@ -1678,7 +1678,90 @@ def handle_text(update: Update, context: CallbackContext):
 
     record = get_user_record(user)
     main_kb = user_main_keyboard(user_id)
+    # 1️⃣ رد الأدمن على رسالة فيها ID → يرسل الرد للمستخدم
+    if is_admin(user_id) and msg.reply_to_message:
+        original = msg.reply_to_message.text or ""
+        m = re.search(r"ID:\s*`?(\d+)`?", original)
+        if m:
+            target_id = int(m.group(1))
+            try:
+                context.bot.send_message(
+                    chat_id=target_id,
+                    text=f"💌 رد من الدعم:\n\n{text}",
+                )
+                msg.reply_text("✅ تم إرسال ردّك للمستخدم.", reply_markup=main_kb)
+            except Exception as e:
+                logger.error(f"Error sending admin reply to {target_id}: {e}")
+                msg.reply_text("⚠️ حدث خطأ أثناء إرسال الرد.", reply_markup=main_kb)
+            return
+                # 2️⃣ رد المستخدم على رسالة دعم → تُرسل مباشرة للأدمن
+    if (
+        not is_admin(user_id)
+        and msg.reply_to_message
+        and msg.reply_to_message.from_user.id == context.bot.id
+    ):
+        original = msg.reply_to_message.text or ""
 
+        if (
+            original.startswith("💌 رد من الدعم")
+            or original.startswith("📢 رسالة من الدعم")
+            or "رسالتك وصلت للدعم" in original
+        ):
+            support_msg = (
+                "📩 *رسالة جديدة من المستخدم (رد على دعم):*\n\n"
+                f"👤 الاسم: {user.full_name}\n"
+                f"🆔 ID: `{user_id}`\n"
+                f"🔹 اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n\n"
+                f"✉️ محتوى الرسالة:\n{text}"
+            )
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=support_msg,
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.error(f"Error sending user reply to admin: {e}")
+
+            msg.reply_text(
+                "📨 رسالتك وصلت للدعم بنجاح 🤍",
+                reply_markup=main_kb,
+            )
+            return
+    # 2️⃣ رد المستخدم على رسالة دعم → تُرسل مباشرة للأدمن
+    if (
+        not is_admin(user_id)
+        and msg.reply_to_message
+        and msg.reply_to_message.from_user.id == context.bot.id
+    ):
+        original = msg.reply_to_message.text or ""
+
+        if (
+            original.startswith("💌 رد من الدعم")
+            or original.startswith("📢 رسالة من الدعم")
+            or "رسالتك وصلت للدعم" in original
+        ):
+            support_msg = (
+                "📩 *رسالة جديدة من المستخدم (رد على دعم):*\n\n"
+                f"👤 الاسم: {user.full_name}\n"
+                f"🆔 ID: `{user_id}`\n"
+                f"🔹 اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n\n"
+                f"✉️ محتوى الرسالة:\n{text}"
+            )
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=support_msg,
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                logger.error(f"Error sending user reply to admin: {e}")
+
+            msg.reply_text(
+                "📨 رسالتك وصلت للدعم بنجاح 🤍",
+                reply_markup=main_kb,
+            )
+            return
     # زر الإلغاء العام
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
