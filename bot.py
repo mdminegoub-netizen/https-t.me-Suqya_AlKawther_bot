@@ -25,15 +25,18 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
-# ضع هنا معرف الأدمن (تم اعتماده من قبلك)
-ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
+# 👇 أضف هذا الجزء هنا 👇
 
-# ملف اللوج
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-logger = logging.getLogger(__name__)
+# مشرف الرجال (أنت)
+ADMIN_ID = 931350292   # ضع معرفك الصحيح هنا
+
+# مشرفة النساء
+FEMALE_ADMIN_ID = 931350292  # ضع معرف المشرفة هنا
+
+# حالات نظام الدعم
+WAITING_SUPPORT = set()
+WAITING_BROADCAST = set()
+SUPPORT_LAST_USER = {}
 
 # =================== خادم ويب بسيط لـ Render ===================
 
