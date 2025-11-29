@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime, timezone, time
 from threading import Thread
 
@@ -24,8 +25,8 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
-# ضع هنا رقم حسابك في تيليجرام لاستقبال إشعارات دخول المستخدمين
-ADMIN_ID = 931350292  # غيّره إن لزم
+# ضع هنا معرف الأدمن (تم اعتماده من قبلك)
+ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # ملف اللوج
 logging.basicConfig(
@@ -74,7 +75,10 @@ data = load_data()
 
 
 def get_user_record(user):
-    """ينشئ أو يرجع سجل المستخدم، ويحدّث آخر نشاط، ويضمن وجود الحقول الجديدة."""
+    """
+    ينشئ أو يرجع سجل المستخدم، ويحدّث آخر نشاط،
+    ويضمن وجود الحقول الجديدة في السجلات القديمة.
+    """
     user_id = str(user.id)
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -102,8 +106,8 @@ def get_user_record(user):
             # أرقام إحصائية
             "tasbih_total": 0,
             "adhkar_count": 0,
-            # مذكّرات القلب
-            "heart_notes": [],
+            # مذكّرات قلبي
+            "heart_memos": [],
         }
     else:
         record = data[user_id]
@@ -111,7 +115,7 @@ def get_user_record(user):
         record["username"] = user.username
         record["last_active"] = now_iso
 
-        # ضمان الحقول في السجلات القديمة
+        # ضمان الحقول
         record.setdefault("gender", None)
         record.setdefault("age", None)
         record.setdefault("weight", None)
@@ -125,7 +129,7 @@ def get_user_record(user):
         record.setdefault("quran_today_date", None)
         record.setdefault("tasbih_total", 0)
         record.setdefault("adhkar_count", 0)
-        record.setdefault("heart_notes", [])
+        record.setdefault("heart_memos", [])
 
     save_data()
     return data[user_id]
@@ -143,6 +147,10 @@ def update_user_record(user_id: int, **kwargs):
 def get_all_user_ids():
     return [int(uid) for uid in data.keys()]
 
+
+def is_admin(user_id: int) -> bool:
+    return ADMIN_ID is not None and user_id == ADMIN_ID
+
 # =================== حالات الإدخال ===================
 
 WAITING_GENDER = set()
@@ -155,13 +163,17 @@ WAITING_QURAN_ADD_PAGES = set()
 WAITING_TASBIH = set()  # أثناء العدّ
 ACTIVE_TASBIH = {}      # user_id -> { "text": str, "target": int, "current": int }
 
-# حالات مذكّرات القلب
-WAITING_HEART_MENU = set()
-WAITING_HEART_ADD = set()
-WAITING_HEART_EDIT_SELECT = set()
-WAITING_HEART_EDIT_TEXT = set()
-WAITING_HEART_DELETE_SELECT = set()
-HEART_EDIT_INDEX = {}  # user_id -> index
+# مذكّرات قلبي
+WAITING_MEMO_MENU = set()
+WAITING_MEMO_ADD = set()
+WAITING_MEMO_EDIT_SELECT = set()
+WAITING_MEMO_EDIT_TEXT = set()
+WAITING_MEMO_DELETE_SELECT = set()
+MEMO_EDIT_INDEX = {}
+
+# دعم / إدارة
+WAITING_SUPPORT = set()
+WAITING_BROADCAST = set()
 
 # =================== الأزرار ===================
 
@@ -169,18 +181,38 @@ HEART_EDIT_INDEX = {}  # user_id -> index
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
 BTN_TASBIH_MAIN = "السبحة 📿"
-BTN_HEART_MAIN = "مذكّرات قلبي 📝"
+BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
+
+BTN_SUPPORT = "تواصل مع الدعم ✉️"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 
-MAIN_KEYBOARD = ReplyKeyboardMarkup(
+# لوحة المدير (تظهر فقط للأدمن)
+BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
+BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
+BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
+BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
+
+MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_HEART_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_SUPPORT)],
+    ],
+    resize_keyboard=True,
+)
+
+MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -203,7 +235,7 @@ BTN_WATER_REM_OFF = "إيقاف التذكير 📴"
 BTN_GENDER_MALE = "🧔‍♂️ ذكر"
 BTN_GENDER_FEMALE = "👩 أنثى"
 
-WATER_MENU_KB = ReplyKeyboardMarkup(
+WATER_MENU_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_ADD_CUPS)],
         [KeyboardButton(BTN_WATER_STATUS)],
@@ -213,11 +245,30 @@ WATER_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-WATER_SETTINGS_KB = ReplyKeyboardMarkup(
+WATER_MENU_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_ADD_CUPS)],
+        [KeyboardButton(BTN_WATER_STATUS)],
+        [KeyboardButton(BTN_WATER_SETTINGS)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
         [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_WATER_NEED)],
+        [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -233,7 +284,7 @@ BTN_QURAN_ADD_PAGES = "سجلت صفحات اليوم ✅"
 BTN_QURAN_STATUS = "مستوى وردي اليوم 📊"
 BTN_QURAN_RESET_DAY = "إعادة تعيين ورد اليوم 🔁"
 
-QURAN_MENU_KB = ReplyKeyboardMarkup(
+QURAN_MENU_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_QURAN_SET_GOAL)],
         [KeyboardButton(BTN_QURAN_ADD_PAGES), KeyboardButton(BTN_QURAN_STATUS)],
@@ -243,12 +294,22 @@ QURAN_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+QURAN_MENU_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_QURAN_SET_GOAL)],
+        [KeyboardButton(BTN_QURAN_ADD_PAGES), KeyboardButton(BTN_QURAN_STATUS)],
+        [KeyboardButton(BTN_QURAN_RESET_DAY)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
 # ---- أذكاري ----
 BTN_ADHKAR_MORNING = "أذكار الصباح 🌅"
 BTN_ADHKAR_EVENING = "أذكار المساء 🌙"
 BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
 
-ADHKAR_MENU_KB = ReplyKeyboardMarkup(
+ADHKAR_MENU_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MORNING), KeyboardButton(BTN_ADHKAR_EVENING)],
         [KeyboardButton(BTN_ADHKAR_GENERAL)],
@@ -257,15 +318,33 @@ ADHKAR_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+ADHKAR_MENU_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADHKAR_MORNING), KeyboardButton(BTN_ADHKAR_EVENING)],
+        [KeyboardButton(BTN_ADHKAR_GENERAL)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
 # ---- السبحة ----
 BTN_TASBIH_TICK = "تسبيحة ✅"
 BTN_TASBIH_END = "إنهاء الذكر ⬅️"
 
-TASBIH_RUN_KB = ReplyKeyboardMarkup(
+TASBIH_RUN_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_TASBIH_TICK)],
         [KeyboardButton(BTN_TASBIH_END)],
         [KeyboardButton(BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
+TASBIH_RUN_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_TASBIH_TICK)],
+        [KeyboardButton(BTN_TASBIH_END)],
+        [KeyboardButton(BTN_CANCEL), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -280,28 +359,65 @@ TASBIH_ITEMS = [
     ("اللهم صل وسلم على سيدنا محمد", 50),
 ]
 
-TASBIH_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(f"{text} ({count})")] for text, count in TASBIH_ITEMS
-    ] + [[KeyboardButton(BTN_BACK_MAIN)]],
-    resize_keyboard=True,
-)
+def build_tasbih_menu(is_admin: bool):
+    rows = [[KeyboardButton(f"{text} ({count})")] for text, count in TASBIH_ITEMS]
+    last_row = [KeyboardButton(BTN_BACK_MAIN)]
+    if is_admin:
+        last_row.append(KeyboardButton(BTN_ADMIN_PANEL))
+    rows.append(last_row)
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 # ---- مذكّرات قلبي ----
-BTN_HEART_ADD = "➕ إضافة مذكّرة"
-BTN_HEART_EDIT = "✏️ تعديل مذكّرة"
-BTN_HEART_DELETE = "🗑 حذف مذكّرة"
+BTN_MEMO_ADD = "➕ إضافة مذكرة"
+BTN_MEMO_EDIT = "✏️ تعديل مذكرة"
+BTN_MEMO_DELETE = "🗑 حذف مذكرة"
+BTN_MEMO_BACK = "رجوع ⬅️"
 
-HEART_MENU_KB = ReplyKeyboardMarkup(
+def build_memos_menu_kb(is_admin: bool):
+    rows = [
+        [KeyboardButton(BTN_MEMO_ADD)],
+        [KeyboardButton(BTN_MEMO_EDIT), KeyboardButton(BTN_MEMO_DELETE)],
+        [KeyboardButton(BTN_MEMO_BACK)],
+    ]
+    if is_admin:
+        rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+# ---- لوحة التحكم ----
+ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_HEART_ADD)],
-        [KeyboardButton(BTN_HEART_EDIT), KeyboardButton(BTN_HEART_DELETE)],
+        [KeyboardButton(BTN_ADMIN_USERS_COUNT), KeyboardButton(BTN_ADMIN_USERS_LIST)],
+        [KeyboardButton(BTN_ADMIN_BROADCAST)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
 )
 
 # =================== دوال مساعدة عامة ===================
+
+
+def user_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return MAIN_KEYBOARD_ADMIN if is_admin(user_id) else MAIN_KEYBOARD_USER
+
+
+def water_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return WATER_MENU_KB_ADMIN if is_admin(user_id) else WATER_MENU_KB_USER
+
+
+def water_settings_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return WATER_SETTINGS_KB_ADMIN if is_admin(user_id) else WATER_SETTINGS_KB_USER
+
+
+def adhkar_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return ADHKAR_MENU_KB_ADMIN if is_admin(user_id) else ADHKAR_MENU_KB_USER
+
+
+def quran_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return QURAN_MENU_KB_ADMIN if is_admin(user_id) else QURAN_MENU_KB_USER
+
+
+def tasbih_run_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return TASBIH_RUN_KB_ADMIN if is_admin(user_id) else TASBIH_RUN_KB_USER
 
 
 def ensure_today_water(record):
@@ -409,12 +525,6 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
     record["tasbih_total"] = record.get("tasbih_total", 0) + amount
     save_data()
 
-
-def _format_heart_notes_list(notes):
-    if not notes:
-        return "لا توجد مذكّرات بعد.\nاكتبي أول ما يخطر بقلبك ولو جملة قصيرة 🤍."
-    return "\n\n".join(f"{idx + 1}. {txt}" for idx, txt in enumerate(notes))
-
 # =================== أذكار ثابتة (مختصرة) ===================
 
 ADHKAR_MORNING_TEXT = (
@@ -460,45 +570,50 @@ ADHKAR_GENERAL_TEXT = (
 
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
-    # نتحقق إن كان المستخدم جديدًا قبل إنشاء السجل
     is_new = str(user.id) not in data
     get_user_record(user)
+
+    kb = user_main_keyboard(user.id)
 
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
         "أهلًا بك في بوت *سُقيا الكوثر*.\n"
-        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، وكتابة مذكّرات قلبك.\n\n"
+        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، "
+        "وتسجيل مذكّرات قلبك.\n\n"
         "اختر من القائمة أسفل الشاشة ما يناسبك:",
-        reply_markup=MAIN_KEYBOARD,
+        reply_markup=kb,
         parse_mode="Markdown",
     )
 
-    # إشعار الأدمن بدخول مستخدم جديد لأول مرة
-    if is_new and ADMIN_ID:
+    # إشعار الأدمن بدخول مستخدم جديد
+    if is_new and ADMIN_ID is not None:
         try:
             context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
-                    "👤 مستخدم جديد دخل بوت سُقيا الكوثر\n\n"
+                    "👤 مستخدم جديد دخل البوت:\n\n"
                     f"الاسم: {user.full_name}\n"
                     f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
-                    f"ID: {user.id}"
+                    f"ID: `{user.id}`"
                 ),
+                parse_mode="Markdown",
             )
         except Exception as e:
             logger.error(f"Error notifying admin about new user: {e}")
 
 
 def help_command(update: Update, context: CallbackContext):
+    kb = user_main_keyboard(update.effective_user.id)
     update.message.reply_text(
         "طريقة الاستخدام:\n\n"
         "• أذكاري 🤲 → أذكار الصباح والمساء وأذكار عامة.\n"
-        "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرئينها يوميًا ومتابعة تقدمك.\n"
+        "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
         "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
-        "• مذكّرات قلبي 📝 → كتابة مذكّراتك، مع إمكانية التعديل والحذف.\n"
+        "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
-        "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.",
-        reply_markup=MAIN_KEYBOARD,
+        "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
+        "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.",
+        reply_markup=kb,
     )
 
 # =================== قسم منبّه الماء ===================
@@ -507,21 +622,23 @@ def help_command(update: Update, context: CallbackContext):
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
+    kb = water_menu_keyboard(user.id)
     update.message.reply_text(
         "منبّه الماء 💧:\n"
-        "• سجّلي ما تشربين من أكواب.\n"
-        "• شاهدي مستواك اليوم.\n"
-        "• عدّلي إعداداتك وتشغيل التذكير.",
-        reply_markup=WATER_MENU_KB,
+        "• سجّل ما تشربه من أكواب.\n"
+        "• شاهد مستواك اليوم.\n"
+        "• عدّل إعداداتك وتشغيل التذكير.",
+        reply_markup=kb,
     )
 
 
 def open_water_settings(update: Update, context: CallbackContext):
+    kb = water_settings_keyboard(update.effective_user.id)
     update.message.reply_text(
         "إعدادات الماء ⚙️:\n"
         "1) حساب احتياجك اليومي من الماء بناءً على الجنس والعمر والوزن.\n"
         "2) تشغيل أو إيقاف التذكير الدوري بالماء.",
-        reply_markup=WATER_SETTINGS_KB,
+        reply_markup=kb,
     )
 
 
@@ -533,7 +650,7 @@ def handle_water_need_start(update: Update, context: CallbackContext):
     WAITING_WEIGHT.discard(user_id)
 
     update.message.reply_text(
-        "أولًا: اختاري الجنس:",
+        "أولًا: اختر الجنس:",
         reply_markup=GENDER_KB,
     )
 
@@ -547,13 +664,13 @@ def handle_gender_input(update: Update, context: CallbackContext):
         WAITING_GENDER.discard(user_id)
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
     if text not in [BTN_GENDER_MALE, BTN_GENDER_FEMALE]:
         update.message.reply_text(
-            "رجاءً اختاري من الخيارات الظاهرة:",
+            "رجاءً اختر من الخيارات الظاهرة:",
             reply_markup=GENDER_KB,
         )
         return
@@ -567,7 +684,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
     WAITING_AGE.add(user_id)
 
     update.message.reply_text(
-        "جميل.\nالآن أرسلي عمرك (بالسنوات)، مثال: 25",
+        "جميل.\nالآن أرسل عمرك (بالسنوات)، مثال: 25",
         reply_markup=CANCEL_KB,
     )
 
@@ -581,7 +698,7 @@ def handle_age_input(update: Update, context: CallbackContext):
         WAITING_AGE.discard(user_id)
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
@@ -591,7 +708,7 @@ def handle_age_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسلي عمرًا صحيحًا بالأرقام فقط، مثال: 20",
+            "رجاءً أرسل عمرًا صحيحًا بالأرقام فقط، مثال: 20",
             reply_markup=CANCEL_KB,
         )
         return
@@ -604,7 +721,7 @@ def handle_age_input(update: Update, context: CallbackContext):
     WAITING_WEIGHT.add(user_id)
 
     update.message.reply_text(
-        "شكرًا.\nالآن أرسلي وزنك بالكيلوغرام، مثال: 70",
+        "شكرًا.\nالآن أرسل وزنك بالكيلوغرام، مثال: 70",
         reply_markup=CANCEL_KB,
     )
 
@@ -618,7 +735,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
         WAITING_WEIGHT.discard(user_id)
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
@@ -628,7 +745,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسلي وزنًا صحيحًا بالكيلوغرام، مثال: 65",
+            "رجاءً أرسل وزنًا صحيحًا بالكيلوغرام، مثال: 65",
             reply_markup=CANCEL_KB,
         )
         return
@@ -655,8 +772,8 @@ def handle_weight_input(update: Update, context: CallbackContext):
         "تم حساب احتياجك اليومي من الماء 💧\n\n"
         f"- تقريبًا: {record['water_liters']} لتر في اليوم.\n"
         f"- ما يعادل تقريبًا: {cups_goal} كوب (بمتوسط 250 مل للكوب).\n\n"
-        "وزّعي أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.",
-        reply_markup=WATER_MENU_KB,
+        "وزّع أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.",
+        reply_markup=water_menu_keyboard(user_id),
     )
 
 
@@ -666,9 +783,9 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "لم تقومي بعد بحساب احتياجك من الماء.\n"
-            "اذهبي إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
-            reply_markup=WATER_MENU_KB,
+            "لم تقم بعد بحساب احتياجك من الماء.\n"
+            "اذهب إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
+            reply_markup=water_menu_keyboard(user.id),
         )
         return
 
@@ -679,43 +796,41 @@ def handle_log_cup(update: Update, context: CallbackContext):
     status_text = format_water_status_text(record)
     update.message.reply_text(
         f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
-        reply_markup=WATER_MENU_KB,
+        reply_markup=water_menu_keyboard(user.id),
     )
 
 
 def handle_add_cups(update: Update, context: CallbackContext):
-    """إدخال عدد أكواب دفعة واحدة (بشكل بسيط: قراءة الرقم من الرسالة مباشرة)."""
+    """وصف طريقة إضافة عدد أكواب، أو التعامل مع الرقم نفسه."""
     user = update.effective_user
     record = get_user_record(user)
     text = (update.message.text or "").strip()
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل استخدام هذه الميزة، احسبي احتياجك من الماء أولًا من خلال:\n"
+            "قبل استخدام هذه الميزة، احسب احتياجك من الماء أولًا من خلال:\n"
             "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
-            reply_markup=WATER_MENU_KB,
+            reply_markup=water_menu_keyboard(user.id),
         )
         return
 
-    # أول ضغطة على الزر → شرح الطريقة
     if text == BTN_WATER_ADD_CUPS:
         update.message.reply_text(
-            "أرسلي الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
+            "أرسل الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
             "وسيتم إضافتها مباشرة إلى عدّاد اليوم.",
             reply_markup=CANCEL_KB,
         )
         return
 
-    # محاولة تفسير النص كعدد أكواب
     try:
         cups = int(text)
         if cups <= 0 or cups > 50:
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "لو كنت تريدين إضافة عدد من الأكواب، أرسلي رقمًا منطقيًا مثل: 2 أو 3.\n"
-            "أو استخدمي بقية الأزرار للقائمة.",
-            reply_markup=WATER_MENU_KB,
+            "لو كنت تريد إضافة عدد من الأكواب، أرسل رقمًا منطقيًا مثل: 2 أو 3.\n"
+            "أو استخدم بقية الأزرار للقائمة.",
+            reply_markup=water_menu_keyboard(user.id),
         )
         return
 
@@ -726,7 +841,7 @@ def handle_add_cups(update: Update, context: CallbackContext):
     status_text = format_water_status_text(record)
     update.message.reply_text(
         f"🥤 تم إضافة {cups} كوب إلى عدّادك اليوم.\n\n{status_text}",
-        reply_markup=WATER_MENU_KB,
+        reply_markup=water_menu_keyboard(user.id),
     )
 
 
@@ -736,7 +851,7 @@ def handle_status(update: Update, context: CallbackContext):
     text = format_water_status_text(record)
     update.message.reply_text(
         text,
-        reply_markup=WATER_MENU_KB,
+        reply_markup=water_menu_keyboard(user.id),
     )
 
 
@@ -746,9 +861,9 @@ def handle_reminders_on(update: Update, context: CallbackContext):
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل تشغيل التذكير، احسبي احتياجك من الماء من خلال:\n"
+            "قبل تشغيل التذكير، احسب احتياجك من الماء من خلال:\n"
             "«حساب احتياج الماء 🧮».",
-            reply_markup=WATER_SETTINGS_KB,
+            reply_markup=water_settings_keyboard(user.id),
         )
         return
 
@@ -758,7 +873,7 @@ def handle_reminders_on(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
         "ستصلك رسائل خلال اليوم لتذكيرك بالشرب.",
-        reply_markup=WATER_SETTINGS_KB,
+        reply_markup=water_settings_keyboard(user.id),
     )
 
 
@@ -771,7 +886,7 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
         "يمكنك تشغيلها مرة أخرى وقتما شئت.",
-        reply_markup=WATER_SETTINGS_KB,
+        reply_markup=water_settings_keyboard(user.id),
     )
 
 # =================== قسم ورد القرآن ===================
@@ -780,13 +895,14 @@ def handle_reminders_off(update: Update, context: CallbackContext):
 def open_quran_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
+    kb = quran_menu_keyboard(user.id)
     update.message.reply_text(
         "وردي القرآني 📖:\n"
-        "• عيّني عدد صفحات اليوم.\n"
-        "• سجّلي ما قرأتِ.\n"
-        "• شاهدي مستوى إنجازك.\n"
+        "• عيّن عدد صفحات اليوم.\n"
+        "• سجّل ما قرأته.\n"
+        "• شاهد مستوى إنجازك.\n"
         "• يمكنك إعادة تعيين ورد اليوم.",
-        reply_markup=QURAN_MENU_KB,
+        reply_markup=kb,
     )
 
 
@@ -797,7 +913,7 @@ def handle_quran_set_goal(update: Update, context: CallbackContext):
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
     update.message.reply_text(
-        "أرسلي عدد الصفحات التي تريدين قراءتها اليوم من القرآن، مثال: 5 أو 10.",
+        "أرسل عدد الصفحات التي تريد قراءتها اليوم من القرآن، مثال: 5 أو 10.",
         reply_markup=CANCEL_KB,
     )
 
@@ -811,7 +927,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
         WAITING_QURAN_GOAL.discard(user_id)
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
@@ -821,7 +937,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسلي عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
+            "رجاءً أرسل عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
             reply_markup=CANCEL_KB,
         )
         return
@@ -835,8 +951,8 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         f"تم تعيين ورد اليوم: {pages} صفحة.\n"
-        "يمكنك تسجيل ما قرأتِ من خلال «سجلت صفحات اليوم ✅».",
-        reply_markup=QURAN_MENU_KB,
+        "يمكنك تسجيل ما قرأته من خلال «سجلت صفحات اليوم ✅».",
+        reply_markup=quran_menu_keyboard(user_id),
     )
 
 
@@ -846,15 +962,15 @@ def handle_quran_add_pages_start(update: Update, context: CallbackContext):
 
     if not record.get("quran_pages_goal"):
         update.message.reply_text(
-            "لم تضبطي بعد ورد اليوم.\n"
-            "استخدمي «تعيين ورد اليوم 📌» أولًا.",
-            reply_markup=QURAN_MENU_KB,
+            "لم تضبط بعد ورد اليوم.\n"
+            "استخدم «تعيين ورد اليوم 📌» أولًا.",
+            reply_markup=quran_menu_keyboard(user.id),
         )
         return
 
     WAITING_QURAN_ADD_PAGES.add(user.id)
     update.message.reply_text(
-        "أرسلي الآن عدد الصفحات التي قرأتِها من ورد اليوم، مثال: 2 أو 3.",
+        "أرسل الآن عدد الصفحات التي قرأتها من ورد اليوم، مثال: 2 أو 3.",
         reply_markup=CANCEL_KB,
     )
 
@@ -868,7 +984,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
@@ -878,7 +994,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسلي عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
+            "رجاءً أرسل عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
             reply_markup=CANCEL_KB,
         )
         return
@@ -894,7 +1010,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     status_text = format_quran_status_text(record)
     update.message.reply_text(
         f"تم إضافة {pages} صفحة إلى وردك اليوم.\n\n{status_text}",
-        reply_markup=QURAN_MENU_KB,
+        reply_markup=quran_menu_keyboard(user_id),
     )
 
 
@@ -904,7 +1020,7 @@ def handle_quran_status(update: Update, context: CallbackContext):
     text = format_quran_status_text(record)
     update.message.reply_text(
         text,
-        reply_markup=QURAN_MENU_KB,
+        reply_markup=quran_menu_keyboard(user.id),
     )
 
 
@@ -919,7 +1035,7 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم إعادة تعيين ورد اليوم.\n"
         "يمكنك البدء من جديد في حساب الصفحات لهذا اليوم.",
-        reply_markup=QURAN_MENU_KB,
+        reply_markup=quran_menu_keyboard(user.id),
     )
 
 # =================== قسم الأذكار ===================
@@ -928,39 +1044,43 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 def open_adhkar_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
+    kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         "أذكاري 🤲:\n"
         "• أذكار الصباح.\n"
         "• أذكار المساء.\n"
         "• أذكار عامة تريح القلب.",
-        reply_markup=ADHKAR_MENU_KB,
+        reply_markup=kb,
     )
 
 
 def send_morning_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
     increment_adhkar_count(user.id, 1)
+    kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         ADHKAR_MORNING_TEXT,
-        reply_markup=ADHKAR_MENU_KB,
+        reply_markup=kb,
     )
 
 
 def send_evening_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
     increment_adhkar_count(user.id, 1)
+    kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         ADHKAR_EVENING_TEXT,
-        reply_markup=ADHKAR_MENU_KB,
+        reply_markup=kb,
     )
 
 
 def send_general_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
     increment_adhkar_count(user.id, 1)
+    kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         ADHKAR_GENERAL_TEXT,
-        reply_markup=ADHKAR_MENU_KB,
+        reply_markup=kb,
     )
 
 # =================== قسم السبحة ===================
@@ -971,10 +1091,11 @@ def open_tasbih_menu(update: Update, context: CallbackContext):
     ACTIVE_TASBIH.pop(user.id, None)
     WAITING_TASBIH.discard(user.id)
 
-    text = "اختر الذكر الذي تريدين التسبيح به، وسيقوم البوت بالعدّ لك:"
+    kb = build_tasbih_menu(is_admin(user.id))
+    text = "اختر الذكر الذي تريد التسبيح به، وسيقوم البوت بالعدّ لك:"
     update.message.reply_text(
         text,
-        reply_markup=TASBIH_MENU_KB,
+        reply_markup=kb,
     )
 
 
@@ -996,15 +1117,14 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
                 f"بدأنا التسبيح:\n"
                 f"الذكر: {dhikr}\n"
                 f"العدد المطلوب: {count} مرة.\n\n"
-                "اضغطي «تسبيحة ✅» في كل مرة تذكرين فيها، أو «إنهاء الذكر ⬅️» عندما تنتهين.",
-                reply_markup=TASBIH_RUN_KB,
+                "اضغط «تسبيحة ✅» في كل مرة تذكر فيها، أو «إنهاء الذكر ⬅️» عندما تنتهي.",
+                reply_markup=tasbih_run_keyboard(user_id),
             )
             return
 
-    # لو ما كان مطابقًا لأي اختيار
     update.message.reply_text(
-        "رجاءً اختاري من الأذكار الظاهرة في القائمة.",
-        reply_markup=TASBIH_MENU_KB,
+        "رجاءً اختر من الأذكار الظاهرة في القائمة.",
+        reply_markup=build_tasbih_menu(is_admin(user_id)),
     )
 
 
@@ -1015,8 +1135,8 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
     state = ACTIVE_TASBIH.get(user_id)
     if not state:
         update.message.reply_text(
-            "ابدئي أولًا باختيار ذكر من قائمة «السبحة 📿».",
-            reply_markup=TASBIH_MENU_KB,
+            "ابدأ أولًا باختيار ذكر من قائمة «السبحة 📿».",
+            reply_markup=build_tasbih_menu(is_admin(user_id)),
         )
         return
 
@@ -1031,13 +1151,13 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
         update.message.reply_text(
             f"{dhikr}\n"
             f"العدد الحالي: {current} / {target}.",
-            reply_markup=TASBIH_RUN_KB,
+            reply_markup=tasbih_run_keyboard(user_id),
         )
     else:
         update.message.reply_text(
             f"اكتمل التسبيح على: {dhikr}\n"
-            f"وصلتِ إلى {target} تسبيحة. تقبّل الله منك 🤍.",
-            reply_markup=MAIN_KEYBOARD,
+            f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.",
+            reply_markup=user_main_keyboard(user_id),
         )
         ACTIVE_TASBIH.pop(user_id, None)
         WAITING_TASBIH.discard(user_id)
@@ -1051,227 +1171,241 @@ def handle_tasbih_end(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم إنهاء جلسة التسبيح الحالية.\n"
         "يمكنك اختيار ذكر جديد من «السبحة 📿».",
-        reply_markup=TASBIH_MENU_KB,
+        reply_markup=build_tasbih_menu(is_admin(user_id)),
     )
 
-# =================== قسم مذكّرات قلبي ===================
+# =================== مذكّرات قلبي ===================
 
 
-def open_heart_menu(update: Update, context: CallbackContext):
+def format_memos_list(memos):
+    if not memos:
+        return "لا توجد مذكّرات بعد."
+    return "\n\n".join(f"{idx+1}. {m}" for idx, m in enumerate(memos))
+
+
+def open_memos_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     record = get_user_record(user)
-    notes = record.get("heart_notes", [])
+    memos = record.get("heart_memos", [])
 
-    WAITING_HEART_MENU.add(user_id)
-    WAITING_HEART_ADD.discard(user_id)
-    WAITING_HEART_EDIT_SELECT.discard(user_id)
-    WAITING_HEART_EDIT_TEXT.discard(user_id)
-    WAITING_HEART_DELETE_SELECT.discard(user_id)
-    HEART_EDIT_INDEX.pop(user_id, None)
+    # تفعيل حالة قائمة المذكرات
+    WAITING_MEMO_MENU.add(user_id)
+    WAITING_MEMO_ADD.discard(user_id)
+    WAITING_MEMO_EDIT_SELECT.discard(user_id)
+    WAITING_MEMO_EDIT_TEXT.discard(user_id)
+    WAITING_MEMO_DELETE_SELECT.discard(user_id)
+    MEMO_EDIT_INDEX.pop(user_id, None)
 
-    text = "مذكّرات قلبي 📝:\n\n"
-    text += _format_heart_notes_list(notes)
-    text += "\n\nاختاري ما تريدين فعله من الأزرار في الأسفل:"
+    memos_text = format_memos_list(memos)
+    kb = build_memos_menu_kb(is_admin(user_id))
 
     update.message.reply_text(
-        text,
-        reply_markup=HEART_MENU_KB,
+        f"🩵 مذكّرات قلبي:\n\n{memos_text}\n\n"
+        "يمكنك إضافة، تعديل، أو حذف أي مذكرة من الأزرار بالأسفل.",
+        reply_markup=kb,
     )
 
 
-def handle_heart_menu(update: Update, context: CallbackContext):
-    """يُستدعى عندما نكون داخل قائمة مذكّرات القلب."""
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-    text = (update.message.text or "").strip()
+def handle_memo_add_start(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
 
-    if text == BTN_HEART_ADD:
-        WAITING_HEART_MENU.discard(user_id)
-        WAITING_HEART_ADD.add(user_id)
-        update.message.reply_text(
-            "اكتبي الآن المذكرة التي تريدين حفظها في قلبك.\n"
-            "اكتبيها بهدوء… لا أحد يطّلع عليها غيرك.\n\n"
-            "للإلغاء اضغطي «إلغاء ❌».",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    if text == BTN_HEART_EDIT:
-        if not notes:
-            update.message.reply_text(
-                "لا توجد مذكّرات لتعديلها حاليًا.",
-                reply_markup=HEART_MENU_KB,
-            )
-            return
-
-        WAITING_HEART_MENU.discard(user_id)
-        WAITING_HEART_EDIT_SELECT.add(user_id)
-        update.message.reply_text(
-            "أرسلي رقم المذكرة التي تريدين تعديلها، كما هو ظاهر في القائمة.\n"
-            "مثال: 1 أو 2 أو 3.",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    if text == BTN_HEART_DELETE:
-        if not notes:
-            update.message.reply_text(
-                "لا توجد مذكّرات لحذفها حاليًا.",
-                reply_markup=HEART_MENU_KB,
-            )
-            return
-
-        WAITING_HEART_MENU.discard(user_id)
-        WAITING_HEART_DELETE_SELECT.add(user_id)
-        update.message.reply_text(
-            "أرسلي رقم المذكرة التي تريدين حذفها، كما هو ظاهر في القائمة.\n"
-            "مثال: 1 أو 2 أو 3.",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    # أي شيء آخر داخل قائمة المذكرات → إعادة عرض القائمة
-    open_heart_menu(update, context)
-
-
-def handle_heart_add_text(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_HEART_ADD.discard(user_id)
-        open_heart_menu(update, context)
-        return
-
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-    notes.append(text)
-    update_user_record(user_id, heart_notes=notes)
-
-    WAITING_HEART_ADD.discard(user_id)
+    WAITING_MEMO_MENU.discard(user_id)
+    WAITING_MEMO_ADD.add(user_id)
 
     update.message.reply_text(
-        "تم حفظ مذكّرتك في قلب سُقيا الكوثر 🤍.",
-        reply_markup=HEART_MENU_KB,
-    )
-    # إعادة عرض القائمة مع التحديث
-    open_heart_menu(update, context)
-
-
-def handle_heart_edit_select(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_HEART_EDIT_SELECT.discard(user_id)
-        open_heart_menu(update, context)
-        return
-
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-
-    try:
-        idx = int(text) - 1
-        if idx < 0 or idx >= len(notes):
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسلي رقمًا صحيحًا من المذكرات الظاهرة.\n"
-            "مثال: 1 أو 2 أو 3.",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    HEART_EDIT_INDEX[user_id] = idx
-    WAITING_HEART_EDIT_SELECT.discard(user_id)
-    WAITING_HEART_EDIT_TEXT.add(user_id)
-
-    update.message.reply_text(
-        f"أرسلي الآن النص الجديد للمذكرة رقم {idx + 1}:",
+        "اكتب الآن المذكرة التي تريد حفظها في قلبك.\n"
+        "يمكن أن تكون شعورًا، دعاءً، موقفًا، أو أي شيء يهمّك 🤍",
         reply_markup=CANCEL_KB,
     )
 
 
-def handle_heart_edit_text(update: Update, context: CallbackContext):
+def handle_memo_add_input(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
-        WAITING_HEART_EDIT_TEXT.discard(user_id)
-        HEART_EDIT_INDEX.pop(user_id, None)
-        open_heart_menu(update, context)
+        WAITING_MEMO_ADD.discard(user_id)
+        open_memos_menu(update, context)
         return
 
     record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-    idx = HEART_EDIT_INDEX.get(user_id)
+    memos = record.get("heart_memos", [])
+    memos.append(text)
+    record["heart_memos"] = memos
+    save_data()
 
-    if idx is None or idx < 0 or idx >= len(notes):
-        # خطأ بسيط، نرجع للقائمة
-        WAITING_HEART_EDIT_TEXT.discard(user_id)
-        HEART_EDIT_INDEX.pop(user_id, None)
-        open_heart_menu(update, context)
-        return
-
-    notes[idx] = text
-    update_user_record(user_id, heart_notes=notes)
-
-    WAITING_HEART_EDIT_TEXT.discard(user_id)
-    HEART_EDIT_INDEX.pop(user_id, None)
+    WAITING_MEMO_ADD.discard(user_id)
 
     update.message.reply_text(
-        "تم تعديل المذكرة بنجاح 🤍.",
-        reply_markup=HEART_MENU_KB,
+        "تم حفظ مذكّرتك في قلب البوت 🤍.",
+        reply_markup=build_memos_menu_kb(is_admin(user_id)),
     )
-    open_heart_menu(update, context)
+    # إعادة عرض القائمة
+    dummy_update = update
+    open_memos_menu(dummy_update, context)
 
 
-def handle_heart_delete_select(update: Update, context: CallbackContext):
+def handle_memo_edit_select(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
+    record = get_user_record(user)
+    memos = record.get("heart_memos", [])
+
+    if not memos:
+        update.message.reply_text(
+            "لا توجد مذكّرات لتعديلها حاليًا.",
+            reply_markup=build_memos_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    WAITING_MEMO_MENU.discard(user_id)
+    WAITING_MEMO_EDIT_SELECT.add(user_id)
+
+    memos_text = format_memos_list(memos)
+    update.message.reply_text(
+        f"✏️ اختر رقم المذكرة التي تريد تعديلها:\n\n{memos_text}\n\n"
+        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_memo_edit_index_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    memos = record.get("heart_memos", [])
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
-        WAITING_HEART_DELETE_SELECT.discard(user_id)
-        open_heart_menu(update, context)
+        WAITING_MEMO_EDIT_SELECT.discard(user_id)
+        open_memos_menu(update, context)
         return
-
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
 
     try:
         idx = int(text) - 1
-        if idx < 0 or idx >= len(notes):
+        if idx < 0 or idx >= len(memos):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسلي رقمًا صحيحًا من المذكرات الظاهرة.\n"
-            "مثال: 1 أو 2 أو 3.",
+            "رجاءً أرسل رقم صحيح من القائمة الموجودة أمامك، أو اضغط «إلغاء ❌».",
             reply_markup=CANCEL_KB,
         )
         return
 
-    deleted = notes.pop(idx)
-    update_user_record(user_id, heart_notes=notes)
-    WAITING_HEART_DELETE_SELECT.discard(user_id)
+    MEMO_EDIT_INDEX[user_id] = idx
+    WAITING_MEMO_EDIT_SELECT.discard(user_id)
+    WAITING_MEMO_EDIT_TEXT.add(user_id)
 
     update.message.reply_text(
-        f"تم حذف المذكرة:\n\n{deleted}",
-        reply_markup=HEART_MENU_KB,
+        f"✏️ أرسل النص الجديد للمذكرة رقم {idx+1}:",
+        reply_markup=CANCEL_KB,
     )
-    open_heart_menu(update, context)
+
+
+def handle_memo_edit_text_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    memos = record.get("heart_memos", [])
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_MEMO_EDIT_TEXT.discard(user_id)
+        MEMO_EDIT_INDEX.pop(user_id, None)
+        open_memos_menu(update, context)
+        return
+
+    idx = MEMO_EDIT_INDEX.get(user_id)
+    if idx is None or idx < 0 or idx >= len(memos):
+        WAITING_MEMO_EDIT_TEXT.discard(user_id)
+        MEMO_EDIT_INDEX.pop(user_id, None)
+        update.message.reply_text(
+            "حدث خطأ بسيط في اختيار المذكرة، جرّب من جديد من «مذكّرات قلبي 🩵».",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        return
+
+    memos[idx] = text
+    record["heart_memos"] = memos
+    save_data()
+
+    WAITING_MEMO_EDIT_TEXT.discard(user_id)
+    MEMO_EDIT_INDEX.pop(user_id, None)
+
+    update.message.reply_text(
+        "تم تعديل المذكرة بنجاح ✅.",
+        reply_markup=build_memos_menu_kb(is_admin(user_id)),
+    )
+    open_memos_menu(update, context)
+
+
+def handle_memo_delete_select(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    memos = record.get("heart_memos", [])
+
+    if not memos:
+        update.message.reply_text(
+            "لا توجد مذكّرات لحذفها حاليًا.",
+            reply_markup=build_memos_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    WAITING_MEMO_MENU.discard(user_id)
+    WAITING_MEMO_DELETE_SELECT.add(user_id)
+
+    memos_text = format_memos_list(memos)
+    update.message.reply_text(
+        f"🗑 اختر رقم المذكرة التي تريد حذفها:\n\n{memos_text}\n\n"
+        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_memo_delete_index_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    memos = record.get("heart_memos", [])
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_MEMO_DELETE_SELECT.discard(user_id)
+        open_memos_menu(update, context)
+        return
+
+    try:
+        idx = int(text) - 1
+        if idx < 0 or idx >= len(memos):
+            raise ValueError()
+    except ValueError:
+        update.message.reply_text(
+            "رجاءً أرسل رقم صحيح من القائمة الموجودة أمامك، أو اضغط «إلغاء ❌».",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    deleted = memos.pop(idx)
+    record["heart_memos"] = memos
+    save_data()
+
+    WAITING_MEMO_DELETE_SELECT.discard(user_id)
+
+    update.message.reply_text(
+        f"🗑 تم حذف المذكرة:\n\n{deleted}",
+        reply_markup=build_memos_menu_kb(is_admin(user_id)),
+    )
+    open_memos_menu(update, context)
 
 # =================== احصائياتي ===================
 
 
 def handle_stats(update: Update, context: CallbackContext):
     user = update.effective_user
+    user_id = user.id
     record = get_user_record(user)
 
     ensure_today_water(record)
@@ -1285,7 +1419,8 @@ def handle_stats(update: Update, context: CallbackContext):
 
     tasbih_total = record.get("tasbih_total", 0)
     adhkar_count = record.get("adhkar_count", 0)
-    heart_notes = record.get("heart_notes", [])
+
+    memos_count = len(record.get("heart_memos", []))
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
@@ -1299,20 +1434,20 @@ def handle_stats(update: Update, context: CallbackContext):
     if q_goal:
         text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
     else:
-        text_lines.append("- ورد القرآن: لم تضبطي وردًا لليوم بعد.")
+        text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
 
     # الأذكار
-    text_lines.append(f"- عدد المرات التي استعنتِ فيها بالأذكار عبر البوت: {adhkar_count} مرة.")
+    text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
 
     # التسبيح
     text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
 
     # المذكرات
-    text_lines.append(f"- عدد مذكّرات قلبك المحفوظة: {len(heart_notes)} مذكّرة.")
+    text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
 
     update.message.reply_text(
         "\n".join(text_lines),
-        reply_markup=MAIN_KEYBOARD,
+        reply_markup=user_main_keyboard(user_id),
     )
 
 # =================== تذكيرات الماء (JobQueue) ===================
@@ -1342,13 +1477,195 @@ def water_reminder_job(context: CallbackContext):
                 chat_id=uid,
                 text=(
                     "تذكير لطيف بشرب الماء 💧:\n\n"
-                    f"شربتِ حتى الآن: {today_cups} من {cups_goal} كوب.\n"
+                    f"شربت حتى الآن: {today_cups} من {cups_goal} كوب.\n"
                     f"المتبقي لهذا اليوم تقريبًا: {remaining} كوب.\n\n"
-                    "لو استطعتِ الآن، خذي كوب ماء وسجّليه في البوت."
+                    "لو استطعت الآن، خذ كوب ماء وسجّله في البوت."
                 ),
             )
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
+
+# =================== نظام الدعم ولوحة التحكم ===================
+
+
+def handle_contact_support(update: Update, context: CallbackContext):
+    user = update.effective_user
+    get_user_record(user)
+
+    WAITING_SUPPORT.add(user.id)
+
+    update.message.reply_text(
+        "✉️ اكتب الآن رسالتك التي تريد إرسالها للدعم.\n"
+        "اشرح ما تحتاجه بهدوء، وسيتم الاطلاع عليها بإذن الله.\n\n"
+        "للإلغاء اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_panel(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        update.message.reply_text(
+            "هذا القسم خاص بالمدير فقط.",
+            reply_markup=user_main_keyboard(user.id),
+        )
+        return
+
+    update.message.reply_text(
+        "لوحة التحكم 🛠:\n"
+        "• عرض عدد المستخدمين.\n"
+        "• عرض قائمة المستخدمين.\n"
+        "• إرسال رسالة جماعية.",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+
+def handle_admin_users_count(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    total_users = len(get_all_user_ids())
+    update.message.reply_text(
+        f"👥 عدد المستخدمين المسجلين في البوت: {total_users}",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+
+def handle_admin_users_list(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    lines = []
+    for uid_str, rec in data.items():
+        name = rec.get("first_name") or "بدون اسم"
+        username = rec.get("username")
+        line = f"- {name} | ID: {uid_str}"
+        if username:
+            line += f" | @{username}"
+        lines.append(line)
+
+    if not lines:
+        text = "لا يوجد مستخدمون مسجّلون بعد."
+    else:
+        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])  # حد معقول
+
+    update.message.reply_text(
+        text,
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+
+def handle_admin_broadcast_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    WAITING_BROADCAST.add(user.id)
+    update.message.reply_text(
+        "اكتب الآن الرسالة التي تريد إرسالها لكل مستخدمي البوت.\n"
+        "مثال: تذكير، نصيحة، أو إعلان مهم.\n\n"
+        "للإلغاء اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_broadcast_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_BROADCAST.discard(user_id)
+        handle_admin_panel(update, context)
+        return
+
+    if not is_admin(user_id):
+        WAITING_BROADCAST.discard(user_id)
+        update.message.reply_text(
+            "هذه الميزة خاصة بالمدير فقط.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        return
+
+    user_ids = get_all_user_ids()
+    sent = 0
+    for uid in user_ids:
+        try:
+            update.effective_message.bot.send_message(
+                chat_id=uid,
+                text=f"📢 رسالة من الدعم:\n\n{text}",
+            )
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending broadcast to {uid}: {e}")
+
+    WAITING_BROADCAST.discard(user_id)
+
+    update.message.reply_text(
+        f"تم إرسال الرسالة إلى {sent} مستخدم.",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+
+def forward_support_to_admin(user, text: str, context: CallbackContext):
+    """إرسال رسالة الدعم إلى الأدمن مع بيانات المستخدم."""
+    if ADMIN_ID is None:
+        return
+    try:
+        context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                "📩 رسالة جديدة للدعم:\n\n"
+                f"الاسم: {user.full_name}\n"
+                f"المعرف: @{user.username if user.username else 'لا يوجد'}\n"
+                f"ID: `{user.id}`\n\n"
+                f"محتوى الرسالة:\n{text}"
+            ),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Error sending support message to admin: {e}")
+
+
+def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
+    """
+    إذا كان الأدمن يرد على رسالة دعم / رد من المستخدم، نلتقط ID ونرسل الرد للمستخدم.
+    ترجع True إذا تم التعامل مع الرسالة كـ رد أدمن.
+    """
+    user = update.effective_user
+    msg = update.message
+    text = (msg.text or "").strip()
+
+    if not is_admin(user.id):
+        return False
+
+    if not msg.reply_to_message:
+        return False
+
+    original = msg.reply_to_message.text or ""
+    m = re.search(r"ID:\s*`(\d+)`", original)
+    if not m:
+        return False
+
+    target_id = int(m.group(1))
+    try:
+        context.bot.send_message(
+            chat_id=target_id,
+            text=f"💌 رد من الدعم:\n\n{text}",
+        )
+        msg.reply_text(
+            "تم إرسال ردّك للمستخدم.",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    except Exception as e:
+        logger.error(f"Error sending admin reply to {target_id}: {e}")
+        msg.reply_text(
+            "حدث خطأ أثناء إرسال الرد للمستخدم.",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    return True
 
 # =================== هاندلر الرسائل ===================
 
@@ -1359,7 +1676,8 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
-    get_user_record(user)  # التأكد من وجود السجل دائمًا
+    record = get_user_record(user)
+    main_kb = user_main_keyboard(user_id)
 
     # زر الإلغاء العام
     if text == BTN_CANCEL:
@@ -1370,21 +1688,26 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         WAITING_TASBIH.discard(user_id)
         ACTIVE_TASBIH.pop(user_id, None)
-
-        WAITING_HEART_MENU.discard(user_id)
-        WAITING_HEART_ADD.discard(user_id)
-        WAITING_HEART_EDIT_SELECT.discard(user_id)
-        WAITING_HEART_EDIT_TEXT.discard(user_id)
-        WAITING_HEART_DELETE_SELECT.discard(user_id)
-        HEART_EDIT_INDEX.pop(user_id, None)
+        WAITING_MEMO_MENU.discard(user_id)
+        WAITING_MEMO_ADD.discard(user_id)
+        WAITING_MEMO_EDIT_SELECT.discard(user_id)
+        WAITING_MEMO_EDIT_TEXT.discard(user_id)
+        WAITING_MEMO_DELETE_SELECT.discard(user_id)
+        MEMO_EDIT_INDEX.pop(user_id, None)
+        WAITING_SUPPORT.discard(user_id)
+        WAITING_BROADCAST.discard(user_id)
 
         msg.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=main_kb,
         )
         return
 
-    # حالات إدخال الماء
+    # ===== رد الأدمن على رسالة دعم (بالـ reply) =====
+    if try_handle_admin_reply(update, context):
+        return
+
+    # ===== حالات إدخال الماء =====
     if user_id in WAITING_GENDER:
         handle_gender_input(update, context)
         return
@@ -1397,7 +1720,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_weight_input(update, context)
         return
 
-    # حالات إدخال ورد القرآن
+    # ===== حالات إدخال ورد القرآن =====
     if user_id in WAITING_QURAN_GOAL:
         handle_quran_goal_input(update, context)
         return
@@ -1406,7 +1729,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_quran_add_pages_input(update, context)
         return
 
-    # حالة السبحة أثناء العدّ
+    # ===== حالة السبحة أثناء العدّ =====
     if user_id in WAITING_TASBIH:
         if text == BTN_TASBIH_TICK:
             handle_tasbih_tick(update, context)
@@ -1415,38 +1738,57 @@ def handle_text(update: Update, context: CallbackContext):
             handle_tasbih_end(update, context)
             return
         else:
-            # أي نص آخر أثناء التسبيح نعتبره تسبيحة
             handle_tasbih_tick(update, context)
             return
 
-    # حالات مذكّرات القلب
-    if user_id in WAITING_HEART_ADD:
-        handle_heart_add_text(update, context)
+    # ===== حالات مذكّرات قلبي =====
+    if user_id in WAITING_MEMO_ADD:
+        handle_memo_add_input(update, context)
         return
 
-    if user_id in WAITING_HEART_EDIT_SELECT:
-        handle_heart_edit_select(update, context)
+    if user_id in WAITING_MEMO_EDIT_SELECT:
+        handle_memo_edit_index_input(update, context)
         return
 
-    if user_id in WAITING_HEART_EDIT_TEXT:
-        handle_heart_edit_text(update, context)
+    if user_id in WAITING_MEMO_EDIT_TEXT:
+        handle_memo_edit_text_input(update, context)
         return
 
-    if user_id in WAITING_HEART_DELETE_SELECT:
-        handle_heart_delete_select(update, context)
+    if user_id in WAITING_MEMO_DELETE_SELECT:
+        handle_memo_delete_index_input(update, context)
         return
 
-    if user_id in WAITING_HEART_MENU:
-        handle_heart_menu(update, context)
+    # ===== حالة الدعم =====
+    if user_id in WAITING_SUPPORT:
+        WAITING_SUPPORT.discard(user_id)
+        forward_support_to_admin(user, text, context)
+        msg.reply_text(
+            "تم إرسال رسالتك للدعم.\n"
+            "سيتم الاطلاع عليها، والرد عليك عند الحاجة بإذن الله 🤍.",
+            reply_markup=main_kb,
+        )
         return
 
-    # الأزرار الرئيسية
+    # ===== حالة الرسالة الجماعية (نص الرسالة) =====
+    if user_id in WAITING_BROADCAST:
+        handle_admin_broadcast_input(update, context)
+        return
+
+    # ===== الأزرار الرئيسية =====
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
         return
 
     if text == BTN_QURAN_MAIN:
         open_quran_menu(update, context)
+        return
+
+    if text == BTN_TASBIH_MAIN:
+        open_tasbih_menu(update, context)
+        return
+
+    if text == BTN_MEMOS_MAIN:
+        open_memos_menu(update, context)
         return
 
     if text == BTN_WATER_MAIN:
@@ -1457,22 +1799,18 @@ def handle_text(update: Update, context: CallbackContext):
         handle_stats(update, context)
         return
 
-    if text == BTN_TASBIH_MAIN:
-        open_tasbih_menu(update, context)
-        return
-
-    if text == BTN_HEART_MAIN:
-        open_heart_menu(update, context)
+    if text == BTN_SUPPORT:
+        handle_contact_support(update, context)
         return
 
     if text == BTN_BACK_MAIN:
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
-            reply_markup=MAIN_KEYBOARD,
+            reply_markup=main_kb,
         )
         return
 
-    # قوائم الأذكار
+    # ===== قوائم الأذكار =====
     if text == BTN_ADHKAR_MORNING:
         send_morning_adhkar(update, context)
         return
@@ -1485,7 +1823,7 @@ def handle_text(update: Update, context: CallbackContext):
         send_general_adhkar(update, context)
         return
 
-    # منبّه الماء: القائمة
+    # ===== منبّه الماء =====
     if text == BTN_WATER_LOG:
         handle_log_cup(update, context)
         return
@@ -1514,12 +1852,13 @@ def handle_text(update: Update, context: CallbackContext):
         handle_add_cups(update, context)
         return
 
-    # لو كتب رقم بشكل منفصل (وقد يكون يقصد الأكواب)
+    # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية أو صفحات قرآن حسب السياق
     if text.isdigit():
+        # نحاول أولا إضافته كأكواب
         handle_add_cups(update, context)
         return
 
-    # ورد القرآن: الأزرار
+    # ===== ورد القرآن =====
     if text == BTN_QURAN_SET_GOAL:
         handle_quran_set_goal(update, context)
         return
@@ -1536,17 +1875,73 @@ def handle_text(update: Update, context: CallbackContext):
         handle_quran_reset_day(update, context)
         return
 
-    # السبحة: اختيار الذكر
+    # ===== السبحة: اختيار الذكر =====
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if text == label:
             start_tasbih_for_choice(update, context, text)
             return
 
-    # أي نص آخر
+    # ===== مذكّرات قلبي: زر القائمة الداخلي =====
+    if text == BTN_MEMO_ADD:
+        handle_memo_add_start(update, context)
+        return
+
+    if text == BTN_MEMO_EDIT:
+        handle_memo_edit_select(update, context)
+        return
+
+    if text == BTN_MEMO_DELETE:
+        handle_memo_delete_select(update, context)
+        return
+
+    if text == BTN_MEMO_BACK:
+        msg.reply_text(
+            "تم الرجوع للقائمة الرئيسية.",
+            reply_markup=main_kb,
+        )
+        return
+
+    # ===== لوحة التحكم (المدير) =====
+    if text == BTN_ADMIN_PANEL:
+        handle_admin_panel(update, context)
+        return
+
+    if text == BTN_ADMIN_USERS_COUNT:
+        handle_admin_users_count(update, context)
+        return
+
+    if text == BTN_ADMIN_USERS_LIST:
+        handle_admin_users_list(update, context)
+        return
+
+    if text == BTN_ADMIN_BROADCAST:
+        handle_admin_broadcast_start(update, context)
+        return
+
+    # ===== ردود المستخدمين على رسائل الدعم/الرسالة الجماعية (بـ Reply) =====
+    if (
+        not is_admin(user_id)
+        and msg.reply_to_message
+        and msg.reply_to_message.from_user.id == context.bot.id
+    ):
+        original_text = msg.reply_to_message.text or ""
+        if original_text.startswith("📢 رسالة من الدعم") or original_text.startswith("💌 رد من الدعم"):
+            forward_support_to_admin(user, text, context)
+            msg.reply_text(
+                "تم إرسال ردّك إلى الدعم.\n"
+                "شكرًا على مشاركتك 🤍.",
+                reply_markup=main_kb,
+            )
+            return
+
+    # ===== أي نص آخر =====
     msg.reply_text(
-        "اختاري من الأزرار الموجودة أسفل الشاشة لنكمل معًا بإذن الله 🤍",
-        reply_markup=MAIN_KEYBOARD,
+        "تنبيه: رسالتك الآن لا تصل للدعم بشكل مباشر.\n"
+        "لو حاب ترسل رسالة للدعم:\n"
+        "1️⃣ اضغط على زر «تواصل مع الدعم ✉️»\n"
+        "2️⃣ أو اضغط على الرسالة التي وصلتك من البوت، ثم اختر Reply / الرد، واكتب رسالتك.",
+        reply_markup=main_kb,
     )
 
 # =================== تشغيل البوت ===================
