@@ -189,7 +189,23 @@ BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
+# لوحة الدعم للمستخدم
+SUPPORT_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("✍️ كتابة رسالة للدعم")],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
 
+# لوحة إلغاء الدعم
+SUPPORT_CANCEL_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_CANCEL)],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 
