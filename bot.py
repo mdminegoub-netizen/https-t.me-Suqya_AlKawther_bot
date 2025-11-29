@@ -24,6 +24,9 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
+# ضع هنا رقم حسابك في تيليجرام لاستقبال إشعارات دخول المستخدمين
+ADMIN_ID = 931350292  # غيّره إن لزم
+
 # ملف اللوج
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -44,7 +47,6 @@ def index():
 def run_flask():
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
-
 
 # =================== تخزين البيانات ===================
 
@@ -141,7 +143,6 @@ def update_user_record(user_id: int, **kwargs):
 def get_all_user_ids():
     return [int(uid) for uid in data.keys()]
 
-
 # =================== حالات الإدخال ===================
 
 WAITING_GENDER = set()
@@ -154,13 +155,13 @@ WAITING_QURAN_ADD_PAGES = set()
 WAITING_TASBIH = set()  # أثناء العدّ
 ACTIVE_TASBIH = {}      # user_id -> { "text": str, "target": int, "current": int }
 
-# مذكّرات قلبي
-WAITING_HEART_NEW = set()
-WAITING_HEART_EDIT_INDEX = set()
+# حالات مذكّرات القلب
+WAITING_HEART_MENU = set()
+WAITING_HEART_ADD = set()
+WAITING_HEART_EDIT_SELECT = set()
 WAITING_HEART_EDIT_TEXT = set()
-WAITING_HEART_DELETE_INDEX = set()
-HEART_EDIT_INDEX = {}   # user_id -> index
-
+WAITING_HEART_DELETE_SELECT = set()
+HEART_EDIT_INDEX = {}  # user_id -> index
 
 # =================== الأزرار ===================
 
@@ -300,7 +301,6 @@ HEART_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-
 # =================== دوال مساعدة عامة ===================
 
 
@@ -410,14 +410,10 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
     save_data()
 
 
-def format_heart_notes_list(notes):
+def _format_heart_notes_list(notes):
     if not notes:
-        return "لا توجد مذكّرات بعد. يمكنك البدء بإضافة أول مذكّرة لك 🤍."
-    lines = []
-    for i, n in enumerate(notes, start=1):
-        lines.append(f"{i}. {n}")
-    return "\n\n".join(lines)
-
+        return "لا توجد مذكّرات بعد.\nاكتبي أول ما يخطر بقلبك ولو جملة قصيرة 🤍."
+    return "\n\n".join(f"{idx + 1}. {txt}" for idx, txt in enumerate(notes))
 
 # =================== أذكار ثابتة (مختصرة) ===================
 
@@ -459,36 +455,51 @@ ADHKAR_GENERAL_TEXT = (
     "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
 )
 
-
 # =================== أوامر البوت ===================
 
 
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
+    # نتحقق إن كان المستخدم جديدًا قبل إنشاء السجل
+    is_new = str(user.id) not in data
     get_user_record(user)
 
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
         "أهلًا بك في بوت *سُقيا الكوثر*.\n"
-        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، وكتابة ما في قلبك.\n\n"
+        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، وكتابة مذكّرات قلبك.\n\n"
         "اختر من القائمة أسفل الشاشة ما يناسبك:",
         reply_markup=MAIN_KEYBOARD,
         parse_mode="Markdown",
     )
+
+    # إشعار الأدمن بدخول مستخدم جديد لأول مرة
+    if is_new and ADMIN_ID:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    "👤 مستخدم جديد دخل بوت سُقيا الكوثر\n\n"
+                    f"الاسم: {user.full_name}\n"
+                    f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
+                    f"ID: {user.id}"
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Error notifying admin about new user: {e}")
 
 
 def help_command(update: Update, context: CallbackContext):
     update.message.reply_text(
         "طريقة الاستخدام:\n\n"
         "• أذكاري 🤲 → أذكار الصباح والمساء وأذكار عامة.\n"
-        "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
+        "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرئينها يوميًا ومتابعة تقدمك.\n"
         "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
-        "• مذكّرات قلبي 📝 → كتابة مذكّراتك مع إمكانية التعديل والحذف.\n"
+        "• مذكّرات قلبي 📝 → كتابة مذكّراتك، مع إمكانية التعديل والحذف.\n"
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.",
         reply_markup=MAIN_KEYBOARD,
     )
-
 
 # =================== قسم منبّه الماء ===================
 
@@ -498,9 +509,9 @@ def open_water_menu(update: Update, context: CallbackContext):
     get_user_record(user)
     update.message.reply_text(
         "منبّه الماء 💧:\n"
-        "• سجّل ما تشربه من أكواب.\n"
-        "• شاهد مستواك اليوم.\n"
-        "• عدّل إعداداتك وتشغيل التذكير.",
+        "• سجّلي ما تشربين من أكواب.\n"
+        "• شاهدي مستواك اليوم.\n"
+        "• عدّلي إعداداتك وتشغيل التذكير.",
         reply_markup=WATER_MENU_KB,
     )
 
@@ -522,7 +533,7 @@ def handle_water_need_start(update: Update, context: CallbackContext):
     WAITING_WEIGHT.discard(user_id)
 
     update.message.reply_text(
-        "أولًا: اختر الجنس:",
+        "أولًا: اختاري الجنس:",
         reply_markup=GENDER_KB,
     )
 
@@ -542,7 +553,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
 
     if text not in [BTN_GENDER_MALE, BTN_GENDER_FEMALE]:
         update.message.reply_text(
-            "رجاءً اختر من الخيارات الظاهرة:",
+            "رجاءً اختاري من الخيارات الظاهرة:",
             reply_markup=GENDER_KB,
         )
         return
@@ -556,7 +567,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
     WAITING_AGE.add(user_id)
 
     update.message.reply_text(
-        "جميل.\nالآن أرسل عمرك (بالسنوات)، مثال: 25",
+        "جميل.\nالآن أرسلي عمرك (بالسنوات)، مثال: 25",
         reply_markup=CANCEL_KB,
     )
 
@@ -580,7 +591,7 @@ def handle_age_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عمرًا صحيحًا بالأرقام فقط، مثال: 20",
+            "رجاءً أرسلي عمرًا صحيحًا بالأرقام فقط، مثال: 20",
             reply_markup=CANCEL_KB,
         )
         return
@@ -593,7 +604,7 @@ def handle_age_input(update: Update, context: CallbackContext):
     WAITING_WEIGHT.add(user_id)
 
     update.message.reply_text(
-        "شكرًا.\nالآن أرسل وزنك بالكيلوغرام، مثال: 70",
+        "شكرًا.\nالآن أرسلي وزنك بالكيلوغرام، مثال: 70",
         reply_markup=CANCEL_KB,
     )
 
@@ -617,7 +628,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل وزنًا صحيحًا بالكيلوغرام، مثال: 65",
+            "رجاءً أرسلي وزنًا صحيحًا بالكيلوغرام، مثال: 65",
             reply_markup=CANCEL_KB,
         )
         return
@@ -644,7 +655,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
         "تم حساب احتياجك اليومي من الماء 💧\n\n"
         f"- تقريبًا: {record['water_liters']} لتر في اليوم.\n"
         f"- ما يعادل تقريبًا: {cups_goal} كوب (بمتوسط 250 مل للكوب).\n\n"
-        "وزّع أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.",
+        "وزّعي أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.",
         reply_markup=WATER_MENU_KB,
     )
 
@@ -655,8 +666,8 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "لم تقم بعد بحساب احتياجك من الماء.\n"
-            "اذهب إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
+            "لم تقومي بعد بحساب احتياجك من الماء.\n"
+            "اذهبي إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
             reply_markup=WATER_MENU_KB,
         )
         return
@@ -673,35 +684,37 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
 
 def handle_add_cups(update: Update, context: CallbackContext):
-    """إدخال عدد أكواب دفعة واحدة."""
+    """إدخال عدد أكواب دفعة واحدة (بشكل بسيط: قراءة الرقم من الرسالة مباشرة)."""
     user = update.effective_user
     record = get_user_record(user)
     text = (update.message.text or "").strip()
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل استخدام هذه الميزة، احسب احتياجك من الماء أولًا من خلال:\n"
+            "قبل استخدام هذه الميزة، احسبي احتياجك من الماء أولًا من خلال:\n"
             "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
             reply_markup=WATER_MENU_KB,
         )
         return
 
+    # أول ضغطة على الزر → شرح الطريقة
     if text == BTN_WATER_ADD_CUPS:
         update.message.reply_text(
-            "أرسل الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
+            "أرسلي الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
             "وسيتم إضافتها مباشرة إلى عدّاد اليوم.",
             reply_markup=CANCEL_KB,
         )
         return
 
+    # محاولة تفسير النص كعدد أكواب
     try:
         cups = int(text)
         if cups <= 0 or cups > 50:
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "لو كنت تريد إضافة عدد من الأكواب، أرسل رقمًا منطقيًا مثل: 2 أو 3.\n"
-            "أو استخدم بقية الأزرار للقائمة.",
+            "لو كنت تريدين إضافة عدد من الأكواب، أرسلي رقمًا منطقيًا مثل: 2 أو 3.\n"
+            "أو استخدمي بقية الأزرار للقائمة.",
             reply_markup=WATER_MENU_KB,
         )
         return
@@ -733,7 +746,7 @@ def handle_reminders_on(update: Update, context: CallbackContext):
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل تشغيل التذكير، احسب احتياجك من الماء من خلال:\n"
+            "قبل تشغيل التذكير، احسبي احتياجك من الماء من خلال:\n"
             "«حساب احتياج الماء 🧮».",
             reply_markup=WATER_SETTINGS_KB,
         )
@@ -761,7 +774,6 @@ def handle_reminders_off(update: Update, context: CallbackContext):
         reply_markup=WATER_SETTINGS_KB,
     )
 
-
 # =================== قسم ورد القرآن ===================
 
 
@@ -770,9 +782,9 @@ def open_quran_menu(update: Update, context: CallbackContext):
     get_user_record(user)
     update.message.reply_text(
         "وردي القرآني 📖:\n"
-        "• عيّن عدد صفحات اليوم.\n"
-        "• سجّل ما قرأته.\n"
-        "• شاهد مستوى إنجازك.\n"
+        "• عيّني عدد صفحات اليوم.\n"
+        "• سجّلي ما قرأتِ.\n"
+        "• شاهدي مستوى إنجازك.\n"
         "• يمكنك إعادة تعيين ورد اليوم.",
         reply_markup=QURAN_MENU_KB,
     )
@@ -785,7 +797,7 @@ def handle_quran_set_goal(update: Update, context: CallbackContext):
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
     update.message.reply_text(
-        "أرسل عدد الصفحات التي تريد قراءتها اليوم من القرآن، مثال: 5 أو 10.",
+        "أرسلي عدد الصفحات التي تريدين قراءتها اليوم من القرآن، مثال: 5 أو 10.",
         reply_markup=CANCEL_KB,
     )
 
@@ -809,7 +821,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
+            "رجاءً أرسلي عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
             reply_markup=CANCEL_KB,
         )
         return
@@ -823,7 +835,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         f"تم تعيين ورد اليوم: {pages} صفحة.\n"
-        "يمكنك تسجيل ما قرأته من خلال «سجلت صفحات اليوم ✅».",
+        "يمكنك تسجيل ما قرأتِ من خلال «سجلت صفحات اليوم ✅».",
         reply_markup=QURAN_MENU_KB,
     )
 
@@ -834,15 +846,15 @@ def handle_quran_add_pages_start(update: Update, context: CallbackContext):
 
     if not record.get("quran_pages_goal"):
         update.message.reply_text(
-            "لم تضبط بعد ورد اليوم.\n"
-            "استخدم «تعيين ورد اليوم 📌» أولًا.",
+            "لم تضبطي بعد ورد اليوم.\n"
+            "استخدمي «تعيين ورد اليوم 📌» أولًا.",
             reply_markup=QURAN_MENU_KB,
         )
         return
 
     WAITING_QURAN_ADD_PAGES.add(user.id)
     update.message.reply_text(
-        "أرسل الآن عدد الصفحات التي قرأتها من ورد اليوم، مثال: 2 أو 3.",
+        "أرسلي الآن عدد الصفحات التي قرأتِها من ورد اليوم، مثال: 2 أو 3.",
         reply_markup=CANCEL_KB,
     )
 
@@ -866,7 +878,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
+            "رجاءً أرسلي عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
             reply_markup=CANCEL_KB,
         )
         return
@@ -910,7 +922,6 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
         reply_markup=QURAN_MENU_KB,
     )
 
-
 # =================== قسم الأذكار ===================
 
 
@@ -952,7 +963,6 @@ def send_general_adhkar(update: Update, context: CallbackContext):
         reply_markup=ADHKAR_MENU_KB,
     )
 
-
 # =================== قسم السبحة ===================
 
 
@@ -961,7 +971,7 @@ def open_tasbih_menu(update: Update, context: CallbackContext):
     ACTIVE_TASBIH.pop(user.id, None)
     WAITING_TASBIH.discard(user.id)
 
-    text = "اختر الذكر الذي تريد التسبيح به، وسيقوم البوت بالعدّ لك:"
+    text = "اختر الذكر الذي تريدين التسبيح به، وسيقوم البوت بالعدّ لك:"
     update.message.reply_text(
         text,
         reply_markup=TASBIH_MENU_KB,
@@ -972,6 +982,7 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
     user = update.effective_user
     user_id = user.id
 
+    # choice_text شكلها: "سبحان الله (33)"
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if choice_text == label:
@@ -985,13 +996,14 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
                 f"بدأنا التسبيح:\n"
                 f"الذكر: {dhikr}\n"
                 f"العدد المطلوب: {count} مرة.\n\n"
-                "اضغط «تسبيحة ✅» في كل مرة تذكر فيها، أو «إنهاء الذكر ⬅️» عندما تنتهي.",
+                "اضغطي «تسبيحة ✅» في كل مرة تذكرين فيها، أو «إنهاء الذكر ⬅️» عندما تنتهين.",
                 reply_markup=TASBIH_RUN_KB,
             )
             return
 
+    # لو ما كان مطابقًا لأي اختيار
     update.message.reply_text(
-        "رجاءً اختر من الأذكار الظاهرة في القائمة.",
+        "رجاءً اختاري من الأذكار الظاهرة في القائمة.",
         reply_markup=TASBIH_MENU_KB,
     )
 
@@ -1003,7 +1015,7 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
     state = ACTIVE_TASBIH.get(user_id)
     if not state:
         update.message.reply_text(
-            "ابدأ أولًا باختيار ذكر من قائمة «السبحة 📿».",
+            "ابدئي أولًا باختيار ذكر من قائمة «السبحة 📿».",
             reply_markup=TASBIH_MENU_KB,
         )
         return
@@ -1024,7 +1036,7 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
     else:
         update.message.reply_text(
             f"اكتمل التسبيح على: {dhikr}\n"
-            f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.",
+            f"وصلتِ إلى {target} تسبيحة. تقبّل الله منك 🤍.",
             reply_markup=MAIN_KEYBOARD,
         )
         ACTIVE_TASBIH.pop(user_id, None)
@@ -1042,106 +1054,122 @@ def handle_tasbih_end(update: Update, context: CallbackContext):
         reply_markup=TASBIH_MENU_KB,
     )
 
-
 # =================== قسم مذكّرات قلبي ===================
 
 
 def open_heart_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    user_id = user.id
     record = get_user_record(user)
     notes = record.get("heart_notes", [])
-    notes_text = format_heart_notes_list(notes)
+
+    WAITING_HEART_MENU.add(user_id)
+    WAITING_HEART_ADD.discard(user_id)
+    WAITING_HEART_EDIT_SELECT.discard(user_id)
+    WAITING_HEART_EDIT_TEXT.discard(user_id)
+    WAITING_HEART_DELETE_SELECT.discard(user_id)
+    HEART_EDIT_INDEX.pop(user_id, None)
+
+    text = "مذكّرات قلبي 📝:\n\n"
+    text += _format_heart_notes_list(notes)
+    text += "\n\nاختاري ما تريدين فعله من الأزرار في الأسفل:"
 
     update.message.reply_text(
-        "مذكّرات قلبي 📝:\n"
-        "اكتب ما تشاء من خواطر وقناعات ودعوات بينك وبين ربك.\n\n"
-        f"{notes_text}\n\n"
-        "اختر ما تريد فعله من الأزرار:",
+        text,
         reply_markup=HEART_MENU_KB,
     )
 
 
-def handle_heart_add_start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    WAITING_HEART_NEW.add(user_id)
-    WAITING_HEART_EDIT_INDEX.discard(user_id)
-    WAITING_HEART_EDIT_TEXT.discard(user_id)
-    WAITING_HEART_DELETE_INDEX.discard(user_id)
-    HEART_EDIT_INDEX.pop(user_id, None)
+def handle_heart_menu(update: Update, context: CallbackContext):
+    """يُستدعى عندما نكون داخل قائمة مذكّرات القلب."""
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    notes = record.get("heart_notes", [])
+    text = (update.message.text or "").strip()
 
-    update.message.reply_text(
-        "أرسل الآن نص المذكّرة التي تريد حفظها.\n"
-        "يمكن أن تكون شعورًا، دعاءً، أو فكرة خطرت على قلبك.",
-        reply_markup=CANCEL_KB,
-    )
+    if text == BTN_HEART_ADD:
+        WAITING_HEART_MENU.discard(user_id)
+        WAITING_HEART_ADD.add(user_id)
+        update.message.reply_text(
+            "اكتبي الآن المذكرة التي تريدين حفظها في قلبك.\n"
+            "اكتبيها بهدوء… لا أحد يطّلع عليها غيرك.\n\n"
+            "للإلغاء اضغطي «إلغاء ❌».",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    if text == BTN_HEART_EDIT:
+        if not notes:
+            update.message.reply_text(
+                "لا توجد مذكّرات لتعديلها حاليًا.",
+                reply_markup=HEART_MENU_KB,
+            )
+            return
+
+        WAITING_HEART_MENU.discard(user_id)
+        WAITING_HEART_EDIT_SELECT.add(user_id)
+        update.message.reply_text(
+            "أرسلي رقم المذكرة التي تريدين تعديلها، كما هو ظاهر في القائمة.\n"
+            "مثال: 1 أو 2 أو 3.",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    if text == BTN_HEART_DELETE:
+        if not notes:
+            update.message.reply_text(
+                "لا توجد مذكّرات لحذفها حاليًا.",
+                reply_markup=HEART_MENU_KB,
+            )
+            return
+
+        WAITING_HEART_MENU.discard(user_id)
+        WAITING_HEART_DELETE_SELECT.add(user_id)
+        update.message.reply_text(
+            "أرسلي رقم المذكرة التي تريدين حذفها، كما هو ظاهر في القائمة.\n"
+            "مثال: 1 أو 2 أو 3.",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    # أي شيء آخر داخل قائمة المذكرات → إعادة عرض القائمة
+    open_heart_menu(update, context)
 
 
-def handle_heart_new_input(update: Update, context: CallbackContext):
+def handle_heart_add_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
-        WAITING_HEART_NEW.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. رجعناك إلى مذكّرات قلبك.",
-            reply_markup=HEART_MENU_KB,
-        )
+        WAITING_HEART_ADD.discard(user_id)
+        open_heart_menu(update, context)
         return
 
     record = get_user_record(user)
     notes = record.get("heart_notes", [])
     notes.append(text)
-    record["heart_notes"] = notes
-    save_data()
+    update_user_record(user_id, heart_notes=notes)
 
-    WAITING_HEART_NEW.discard(user_id)
+    WAITING_HEART_ADD.discard(user_id)
 
     update.message.reply_text(
-        "تم حفظ مذكّرتك في قلب البوت 🤍.\n"
-        "يمكنك إضافة مذكّرات أخرى أو تعديل الموجود.",
+        "تم حفظ مذكّرتك في قلب سُقيا الكوثر 🤍.",
         reply_markup=HEART_MENU_KB,
     )
+    # إعادة عرض القائمة مع التحديث
+    open_heart_menu(update, context)
 
 
-def handle_heart_edit_start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-
-    if not notes:
-        update.message.reply_text(
-            "لا توجد مذكّرات لتعديلها حاليًا.",
-            reply_markup=HEART_MENU_KB,
-        )
-        return
-
-    notes_text = format_heart_notes_list(notes)
-    WAITING_HEART_EDIT_INDEX.add(user_id)
-    WAITING_HEART_NEW.discard(user_id)
-    WAITING_HEART_EDIT_TEXT.discard(user_id)
-    WAITING_HEART_DELETE_INDEX.discard(user_id)
-    HEART_EDIT_INDEX.pop(user_id, None)
-
-    update.message.reply_text(
-        f"هذه مذكّراتك الحالية:\n\n{notes_text}\n\n"
-        "أرسل رقم المذكّرة التي تريد تعديلها.",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_heart_edit_index_input(update: Update, context: CallbackContext):
+def handle_heart_edit_select(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
-        WAITING_HEART_EDIT_INDEX.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. رجعناك إلى مذكّرات قلبك.",
-            reply_markup=HEART_MENU_KB,
-        )
+        WAITING_HEART_EDIT_SELECT.discard(user_id)
+        open_heart_menu(update, context)
         return
 
     record = get_user_record(user)
@@ -1153,22 +1181,23 @@ def handle_heart_edit_index_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل رقمًا صحيحًا من القائمة.",
+            "رجاءً أرسلي رقمًا صحيحًا من المذكرات الظاهرة.\n"
+            "مثال: 1 أو 2 أو 3.",
             reply_markup=CANCEL_KB,
         )
         return
 
     HEART_EDIT_INDEX[user_id] = idx
-    WAITING_HEART_EDIT_INDEX.discard(user_id)
+    WAITING_HEART_EDIT_SELECT.discard(user_id)
     WAITING_HEART_EDIT_TEXT.add(user_id)
 
     update.message.reply_text(
-        f"أرسل الآن النص الجديد للمذكّرة رقم {idx + 1}.",
+        f"أرسلي الآن النص الجديد للمذكرة رقم {idx + 1}:",
         reply_markup=CANCEL_KB,
     )
 
 
-def handle_heart_edit_text_input(update: Update, context: CallbackContext):
+def handle_heart_edit_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
@@ -1176,10 +1205,7 @@ def handle_heart_edit_text_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_HEART_EDIT_TEXT.discard(user_id)
         HEART_EDIT_INDEX.pop(user_id, None)
-        update.message.reply_text(
-            "تم الإلغاء. رجعناك إلى مذكّرات قلبك.",
-            reply_markup=HEART_MENU_KB,
-        )
+        open_heart_menu(update, context)
         return
 
     record = get_user_record(user)
@@ -1187,65 +1213,33 @@ def handle_heart_edit_text_input(update: Update, context: CallbackContext):
     idx = HEART_EDIT_INDEX.get(user_id)
 
     if idx is None or idx < 0 or idx >= len(notes):
+        # خطأ بسيط، نرجع للقائمة
         WAITING_HEART_EDIT_TEXT.discard(user_id)
         HEART_EDIT_INDEX.pop(user_id, None)
-        update.message.reply_text(
-            "حدث خطأ بسيط في رقم المذكّرة، حاول من جديد من «مذكّرات قلبي 📝».",
-            reply_markup=HEART_MENU_KB,
-        )
+        open_heart_menu(update, context)
         return
 
     notes[idx] = text
-    record["heart_notes"] = notes
-    save_data()
+    update_user_record(user_id, heart_notes=notes)
 
     WAITING_HEART_EDIT_TEXT.discard(user_id)
     HEART_EDIT_INDEX.pop(user_id, None)
 
     update.message.reply_text(
-        "تم تعديل المذكّرة بنجاح.",
+        "تم تعديل المذكرة بنجاح 🤍.",
         reply_markup=HEART_MENU_KB,
     )
+    open_heart_menu(update, context)
 
 
-def handle_heart_delete_start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    notes = record.get("heart_notes", [])
-
-    if not notes:
-        update.message.reply_text(
-            "لا توجد مذكّرات لحذفها حاليًا.",
-            reply_markup=HEART_MENU_KB,
-        )
-        return
-
-    notes_text = format_heart_notes_list(notes)
-    WAITING_HEART_DELETE_INDEX.add(user_id)
-    WAITING_HEART_NEW.discard(user_id)
-    WAITING_HEART_EDIT_INDEX.discard(user_id)
-    WAITING_HEART_EDIT_TEXT.discard(user_id)
-    HEART_EDIT_INDEX.pop(user_id, None)
-
-    update.message.reply_text(
-        f"هذه مذكّراتك الحالية:\n\n{notes_text}\n\n"
-        "أرسل رقم المذكّرة التي تريد حذفها.",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_heart_delete_index_input(update: Update, context: CallbackContext):
+def handle_heart_delete_select(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
-        WAITING_HEART_DELETE_INDEX.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. رجعناك إلى مذكّرات قلبك.",
-            reply_markup=HEART_MENU_KB,
-        )
+        WAITING_HEART_DELETE_SELECT.discard(user_id)
+        open_heart_menu(update, context)
         return
 
     record = get_user_record(user)
@@ -1257,22 +1251,21 @@ def handle_heart_delete_index_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل رقمًا صحيحًا من القائمة.",
+            "رجاءً أرسلي رقمًا صحيحًا من المذكرات الظاهرة.\n"
+            "مثال: 1 أو 2 أو 3.",
             reply_markup=CANCEL_KB,
         )
         return
 
     deleted = notes.pop(idx)
-    record["heart_notes"] = notes
-    save_data()
-
-    WAITING_HEART_DELETE_INDEX.discard(user_id)
+    update_user_record(user_id, heart_notes=notes)
+    WAITING_HEART_DELETE_SELECT.discard(user_id)
 
     update.message.reply_text(
-        f"تم حذف المذكّرة التالية:\n\n{deleted}",
+        f"تم حذف المذكرة:\n\n{deleted}",
         reply_markup=HEART_MENU_KB,
     )
-
+    open_heart_menu(update, context)
 
 # =================== احصائياتي ===================
 
@@ -1296,25 +1289,31 @@ def handle_stats(update: Update, context: CallbackContext):
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
+    # الماء
     if cups_goal:
         text_lines.append(f"- الماء: {today_cups} / {cups_goal} كوب.")
     else:
         text_lines.append("- الماء: لم يتم حساب احتياجك بعد.")
 
+    # القرآن
     if q_goal:
         text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
     else:
-        text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
+        text_lines.append("- ورد القرآن: لم تضبطي وردًا لليوم بعد.")
 
-    text_lines.append(f"- عدد المرات التي استعنت فيها بالأذكار عبر البوت: {adhkar_count} مرة.")
+    # الأذكار
+    text_lines.append(f"- عدد المرات التي استعنتِ فيها بالأذكار عبر البوت: {adhkar_count} مرة.")
+
+    # التسبيح
     text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
+
+    # المذكرات
     text_lines.append(f"- عدد مذكّرات قلبك المحفوظة: {len(heart_notes)} مذكّرة.")
 
     update.message.reply_text(
         "\n".join(text_lines),
         reply_markup=MAIN_KEYBOARD,
     )
-
 
 # =================== تذكيرات الماء (JobQueue) ===================
 
@@ -1343,14 +1342,13 @@ def water_reminder_job(context: CallbackContext):
                 chat_id=uid,
                 text=(
                     "تذكير لطيف بشرب الماء 💧:\n\n"
-                    f"شربت حتى الآن: {today_cups} من {cups_goal} كوب.\n"
+                    f"شربتِ حتى الآن: {today_cups} من {cups_goal} كوب.\n"
                     f"المتبقي لهذا اليوم تقريبًا: {remaining} كوب.\n\n"
-                    "لو استطعت الآن، خذ كوب ماء وسجّله في البوت."
+                    "لو استطعتِ الآن، خذي كوب ماء وسجّليه في البوت."
                 ),
             )
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
-
 
 # =================== هاندلر الرسائل ===================
 
@@ -1361,7 +1359,7 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
-    get_user_record(user)  # للتأكد من وجوده
+    get_user_record(user)  # التأكد من وجود السجل دائمًا
 
     # زر الإلغاء العام
     if text == BTN_CANCEL:
@@ -1372,10 +1370,12 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         WAITING_TASBIH.discard(user_id)
         ACTIVE_TASBIH.pop(user_id, None)
-        WAITING_HEART_NEW.discard(user_id)
-        WAITING_HEART_EDIT_INDEX.discard(user_id)
+
+        WAITING_HEART_MENU.discard(user_id)
+        WAITING_HEART_ADD.discard(user_id)
+        WAITING_HEART_EDIT_SELECT.discard(user_id)
         WAITING_HEART_EDIT_TEXT.discard(user_id)
-        WAITING_HEART_DELETE_INDEX.discard(user_id)
+        WAITING_HEART_DELETE_SELECT.discard(user_id)
         HEART_EDIT_INDEX.pop(user_id, None)
 
         msg.reply_text(
@@ -1415,24 +1415,29 @@ def handle_text(update: Update, context: CallbackContext):
             handle_tasbih_end(update, context)
             return
         else:
+            # أي نص آخر أثناء التسبيح نعتبره تسبيحة
             handle_tasbih_tick(update, context)
             return
 
-    # حالات مذكّرات قلبي
-    if user_id in WAITING_HEART_NEW:
-        handle_heart_new_input(update, context)
+    # حالات مذكّرات القلب
+    if user_id in WAITING_HEART_ADD:
+        handle_heart_add_text(update, context)
         return
 
-    if user_id in WAITING_HEART_EDIT_INDEX:
-        handle_heart_edit_index_input(update, context)
+    if user_id in WAITING_HEART_EDIT_SELECT:
+        handle_heart_edit_select(update, context)
         return
 
     if user_id in WAITING_HEART_EDIT_TEXT:
-        handle_heart_edit_text_input(update, context)
+        handle_heart_edit_text(update, context)
         return
 
-    if user_id in WAITING_HEART_DELETE_INDEX:
-        handle_heart_delete_index_input(update, context)
+    if user_id in WAITING_HEART_DELETE_SELECT:
+        handle_heart_delete_select(update, context)
+        return
+
+    if user_id in WAITING_HEART_MENU:
+        handle_heart_menu(update, context)
         return
 
     # الأزرار الرئيسية
@@ -1444,20 +1449,20 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
-    if text == BTN_TASBIH_MAIN:
-        open_tasbih_menu(update, context)
-        return
-
-    if text == BTN_HEART_MAIN:
-        open_heart_menu(update, context)
-        return
-
     if text == BTN_WATER_MAIN:
         open_water_menu(update, context)
         return
 
     if text == BTN_STATS:
         handle_stats(update, context)
+        return
+
+    if text == BTN_TASBIH_MAIN:
+        open_tasbih_menu(update, context)
+        return
+
+    if text == BTN_HEART_MAIN:
+        open_heart_menu(update, context)
         return
 
     if text == BTN_BACK_MAIN:
@@ -1480,7 +1485,7 @@ def handle_text(update: Update, context: CallbackContext):
         send_general_adhkar(update, context)
         return
 
-    # منبّه الماء
+    # منبّه الماء: القائمة
     if text == BTN_WATER_LOG:
         handle_log_cup(update, context)
         return
@@ -1505,11 +1510,16 @@ def handle_text(update: Update, context: CallbackContext):
         handle_reminders_off(update, context)
         return
 
-    if text == BTN_WATER_ADD_CUPS or text.isdigit():
+    if text == BTN_WATER_ADD_CUPS:
         handle_add_cups(update, context)
         return
 
-    # ورد القرآن
+    # لو كتب رقم بشكل منفصل (وقد يكون يقصد الأكواب)
+    if text.isdigit():
+        handle_add_cups(update, context)
+        return
+
+    # ورد القرآن: الأزرار
     if text == BTN_QURAN_SET_GOAL:
         handle_quran_set_goal(update, context)
         return
@@ -1526,32 +1536,18 @@ def handle_text(update: Update, context: CallbackContext):
         handle_quran_reset_day(update, context)
         return
 
-    # السبحة: اختيار ذكر
+    # السبحة: اختيار الذكر
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if text == label:
             start_tasbih_for_choice(update, context, text)
             return
 
-    # مذكّرات قلبي: أزرار القائمة
-    if text == BTN_HEART_ADD:
-        handle_heart_add_start(update, context)
-        return
-
-    if text == BTN_HEART_EDIT:
-        handle_heart_edit_start(update, context)
-        return
-
-    if text == BTN_HEART_DELETE:
-        handle_heart_delete_start(update, context)
-        return
-
     # أي نص آخر
     msg.reply_text(
-        "اختر من الأزرار الموجودة أسفل الشاشة لنكمل معًا بإذن الله 🤍",
+        "اختاري من الأزرار الموجودة أسفل الشاشة لنكمل معًا بإذن الله 🤍",
         reply_markup=MAIN_KEYBOARD,
     )
-
 
 # =================== تشغيل البوت ===================
 
@@ -1564,11 +1560,14 @@ def main():
     dp = updater.dispatcher
     job_queue = updater.job_queue
 
+    # أوامر
     dp.add_handler(CommandHandler("start", start_command))
     dp.add_handler(CommandHandler("help", help_command))
 
+    # جميع الرسائل النصية
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
+    # جدولة التذكيرات اليومية للماء
     for h in REMINDER_HOURS_UTC:
         job_queue.run_daily(
             water_reminder_job,
@@ -1576,6 +1575,7 @@ def main():
             name=f"water_reminder_{h}",
         )
 
+    # تشغيل Flask في ثريد منفصل (لـ Render)
     Thread(target=run_flask, daemon=True).start()
 
     logger.info("Suqya Al-Kawther bot is starting...")
