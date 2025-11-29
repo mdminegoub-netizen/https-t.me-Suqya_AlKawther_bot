@@ -25,18 +25,17 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
-# 👇 أضف هذا الجزء هنا 👇
+# ضع هنا معرف الأدمن (تم اعتماده من قبلك)
+ADMIN_ID = 931350292  # المشرف (الرجال)
+# مشرفة النساء (التي أعطيتني ID الخاص بها)
+FEMALE_ADMIN_ID = 8395818573
 
-# مشرف الرجال (أنت)
-ADMIN_ID = 931350292   # ضع معرفك الصحيح هنا
-
-# مشرفة النساء
-FEMALE_ADMIN_ID = 8395818573  # ضع معرف المشرفة هنا
-
-# حالات نظام الدعم
-WAITING_SUPPORT = set()
-WAITING_BROADCAST = set()
-SUPPORT_LAST_USER = {}
+# ملف اللوج
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 # =================== خادم ويب بسيط لـ Render ===================
 
@@ -51,6 +50,7 @@ def index():
 def run_flask():
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
+
 
 # =================== تخزين البيانات ===================
 
@@ -154,6 +154,15 @@ def get_all_user_ids():
 def is_admin(user_id: int) -> bool:
     return ADMIN_ID is not None and user_id == ADMIN_ID
 
+
+def is_female_admin(user_id: int) -> bool:
+    return FEMALE_ADMIN_ID is not None and user_id == FEMALE_ADMIN_ID
+
+
+def is_support_staff(user_id: int) -> bool:
+    return is_admin(user_id) or is_female_admin(user_id)
+
+
 # =================== حالات الإدخال ===================
 
 WAITING_GENDER = set()
@@ -189,23 +198,7 @@ BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
-# لوحة الدعم للمستخدم
-SUPPORT_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("✍️ كتابة رسالة للدعم")],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
 
-# لوحة إلغاء الدعم
-SUPPORT_CANCEL_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_CANCEL)],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 
@@ -378,13 +371,15 @@ TASBIH_ITEMS = [
     ("اللهم صل وسلم على سيدنا محمد", 50),
 ]
 
-def build_tasbih_menu(is_admin: bool):
+
+def build_tasbih_menu(is_admin_flag: bool):
     rows = [[KeyboardButton(f"{text} ({count})")] for text, count in TASBIH_ITEMS]
     last_row = [KeyboardButton(BTN_BACK_MAIN)]
-    if is_admin:
+    if is_admin_flag:
         last_row.append(KeyboardButton(BTN_ADMIN_PANEL))
     rows.append(last_row)
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
 
 # ---- مذكّرات قلبي ----
 BTN_MEMO_ADD = "➕ إضافة مذكرة"
@@ -392,15 +387,17 @@ BTN_MEMO_EDIT = "✏️ تعديل مذكرة"
 BTN_MEMO_DELETE = "🗑 حذف مذكرة"
 BTN_MEMO_BACK = "رجوع ⬅️"
 
-def build_memos_menu_kb(is_admin: bool):
+
+def build_memos_menu_kb(is_admin_flag: bool):
     rows = [
         [KeyboardButton(BTN_MEMO_ADD)],
         [KeyboardButton(BTN_MEMO_EDIT), KeyboardButton(BTN_MEMO_DELETE)],
         [KeyboardButton(BTN_MEMO_BACK)],
     ]
-    if is_admin:
+    if is_admin_flag:
         rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
 
 # ---- لوحة التحكم ----
 ADMIN_PANEL_KB = ReplyKeyboardMarkup(
@@ -1261,9 +1258,7 @@ def handle_memo_add_input(update: Update, context: CallbackContext):
         "تم حفظ مذكّرتك في قلب البوت 🤍.",
         reply_markup=build_memos_menu_kb(is_admin(user_id)),
     )
-    # إعادة عرض القائمة
-    dummy_update = update
-    open_memos_menu(dummy_update, context)
+    open_memos_menu(update, context)
 
 
 def handle_memo_edit_select(update: Update, context: CallbackContext):
@@ -1443,25 +1438,18 @@ def handle_stats(update: Update, context: CallbackContext):
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
-    # الماء
     if cups_goal:
         text_lines.append(f"- الماء: {today_cups} / {cups_goal} كوب.")
     else:
         text_lines.append("- الماء: لم يتم حساب احتياجك بعد.")
 
-    # القرآن
     if q_goal:
         text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
     else:
         text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
 
-    # الأذكار
     text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
-
-    # التسبيح
     text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
-
-    # المذكرات
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
 
     update.message.reply_text(
@@ -1568,7 +1556,7 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
     if not lines:
         text = "لا يوجد مستخدمون مسجّلون بعد."
     else:
-        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])  # حد معقول
+        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])
 
     update.message.reply_text(
         text,
@@ -1629,211 +1617,136 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
 
 
 def forward_support_to_admin(user, text: str, context: CallbackContext):
-    """إرسال رسالة الدعم إلى الأدمن مع بيانات المستخدم."""
-    if ADMIN_ID is None:
-        return
-    try:
-        context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=(
-                "📩 رسالة جديدة للدعم:\n\n"
-                f"الاسم: {user.full_name}\n"
-                f"المعرف: @{user.username if user.username else 'لا يوجد'}\n"
-                f"ID: `{user.id}`\n\n"
-                f"محتوى الرسالة:\n{text}"
-            ),
-            parse_mode="Markdown",
-        )
-    except Exception as e:
-        logger.error(f"Error sending support message to admin: {e}")
+    """
+    إرسال رسالة الدعم إلى الأدمن، وإذا كانت المستخدمـة أنثى
+    تُرسل أيضًا للمشرفة.
+    """
+    record = get_user_record(user)
+    gender = record.get("gender")
+    username = user.username if user.username else "لا يوجد"
+    base_message = (
+        "📩 رسالة جديدة للدعم:\n\n"
+        f"الاسم: {user.full_name}\n"
+        f"المعرف: @{username}\n"
+        f"ID: `{user.id}`\n\n"
+        f"محتوى الرسالة:\n{text}"
+    )
+
+    # إلى الأدمن (دائمًا)
+    if ADMIN_ID is not None:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=base_message,
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"Error sending support message to admin: {e}")
+
+    # إلى المشرفة إذا كانت أنثى
+    if (
+        gender == "female"
+        and FEMALE_ADMIN_ID is not None
+        and FEMALE_ADMIN_ID != ADMIN_ID
+    ):
+        try:
+            context.bot.send_message(
+                chat_id=FEMALE_ADMIN_ID,
+                text=base_message,
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"Error sending support message to female admin: {e}")
 
 
 def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
     """
-    إذا كان الأدمن يرد على رسالة دعم / رد من المستخدم، نلتقط ID ونرسل الرد للمستخدم.
-    ترجع True إذا تم التعامل مع الرسالة كـ رد أدمن.
+    إذا كان الأدمن أو المشرفة يردّان على رسالة دعم (فيها ID)،
+    نلتقط ID ونرسل الرد للمستخدم.
     """
     user = update.effective_user
     msg = update.message
     text = (msg.text or "").strip()
 
-    if not is_admin(user.id):
+    if not is_support_staff(user.id):
         return False
 
     if not msg.reply_to_message:
         return False
 
     original = msg.reply_to_message.text or ""
-    m = re.search(r"ID:\s*`(\d+)`", original)
+    m = re.search(r"ID:\s*`?(\d+)`?", original)
     if not m:
         return False
 
     target_id = int(m.group(1))
+
+    # إرسال الرد للمستخدم
     try:
         context.bot.send_message(
             chat_id=target_id,
             text=f"💌 رد من الدعم:\n\n{text}",
         )
-        msg.reply_text(
-            "تم إرسال ردّك للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
-        )
     except Exception as e:
-        logger.error(f"Error sending admin reply to {target_id}: {e}")
+        logger.error(f"Error sending staff reply to {target_id}: {e}")
+        reply_kb = ADMIN_PANEL_KB if is_admin(user.id) else user_main_keyboard(user.id)
         msg.reply_text(
             "حدث خطأ أثناء إرسال الرد للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
+            reply_markup=reply_kb,
         )
+        return True
+
+    # لو الرد من المشرفة → أرسل نسخة للأدمن
+    if is_female_admin(user.id) and ADMIN_ID is not None and ADMIN_ID != target_id:
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=(
+                    "📥 *نسخة من ردّ المشرفة على إحدى الأخوات:*\n\n"
+                    f"ID المستخدمة: `{target_id}`\n"
+                    f"نص الرد:\n{text}"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception as e:
+            logger.error(f"Error sending copy of female admin reply to admin: {e}")
+
+    reply_kb = ADMIN_PANEL_KB if is_admin(user.id) else user_main_keyboard(user.id)
+    msg.reply_text("تم إرسال ردّك للمستخدم.", reply_markup=reply_kb)
     return True
 
 # =================== هاندلر الرسائل ===================
 
-# =================== نظام الدعم (جديد) ===================
 
-def support_start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    WAITING_SUPPORT.add(user_id)
-
-    update.message.reply_text(
-        "✍️ أكتب رسالتك الآن وسيتم إرسالها للدعم.\n"
-        "إذا رغبت بالإلغاء اضغط إلغاء ❌",
-        reply_markup=SUPPORT_CANCEL_KB,
-    )
-
-
-def process_support_message(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = update.message.text
-
-    WAITING_SUPPORT.discard(user_id)
-
-    gender = get_user_record(user).get("gender")
-
-    # إرسال للمدير (الرجال)
-    context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=f"📩 رسالة دعم:\n\n"
-             f"👤 المستخدم: {user.first_name}\n"
-             f"🆔 ID: {user_id}\n"
-             f"📨 الرسالة:\n{text}",
-    )
-
-    info = "📨 تم إرسال رسالتك للدعم بنجاح ✔️"
-
-    # إرسال للمشرفة في حالة النساء فقط
-    if gender == "female":
-        try:
-            context.bot.send_message(
-                chat_id=FEMALE_ADMIN_ID,
-                text=f"📩 رسالة دعم (أنثى):\n\n"
-                     f"👤 المستخدم: {user.first_name}\n"
-                     f"🆔 ID: {user_id}\n"
-                     f"📨 الرسالة:\n{text}",
-            )
-            info = "📨 وصلت رسالتك للمشرفة، ستتواصل معك قريبًا 🤍"
-        except:
-            pass
-
-    update.message.reply_text(
-        info,
-        reply_markup=user_main_keyboard(user_id),
-    )
 def handle_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     msg = update.message
     text = (msg.text or "").strip()
-# ================= نظام الدعم =================
-if user_id in WAITING_SUPPORT:
-    return process_support_message(update, context)
+
     record = get_user_record(user)
     main_kb = user_main_keyboard(user_id)
-    # 1️⃣ رد الأدمن على رسالة فيها ID → يرسل الرد للمستخدم
-    if is_admin(user_id) and msg.reply_to_message:
-        original = msg.reply_to_message.text or ""
-        m = re.search(r"ID:\s*`?(\d+)`?", original)
-        if m:
-            target_id = int(m.group(1))
-            try:
-                context.bot.send_message(
-                    chat_id=target_id,
-                    text=f"💌 رد من الدعم:\n\n{text}",
-                )
-                msg.reply_text("✅ تم إرسال ردّك للمستخدم.", reply_markup=main_kb)
-            except Exception as e:
-                logger.error(f"Error sending admin reply to {target_id}: {e}")
-                msg.reply_text("⚠️ حدث خطأ أثناء إرسال الرد.", reply_markup=main_kb)
-            return
-                # 2️⃣ رد المستخدم على رسالة دعم → تُرسل مباشرة للأدمن
+
+    # ===== رد المستخدم على رسالة من البوت (بـ Reply) =====
     if (
-        not is_admin(user_id)
+        not is_support_staff(user_id)
         and msg.reply_to_message
         and msg.reply_to_message.from_user.id == context.bot.id
     ):
         original = msg.reply_to_message.text or ""
-
         if (
             original.startswith("💌 رد من الدعم")
             or original.startswith("📢 رسالة من الدعم")
             or "رسالتك وصلت للدعم" in original
+            or "رسالتك وصلت إلى المشرفة" in original
         ):
-            support_msg = (
-                "📩 *رسالة جديدة من المستخدم (رد على دعم):*\n\n"
-                f"👤 الاسم: {user.full_name}\n"
-                f"🆔 ID: `{user_id}`\n"
-                f"🔹 اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n\n"
-                f"✉️ محتوى الرسالة:\n{text}"
-            )
-            try:
-                context.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=support_msg,
-                    parse_mode="Markdown",
-                )
-            except Exception as e:
-                logger.error(f"Error sending user reply to admin: {e}")
-
+            forward_support_to_admin(user, text, context)
             msg.reply_text(
                 "📨 رسالتك وصلت للدعم بنجاح 🤍",
                 reply_markup=main_kb,
             )
             return
-    # 2️⃣ رد المستخدم على رسالة دعم → تُرسل مباشرة للأدمن
-    if (
-        not is_admin(user_id)
-        and msg.reply_to_message
-        and msg.reply_to_message.from_user.id == context.bot.id
-    ):
-        original = msg.reply_to_message.text or ""
 
-        if (
-            original.startswith("💌 رد من الدعم")
-            or original.startswith("📢 رسالة من الدعم")
-            or "رسالتك وصلت للدعم" in original
-        ):
-            support_msg = (
-                "📩 *رسالة جديدة من المستخدم (رد على دعم):*\n\n"
-                f"👤 الاسم: {user.full_name}\n"
-                f"🆔 ID: `{user_id}`\n"
-                f"🔹 اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n\n"
-                f"✉️ محتوى الرسالة:\n{text}"
-            )
-            try:
-                context.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=support_msg,
-                    parse_mode="Markdown",
-                )
-            except Exception as e:
-                logger.error(f"Error sending user reply to admin: {e}")
-
-            msg.reply_text(
-                "📨 رسالتك وصلت للدعم بنجاح 🤍",
-                reply_markup=main_kb,
-            )
-            return
     # زر الإلغاء العام
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
@@ -1858,7 +1771,7 @@ if user_id in WAITING_SUPPORT:
         )
         return
 
-    # ===== رد الأدمن على رسالة دعم (بالـ reply) =====
+    # ===== رد الأدمن أو المشرفة على رسالة دعم (Reply) =====
     if try_handle_admin_reply(update, context):
         return
 
@@ -1917,11 +1830,19 @@ if user_id in WAITING_SUPPORT:
     if user_id in WAITING_SUPPORT:
         WAITING_SUPPORT.discard(user_id)
         forward_support_to_admin(user, text, context)
-        msg.reply_text(
-            "تم إرسال رسالتك للدعم.\n"
-            "سيتم الاطلاع عليها، والرد عليك عند الحاجة بإذن الله 🤍.",
-            reply_markup=main_kb,
-        )
+
+        if record.get("gender") == "female":
+            msg.reply_text(
+                "📨 رسالتك وصلت إلى المشرفة.\n"
+                "ستتواصل معك في أقرب وقت ممكن بإذن الله 🤍.",
+                reply_markup=main_kb,
+            )
+        else:
+            msg.reply_text(
+                "تم إرسال رسالتك للدعم.\n"
+                "سيتم الاطلاع عليها، والرد عليك عند الحاجة بإذن الله 🤍.",
+                reply_markup=main_kb,
+            )
         return
 
     # ===== حالة الرسالة الجماعية (نص الرسالة) =====
@@ -1945,21 +1866,6 @@ if user_id in WAITING_SUPPORT:
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
         return
-        
-         if text == BTN_SUPPORT:
-              if record.get("gender") == "female":
-                  msg.reply_text(
-                "👩‍🦰 رسالتك سيتم توجيهها الآن إلى المشرفة، يرجى كتابة رسالتك ✍️",
-                reply_markup=SUPPORT_CANCEL_KB,
-            )
-        else:
-            msg.reply_text(
-                "📩 قم الآن بكتابة رسالتك للدعم ✍️",
-                reply_markup=SUPPORT_CANCEL_KB,
-            )
-
-        WAITING_SUPPORT.add(user_id)
-        return
 
     if text == BTN_WATER_MAIN:
         open_water_menu(update, context)
@@ -1967,6 +1873,10 @@ if user_id in WAITING_SUPPORT:
 
     if text == BTN_STATS:
         handle_stats(update, context)
+        return
+
+    if text == BTN_SUPPORT:
+        handle_contact_support(update, context)
         return
 
     if text == BTN_BACK_MAIN:
@@ -2018,9 +1928,8 @@ if user_id in WAITING_SUPPORT:
         handle_add_cups(update, context)
         return
 
-    # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية أو صفحات قرآن حسب السياق
+    # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية
     if text.isdigit():
-        # نحاول أولا إضافته كأكواب
         handle_add_cups(update, context)
         return
 
@@ -2048,7 +1957,7 @@ if user_id in WAITING_SUPPORT:
             start_tasbih_for_choice(update, context, text)
             return
 
-    # ===== مذكّرات قلبي: زر القائمة الداخلي =====
+    # ===== مذكّرات قلبي: أزرار القائمة الداخليّة =====
     if text == BTN_MEMO_ADD:
         handle_memo_add_start(update, context)
         return
@@ -2084,22 +1993,6 @@ if user_id in WAITING_SUPPORT:
     if text == BTN_ADMIN_BROADCAST:
         handle_admin_broadcast_start(update, context)
         return
-
-    # ===== ردود المستخدمين على رسائل الدعم/الرسالة الجماعية (بـ Reply) =====
-    if (
-        not is_admin(user_id)
-        and msg.reply_to_message
-        and msg.reply_to_message.from_user.id == context.bot.id
-    ):
-        original_text = msg.reply_to_message.text or ""
-        if original_text.startswith("📢 رسالة من الدعم") or original_text.startswith("💌 رد من الدعم"):
-            forward_support_to_admin(user, text, context)
-            msg.reply_text(
-                "تم إرسال ردّك إلى الدعم.\n"
-                "شكرًا على مشاركتك 🤍.",
-                reply_markup=main_kb,
-            )
-            return
 
     # ===== أي نص آخر =====
     msg.reply_text(
