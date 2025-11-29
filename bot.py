@@ -1688,13 +1688,66 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
 
 # =================== هاندلر الرسائل ===================
 
+# =================== نظام الدعم (جديد) ===================
 
+def support_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    WAITING_SUPPORT.add(user_id)
+
+    update.message.reply_text(
+        "✍️ أكتب رسالتك الآن وسيتم إرسالها للدعم.\n"
+        "إذا رغبت بالإلغاء اضغط إلغاء ❌",
+        reply_markup=SUPPORT_CANCEL_KB,
+    )
+
+
+def process_support_message(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    text = update.message.text
+
+    WAITING_SUPPORT.discard(user_id)
+
+    gender = get_user_record(user).get("gender")
+
+    # إرسال للمدير (الرجال)
+    context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=f"📩 رسالة دعم:\n\n"
+             f"👤 المستخدم: {user.first_name}\n"
+             f"🆔 ID: {user_id}\n"
+             f"📨 الرسالة:\n{text}",
+    )
+
+    info = "📨 تم إرسال رسالتك للدعم بنجاح ✔️"
+
+    # إرسال للمشرفة في حالة النساء فقط
+    if gender == "female":
+        try:
+            context.bot.send_message(
+                chat_id=FEMALE_ADMIN_ID,
+                text=f"📩 رسالة دعم (أنثى):\n\n"
+                     f"👤 المستخدم: {user.first_name}\n"
+                     f"🆔 ID: {user_id}\n"
+                     f"📨 الرسالة:\n{text}",
+            )
+            info = "📨 وصلت رسالتك للمشرفة، ستتواصل معك قريبًا 🤍"
+        except:
+            pass
+
+    update.message.reply_text(
+        info,
+        reply_markup=user_main_keyboard(user_id),
+    )
 def handle_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     msg = update.message
     text = (msg.text or "").strip()
-
+# ================= نظام الدعم =================
+if user_id in WAITING_SUPPORT:
+    return process_support_message(update, context)
     record = get_user_record(user)
     main_kb = user_main_keyboard(user_id)
     # 1️⃣ رد الأدمن على رسالة فيها ID → يرسل الرد للمستخدم
@@ -1892,6 +1945,8 @@ def handle_text(update: Update, context: CallbackContext):
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
         return
+     if text == BTN_SUPPORT:
+    return support_start(update, context)
 
     if text == BTN_WATER_MAIN:
         open_water_menu(update, context)
