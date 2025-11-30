@@ -186,20 +186,20 @@ WAITING_BROADCAST = set()
 # =================== الأزرار ===================
 
 # رئيسية
-BTN_ADHKAR_MAIN = "أذكاري 🤲"
-BTN_QURAN_MAIN = "وردي القرآني 📖"
-BTN_TASBIH_MAIN = "السبحة 📿"
-BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
-BTN_WATER_MAIN = "منبّه الماء 💧"
-BTN_STATS = "احصائياتي 📊"
+BTN_ADHKAR_MAIN = "❀ أذكاري ❀ 🤲"
+BTN_QURAN_MAIN = "❀ وردي القرآني ❀ 📖"
+BTN_TASBIH_MAIN = "❀ السبحة ❀ 📿"
+BTN_MEMOS_MAIN = "❀ مذكّرات قلبي ❀ 🩵"
+BTN_WATER_MAIN = "❀ منبّه الماء ❀ 💧"
+BTN_STATS = "❀ احصائياتي ❀ 📊"
 
-BTN_SUPPORT = "تواصل مع الدعم ✉️"
+BTN_SUPPORT = "❀ تواصل مع الدعم ❀ ✉️"
 
-BTN_CANCEL = "إلغاء ❌"
-BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
+BTN_CANCEL = "❀ إلغاء ❀ ❌"
+BTN_BACK_MAIN = "❀ رجوع للقائمة الرئيسية ❀ ⬅️"
 
 # لوحة المدير (تظهر فقط للأدمن)
-BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
+BTN_ADMIN_PANEL = "❀ لوحة التحكم ❀ 🛠"
 BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
 BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
 BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
