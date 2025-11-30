@@ -111,6 +111,10 @@ def get_user_record(user):
             "adhkar_count": 0,
             # مذكّرات قلبي
             "heart_memos": [],
+            # نظام النقاط والمستويات والميداليات
+            "points": 0,
+            "level": 1,
+            "medals": [],
         }
     else:
         record = data[user_id]
@@ -133,6 +137,9 @@ def get_user_record(user):
         record.setdefault("tasbih_total", 0)
         record.setdefault("adhkar_count", 0)
         record.setdefault("heart_memos", [])
+        record.setdefault("points", 0)
+        record.setdefault("level", 1)
+        record.setdefault("medals", [])
 
     save_data()
     return data[user_id]
@@ -186,20 +193,26 @@ WAITING_BROADCAST = set()
 # =================== الأزرار ===================
 
 # رئيسية
-BTN_ADHKAR_MAIN = "❀ أذكاري ❀ 🤲"
-BTN_QURAN_MAIN = "❀ وردي القرآني ❀ 📖"
-BTN_TASBIH_MAIN = "❀ السبحة ❀ 📿"
-BTN_MEMOS_MAIN = "❀ مذكّرات قلبي ❀ 🩵"
-BTN_WATER_MAIN = "❀ منبّه الماء ❀ 💧"
-BTN_STATS = "❀ احصائياتي ❀ 📊"
+BTN_ADHKAR_MAIN = "أذكاري 🤲"
+BTN_QURAN_MAIN = "وردي القرآني 📖"
+BTN_TASBIH_MAIN = "السبحة 📿"
+BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
+BTN_WATER_MAIN = "منبّه الماء 💧"
+BTN_STATS = "احصائياتي 📊"
 
-BTN_SUPPORT = "❀ تواصل مع الدعم ❀ ✉️"
+BTN_SUPPORT = "تواصل مع الدعم ✉️"
 
-BTN_CANCEL = "❀ إلغاء ❀ ❌"
-BTN_BACK_MAIN = "❀ رجوع للقائمة الرئيسية ❀ ⬅️"
+BTN_CANCEL = "إلغاء ❌"
+BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
+
+# لوحة المنافسات والمجتمع
+BTN_COMP_MAIN = "المنافسات و المجتمع 🏅"
+BTN_MY_LEVEL = "مستواي ونقاطي 🎯"
+BTN_TOP10 = "لوحة الشرف 🔟"
+BTN_ADMIN_TOP100 = "أفضل 100 متفوّق 🏆"
 
 # لوحة المدير (تظهر فقط للأدمن)
-BTN_ADMIN_PANEL = "❀ لوحة التحكم ❀ 🛠"
+BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
 BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
 BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
 BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
@@ -209,7 +222,7 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -219,7 +232,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -239,6 +252,8 @@ BTN_WATER_SETTINGS = "إعدادات الماء ⚙️"
 BTN_WATER_NEED = "حساب احتياج الماء 🧮"
 BTN_WATER_REM_ON = "تشغيل التذكير ⏰"
 BTN_WATER_REM_OFF = "إيقاف التذكير 📴"
+
+BTN_WATER_BACK_MENU = "رجوع إلى منبّه الماء ⬅️"
 
 BTN_GENDER_MALE = "🧔‍♂️ ذكر"
 BTN_GENDER_FEMALE = "👩 أنثى"
@@ -267,6 +282,7 @@ WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -276,6 +292,7 @@ WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -397,11 +414,35 @@ def build_memos_menu_kb(is_admin_flag: bool):
 ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT), KeyboardButton(BTN_ADMIN_USERS_LIST)],
-        [KeyboardButton(BTN_ADMIN_BROADCAST)],
+        [KeyboardButton(BTN_ADMIN_BROADCAST), KeyboardButton(BTN_ADMIN_TOP100)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
 )
+
+# ---- المنافسات و المجتمع ----
+COMP_MENU_KB_USER = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_MY_LEVEL)],
+        [KeyboardButton(BTN_TOP10)],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+COMP_MENU_KB_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_MY_LEVEL)],
+        [KeyboardButton(BTN_TOP10)],
+        [KeyboardButton(BTN_ADMIN_TOP100)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+
+def comp_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    return COMP_MENU_KB_ADMIN if is_admin(user_id) else COMP_MENU_KB_USER
 
 # =================== دوال مساعدة عامة ===================
 
@@ -535,6 +576,70 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
     record["tasbih_total"] = record.get("tasbih_total", 0) + amount
     save_data()
 
+# =================== نظام النقاط والمستويات والميداليات ===================
+
+
+def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
+    old_level = record.get("level", 1)
+    points = record.get("points", 0)
+
+    # مستوى بسيط: كل 100 نقطة = مستوى جديد
+    new_level = max(1, points // 100 + 1)
+    if new_level == old_level:
+        save_data()
+        return
+
+    record["level"] = new_level
+    medals = record.get("medals", [])
+
+    new_medals = []
+
+    # أمثلة ميداليات حسب المستوى
+    if new_level >= 5 and "ميدالية الالتزام المبدئي 🥉" not in medals:
+        medals.append("ميدالية الالتزام المبدئي 🥉")
+        new_medals.append("ميدالية الالتزام المبدئي 🥉")
+
+    if new_level >= 10 and "ميدالية المثابرة 🥈" not in medals:
+        medals.append("ميدالية المثابرة 🥈")
+        new_medals.append("ميدالية المثابرة 🥈")
+
+    if new_level >= 20 and "ميدالية الهمّة العالية 🥇" not in medals:
+        medals.append("ميدالية الهمّة العالية 🥇")
+        new_medals.append("ميدالية الهمّة العالية 🥇")
+
+    record["medals"] = medals
+    save_data()
+
+    # إشعار المستخدم عند التقدم في المستوى
+    if context is not None:
+        try:
+            msg = (
+                f"🎉 مبروك {record.get('first_name', '')}!\n"
+                f"وصلت إلى المستوى {new_level} في نظام النقاط.\n"
+            )
+            if new_medals:
+                msg += "وحصلت على:\n" + "\n".join(f"- {m}" for m in new_medals)
+            context.bot.send_message(chat_id=user_id, text=msg)
+        except Exception as e:
+            logger.error(f"Error sending level up message to {user_id}: {e}")
+
+
+def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
+    uid = str(user_id)
+    if uid not in data or amount <= 0:
+        return
+    record = data[uid]
+    record["points"] = record.get("points", 0) + amount
+    update_level_and_medals(user_id, record, context)
+
+
+def get_users_sorted_by_points():
+    return sorted(
+        data.values(),
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
 # =================== أذكار ثابتة (مختصرة) ===================
 
 ADHKAR_MORNING_TEXT = (
@@ -622,7 +727,8 @@ def help_command(update: Update, context: CallbackContext):
         "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
-        "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.",
+        "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
+        "• المنافسات و المجتمع 🏅 → لمعرفة مستواك ونقاطك ولوحة الشرف.",
         reply_markup=kb,
     )
 
@@ -647,7 +753,8 @@ def open_water_settings(update: Update, context: CallbackContext):
     update.message.reply_text(
         "إعدادات الماء ⚙️:\n"
         "1) حساب احتياجك اليومي من الماء بناءً على الجنس والعمر والوزن.\n"
-        "2) تشغيل أو إيقاف التذكير الدوري بالماء.",
+        "2) تشغيل أو إيقاف التذكير الدوري بالماء.\n"
+        "3) الرجوع إلى منبّه الماء مباشرة.",
         reply_markup=kb,
     )
 
@@ -801,6 +908,10 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     ensure_today_water(record)
     record["today_cups"] = record.get("today_cups", 0) + 1
+
+    # نقطة لكل كوب
+    add_points(user.id, 1, context)
+
     save_data()
 
     status_text = format_water_status_text(record)
@@ -846,6 +957,10 @@ def handle_add_cups(update: Update, context: CallbackContext):
 
     ensure_today_water(record)
     record["today_cups"] = record.get("today_cups", 0) + cups
+
+    # نقطة لكل كوب ماء
+    add_points(user.id, cups, context)
+
     save_data()
 
     status_text = format_water_status_text(record)
@@ -1013,6 +1128,10 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     ensure_today_quran(record)
 
     record["quran_pages_today"] = record.get("quran_pages_today", 0) + pages
+
+    # نقاط للقرآن: 3 نقاط لكل صفحة
+    add_points(user_id, pages * 3, context)
+
     save_data()
 
     WAITING_QURAN_ADD_PAGES.discard(user_id)
@@ -1164,10 +1283,15 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
             reply_markup=tasbih_run_keyboard(user_id),
         )
     else:
+        # نقاط للتسبيح عند اكتمال العدد
+        reward_points = max(state["target"] // 10, 1)
+        add_points(user_id, reward_points, context)
+
         update.message.reply_text(
             f"اكتمل التسبيح على: {dhikr}\n"
-            f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.",
-            reply_markup=user_main_keyboard(user_id),
+            f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.\n\n"
+            "اختر تسبيحة أخرى من القائمة:",
+            reply_markup=build_tasbih_menu(is_admin(user_id)),
         )
         ACTIVE_TASBIH.pop(user_id, None)
         WAITING_TASBIH.discard(user_id)
@@ -1430,6 +1554,10 @@ def handle_stats(update: Update, context: CallbackContext):
 
     memos_count = len(record.get("heart_memos", []))
 
+    points = record.get("points", 0)
+    level = record.get("level", 1)
+    medals = record.get("medals", [])
+
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
     # الماء
@@ -1452,6 +1580,12 @@ def handle_stats(update: Update, context: CallbackContext):
 
     # المذكرات
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
+
+    # النقاط والمستوى
+    text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
+    text_lines.append(f"- مستواك الحالي: {level}.")
+    if medals:
+        text_lines.append("- ميدالياتك: " + "، ".join(medals))
 
     update.message.reply_text(
         "\n".join(text_lines),
@@ -1492,6 +1626,115 @@ def water_reminder_job(context: CallbackContext):
             )
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
+
+# =================== نظام المنافسات و المجتمع ===================
+
+
+def open_comp_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    kb = comp_menu_keyboard(user.id)
+    update.message.reply_text(
+        "المنافسات و المجتمع 🏅:\n"
+        "• مستواك ونقاطك.\n"
+        "• لوحة الشرف لأعلى المستخدمين.\n"
+        "• (للأدمن) عرض أفضل 100 متفوّق.",
+        reply_markup=kb,
+    )
+
+
+def handle_my_level(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+
+    points = record.get("points", 0)
+    level = record.get("level", 1)
+    medals = record.get("medals", [])
+
+    # حساب ترتيب المستخدم
+    sorted_users = get_users_sorted_by_points()
+    rank = None
+    for idx, rec in enumerate(sorted_users, start=1):
+        if rec.get("user_id") == user_id:
+            rank = idx
+            break
+
+    medals_text = "، ".join(medals) if medals else "لا توجد ميداليات بعد."
+
+    text_lines = [
+        "مستواي ونقاطي 🎯:\n",
+        f"- النقاط الكلية: {points}",
+        f"- المستوى الحالي: {level}",
+        f"- الميداليات: {medals_text}",
+    ]
+
+    if rank is not None:
+        text_lines.append(f"- ترتيبك التقريبي بين المستخدمين: #{rank}")
+    else:
+        text_lines.append("- لم يتم احتساب ترتيبك بعد.")
+
+    update.message.reply_text(
+        "\n".join(text_lines),
+        reply_markup=comp_menu_keyboard(user_id),
+    )
+
+
+def handle_top10(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+
+    sorted_users = get_users_sorted_by_points()
+    top = sorted_users[:10]
+
+    if not top:
+        update.message.reply_text(
+            "لا توجد بيانات منافسة كافية حتى الآن.",
+            reply_markup=comp_menu_keyboard(user_id),
+        )
+        return
+
+    lines = ["🏅 لوحة الشرف (أفضل 10):\n"]
+    for idx, rec in enumerate(top, start=1):
+        name = rec.get("first_name") or "مستخدم"
+        level = rec.get("level", 1)
+        medals = rec.get("medals", [])
+        medals_text = " ".join(medals) if medals else "—"
+        lines.append(f"{idx}) {name} — مستوى {level} | {medals_text}")
+
+    update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=comp_menu_keyboard(user_id),
+    )
+
+
+def handle_admin_top100(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    sorted_users = get_users_sorted_by_points()
+    top = sorted_users[:100]
+
+    if not top:
+        update.message.reply_text(
+            "لا توجد بيانات منافسة كافية حتى الآن.",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+        return
+
+    lines = ["🏆 أفضل 100 متفوّق بالنقاط:\n"]
+    for idx, rec in enumerate(top, start=1):
+        name = rec.get("first_name") or "مستخدم"
+        level = rec.get("level", 1)
+        medals = rec.get("medals", [])
+        medals_text = " ".join(medals) if medals else "—"
+        lines.append(f"{idx}) {name} — مستوى {level} | {medals_text}")
+
+    # بدون usernames ولا IDs كما طلبت
+    update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=ADMIN_PANEL_KB,
+    )
 
 # =================== نظام الدعم ولوحة التحكم ===================
 
@@ -1538,8 +1781,9 @@ def handle_admin_panel(update: Update, context: CallbackContext):
         "لوحة التحكم 🛠:\n"
         "• عرض عدد المستخدمين.\n"
         "• عرض قائمة المستخدمين.\n"
-        "• إرسال رسالة جماعية.",
-        reply_markup=ADMIN_PANEL_KB,
+        "• إرسال رسالة جماعية.\n"
+        "• عرض أفضل 100 متفوّق.",
+            reply_markup=ADMIN_PANEL_KB,
     )
 
 
@@ -1966,6 +2210,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_contact_support(update, context)
         return
 
+    if text == BTN_COMP_MAIN:
+        open_comp_menu(update, context)
+        return
+
     if text == BTN_BACK_MAIN:
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
@@ -2013,6 +2261,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_WATER_ADD_CUPS:
         handle_add_cups(update, context)
+        return
+
+    if text == BTN_WATER_BACK_MENU:
+        open_water_menu(update, context)
         return
 
     # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية
@@ -2064,6 +2316,15 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
+    # ===== المنافسات و المجتمع =====
+    if text == BTN_MY_LEVEL:
+        handle_my_level(update, context)
+        return
+
+    if text == BTN_TOP10:
+        handle_top10(update, context)
+        return
+
     # ===== لوحة التحكم (المدير) =====
     if text == BTN_ADMIN_PANEL:
         handle_admin_panel(update, context)
@@ -2079,6 +2340,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_BROADCAST:
         handle_admin_broadcast_start(update, context)
+        return
+
+    if text == BTN_ADMIN_TOP100:
+        handle_admin_top100(update, context)
         return
 
     # ===== أي نص آخر =====
