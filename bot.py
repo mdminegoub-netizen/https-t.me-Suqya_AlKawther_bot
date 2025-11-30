@@ -113,7 +113,7 @@ def get_user_record(user):
             "heart_memos": [],
             # نظام النقاط والمستويات والميداليات
             "points": 0,
-            "level": 1,
+            "level": 0,  # يبدأ من 0، أول مستوى فعلي عند 20 نقطة
             "medals": [],
             "best_rank": None,
         }
@@ -139,7 +139,7 @@ def get_user_record(user):
         record.setdefault("adhkar_count", 0)
         record.setdefault("heart_memos", [])
         record.setdefault("points", 0)
-        record.setdefault("level", 1)
+        record.setdefault("level", 0)
         record.setdefault("medals", [])
         record.setdefault("best_rank", None)
 
@@ -637,11 +637,14 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
 
 def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
     """تحديث المستوى والميداليات وإرسال رسائل التهنئة."""
-    old_level = record.get("level", 1)
+    old_level = record.get("level", 0)
     points = record.get("points", 0)
 
-    # مثال: كل 200 نقطة = مستوى جديد
-    new_level = max(1, points // 200 + 1)
+    # كل 20 نقطة = مستوى جديد
+    # 0–19 → مستوى 0
+    # 20–39 → مستوى 1
+    # 40–59 → مستوى 2 ... وهكذا
+    new_level = points // 20
 
     if new_level == old_level:
         # حتى لو ما تغير المستوى، لسه ممكن يتحسن الترتيب
@@ -652,12 +655,12 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     medals = record.get("medals", [])
     new_medals = []
 
-    # قواعد الميداليات
+    # قواعد الميداليات (تعتمد على رقم المستوى)
     medal_rules = [
-        (3, "ميدالية بداية الطريق 🟢"),
-        (5, "ميدالية الاستمرار 💫"),
-        (10, "ميدالية الهمة العالية 🔥"),
-        (20, "ميدالية بطل سُقيا الكوثر 👑"),
+        (1, "ميدالية بداية الطريق 🟢"),       # من 20 نقطة فأعلى
+        (3, "ميدالية الاستمرار 💫"),         # تقريبًا من 60 نقطة
+        (5, "ميدالية الهمة العالية 🔥"),      # تقريبًا من 100 نقطة
+        (10, "ميدالية بطل سُقيا الكوثر 👑"),  # تقريبًا من 200 نقطة
     ]
 
     for lvl, name in medal_rules:
@@ -1634,7 +1637,7 @@ def handle_stats(update: Update, context: CallbackContext):
     memos_count = len(record.get("heart_memos", []))
 
     points = record.get("points", 0)
-    level = record.get("level", 1)
+    level = record.get("level", 0)
     medals = record.get("medals", [])
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
@@ -1662,7 +1665,10 @@ def handle_stats(update: Update, context: CallbackContext):
 
     # النقاط والمستوى
     text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
-    text_lines.append(f"- مستواك الحالي: {level}.")
+    if level <= 0:
+        text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
+    else:
+        text_lines.append(f"- مستواك الحالي: {level}.")
     if medals:
         text_lines.append("- ميدالياتك: " + "، ".join(medals))
 
@@ -1726,7 +1732,7 @@ def handle_my_profile(update: Update, context: CallbackContext):
     record = get_user_record(user)
 
     points = record.get("points", 0)
-    level = record.get("level", 1)
+    level = record.get("level", 0)
     medals = record.get("medals", [])
     best_rank = record.get("best_rank")
 
@@ -1743,9 +1749,14 @@ def handle_my_profile(update: Update, context: CallbackContext):
     lines = [
         "ملفي التنافسي 🎯:\n",
         f"- النقاط الكلية: {points}",
-        f"- المستوى الحالي: {level}",
-        f"- الميداليات: {medals_text}",
     ]
+
+    if level <= 0:
+        lines.append("- المستوى الحالي: 0 (أول مستوى يبدأ من 20 نقطة).")
+    else:
+        lines.append(f"- المستوى الحالي: {level}")
+
+    lines.append(f"- الميداليات: {medals_text}")
 
     if rank is not None:
         lines.append(f"- ترتيبك الحالي: #{rank}")
@@ -1772,9 +1783,13 @@ def handle_top10(update: Update, context: CallbackContext):
     lines = ["🏅 أفضل 10 مستخدمين:\n"]
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
-        level = rec.get("level", 1)
         points = rec.get("points", 0)
-        lines.append(f"{idx}) {name} — مستوى {level} — {points} نقطة")
+        medals = rec.get("medals", [])
+        if medals:
+            medals_text = "، ".join(medals)
+        else:
+            medals_text = "لا توجد ميداليات بعد"
+        lines.append(f"{idx}) {name} — {points} نقطة — 🏅 {medals_text}")
 
     update.message.reply_text(
         "\n".join(lines),
@@ -1796,9 +1811,13 @@ def handle_top100(update: Update, context: CallbackContext):
     lines = ["🏆 أفضل 100 مستخدم:\n"]
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
-        level = rec.get("level", 1)
         points = rec.get("points", 0)
-        lines.append(f"{idx}) {name} — مستوى {level} — {points} نقطة")
+        medals = rec.get("medals", [])
+        if medals:
+            medals_text = "، ".join(medals)
+        else:
+            medals_text = "لا توجد ميداليات بعد"
+        lines.append(f"{idx}) {name} — {points} نقطة — 🏅 {medals_text}")
 
     update.message.reply_text(
         "\n".join(lines),
@@ -1965,7 +1984,7 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         name = rec.get("first_name") or "مستخدم"
         username = rec.get("username")
         uid = rec.get("user_id")
-        level = rec.get("level", 1)
+        level = rec.get("level", 0)
         points = rec.get("points", 0)
         medals = rec.get("medals", [])
         medals_text = "، ".join(medals) if medals else "لا توجد"
