@@ -26,10 +26,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 
 # معرف الأدمن (أنت)
-ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
+ADMIN_ID = 931350292
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 8395818573
 
 # ملف اللوج
 logging.basicConfig(
@@ -42,18 +42,15 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-
 @app.route("/")
 def index():
     return "Suqya Al-Kawther bot is running ✅"
-
 
 def run_flask():
     port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port)
 
 # =================== تخزين البيانات ===================
-
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -65,7 +62,6 @@ def load_data():
         logger.error(f"Error loading data: {e}")
         return {}
 
-
 def save_data():
     try:
         with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -73,9 +69,7 @@ def save_data():
     except Exception as e:
         logger.error(f"Error saving data: {e}")
 
-
 data = load_data()
-
 
 def get_user_record(user):
     """
@@ -93,7 +87,7 @@ def get_user_record(user):
             "created_at": now_iso,
             "last_active": now_iso,
             # إعدادات الماء
-            "gender": None,  # نستخدمها أيضًا في الدعم
+            "gender": None,
             "age": None,
             "weight": None,
             "water_liters": None,
@@ -113,12 +107,14 @@ def get_user_record(user):
             "heart_memos": [],
             # نظام النقاط والمستويات والميداليات
             "points": 0,
-            "level": 0,  # يبدأ من 0، أول مستوى فعلي عند 20 نقطة
+            "level": 0,
             "medals": [],
             "best_rank": None,
-            # الاستمرارية اليومية (ماء + قرآن)
-            "daily_full_streak": 0,
-            "last_full_day": None,
+            # 🆕 نظام الاستمرارية
+            "daily_completion_streak": 0,
+            "last_completion_date": None,
+            "has_daily_activity_medal": False,
+            "has_consistency_medal": False,
         }
     else:
         record = data[user_id]
@@ -145,25 +141,14 @@ def get_user_record(user):
         record.setdefault("level", 0)
         record.setdefault("medals", [])
         record.setdefault("best_rank", None)
-        record.setdefault("daily_full_streak", 0)
-        record.setdefault("last_full_day", None)
-
-        # تحديث أسماء بعض الميداليات القديمة إلى الإيموجيات الجديدة
-        medals = record.get("medals", [])
-        if medals:
-            new_medals = []
-            for m in medals:
-                if m == "ميدالية الاستمرار 💫":
-                    new_medals.append("ميدالية الاستمرار 🎓")
-                elif m == "ميدالية بطل سُقيا الكوثر 👑":
-                    new_medals.append("ميدالية بطل سُقيا الكوثر 🏆")
-                else:
-                    new_medals.append(m)
-            record["medals"] = new_medals
+        # 🆕 ضمان الحقول الجديدة
+        record.setdefault("daily_completion_streak", 0)
+        record.setdefault("last_completion_date", None)
+        record.setdefault("has_daily_activity_medal", False)
+        record.setdefault("has_consistency_medal", False)
 
     save_data()
     return data[user_id]
-
 
 def update_user_record(user_id: int, **kwargs):
     uid = str(user_id)
@@ -173,14 +158,11 @@ def update_user_record(user_id: int, **kwargs):
     data[uid]["last_active"] = datetime.now(timezone.utc).isoformat()
     save_data()
 
-
 def get_all_user_ids():
     return [int(uid) for uid in data.keys()]
 
-
 def is_admin(user_id: int) -> bool:
     return ADMIN_ID is not None and user_id == ADMIN_ID
-
 
 def is_supervisor(user_id: int) -> bool:
     return SUPERVISOR_ID is not None and user_id == SUPERVISOR_ID
@@ -194,8 +176,8 @@ WAITING_WEIGHT = set()
 WAITING_QURAN_GOAL = set()
 WAITING_QURAN_ADD_PAGES = set()
 
-WAITING_TASBIH = set()  # أثناء العدّ
-ACTIVE_TASBIH = {}      # user_id -> { "text": str, "target": int, "current": int }
+WAITING_TASBIH = set()
+ACTIVE_TASBIH = {}
 
 # مذكّرات قلبي
 WAITING_MEMO_MENU = set()
@@ -206,7 +188,7 @@ WAITING_MEMO_DELETE_SELECT = set()
 MEMO_EDIT_INDEX = {}
 
 # دعم / إدارة
-WAITING_SUPPORT_GENDER = set()  # تحديد الجنس قبل أول رسالة دعم
+WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
 
@@ -231,7 +213,7 @@ BTN_MY_PROFILE = "ملفي التنافسي 🎯"
 BTN_TOP10 = "أفضل 10 🏅"
 BTN_TOP100 = "أفضل 100 🏆"
 
-# لوحة المدير (تظهر فقط للأدمن)
+# لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
 BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
 BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
@@ -395,7 +377,6 @@ TASBIH_RUN_KB_ADMIN = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# قائمة الأذكار المتاحة في السبحة (ذكر، عدد)
 TASBIH_ITEMS = [
     ("سبحان الله", 33),
     ("الحمد لله", 33),
@@ -404,7 +385,6 @@ TASBIH_ITEMS = [
     ("لا إله إلا الله", 100),
     ("اللهم صل وسلم على سيدنا محمد", 50),
 ]
-
 
 def build_tasbih_menu(is_admin_flag: bool):
     rows = [[KeyboardButton(f"{text} ({count})")] for text, count in TASBIH_ITEMS]
@@ -419,7 +399,6 @@ BTN_MEMO_ADD = "➕ إضافة مذكرة"
 BTN_MEMO_EDIT = "✏️ تعديل مذكرة"
 BTN_MEMO_DELETE = "🗑 حذف مذكرة"
 BTN_MEMO_BACK = "رجوع ⬅️"
-
 
 def build_memos_menu_kb(is_admin_flag: bool):
     rows = [
@@ -442,7 +421,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
 )
 
 # ---- المنافسات و المجتمع ----
-
 COMP_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_MY_PROFILE)],
@@ -461,37 +439,42 @@ POINTS_WATER_DAILY_BONUS = 20
 POINTS_PER_QURAN_PAGE = 3
 POINTS_QURAN_DAILY_BONUS = 30
 
-
 def tasbih_points_for_session(target_count: int) -> int:
-    # مثال: 100 تسبيحة → 10 نقاط
     return max(target_count // 10, 1)
 
-# =================== دوال مساعدة عامة ===================
+# =================== نظام الميداليات المتقدم ===================
 
+MEDAL_RULES = [
+    (1, "ميدالية بداية الطريق 🟢"),
+    (3, "ميدالية الاستمرار 🎓"),
+    (5, "ميدالية الهمة العالية 🔥"),
+    (10, "بطل سُقيا الكوثر 🏆"),
+]
+
+MEDAL_DAILY_ACTIVITY = "ميدالية النشاط اليومي ⚡"
+MEDAL_CONSISTENCY = "ميدالية الاستمرارية 📅"
+
+WAITING_CONSISTENCY_CHECK = {}
+
+# =================== دوال مساعدة عامة ===================
 
 def user_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return MAIN_KEYBOARD_ADMIN if is_admin(user_id) else MAIN_KEYBOARD_USER
 
-
 def water_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return WATER_MENU_KB_ADMIN if is_admin(user_id) else WATER_MENU_KB_USER
-
 
 def water_settings_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return WATER_SETTINGS_KB_ADMIN if is_admin(user_id) else WATER_SETTINGS_KB_USER
 
-
 def adhkar_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return ADHKAR_MENU_KB_ADMIN if is_admin(user_id) else ADHKAR_MENU_KB_USER
-
 
 def quran_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return QURAN_MENU_KB_ADMIN if is_admin(user_id) else QURAN_MENU_KB_USER
 
-
 def tasbih_run_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return TASBIH_RUN_KB_ADMIN if is_admin(user_id) else TASBIH_RUN_KB_USER
-
 
 def ensure_today_water(record):
     """تصفير عدّاد الماء إذا تغيّر اليوم."""
@@ -501,15 +484,13 @@ def ensure_today_water(record):
         record["today_cups"] = 0
         save_data()
 
-
 def ensure_today_quran(record):
-    """تصفير ورد اليوم لو تغيّر التاريخ (تبقى الأهداف كما هي)."""
+    """تصفير ورد اليوم لو تغيّر التاريخ."""
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("quran_today_date") != today_str:
         record["quran_today_date"] = today_str
         record["quran_pages_today"] = 0
         save_data()
-
 
 def format_water_status_text(record):
     """نص حالة الماء اليوم."""
@@ -528,7 +509,7 @@ def format_water_status_text(record):
 
     text = (
         "📊 مستوى شرب الماء اليوم:\n\n"
-        f"- الأكواب التي شربتها: {today_cups} من {cups_goal} كوب.\n"
+        f"- الأكواس التي شربتها: {today_cups} من {cups_goal} كوب.\n"
         f"- نسبة الإنجاز التقريبية: {percent}%.\n\n"
     )
 
@@ -544,7 +525,6 @@ def format_water_status_text(record):
         )
 
     return text
-
 
 def format_quran_status_text(record):
     """نص حالة ورد القرآن اليوم."""
@@ -570,7 +550,7 @@ def format_quran_status_text(record):
     if remaining > 0:
         text += (
             f"تبقّى لك تقريبًا {remaining} صفحة لتكمل ورد اليوم.\n"
-            "اقرأ على مهل مع تدبّر، فالمقصود صلاح القلب قبل كثرة الصفحات 🤍."
+            "اقرأ على مهل مع تدبّر 🤍."
         )
     else:
         text += (
@@ -580,7 +560,6 @@ def format_quran_status_text(record):
 
     return text
 
-
 def increment_adhkar_count(user_id: int, amount: int = 1):
     uid = str(user_id)
     if uid not in data:
@@ -588,7 +567,6 @@ def increment_adhkar_count(user_id: int, amount: int = 1):
     record = data[uid]
     record["adhkar_count"] = record.get("adhkar_count", 0) + amount
     save_data()
-
 
 def increment_tasbih_total(user_id: int, amount: int = 1):
     uid = str(user_id)
@@ -600,14 +578,12 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
 
 # =================== نظام النقاط / المستويات / الميداليات / الترتيب ===================
 
-
 def get_users_sorted_by_points():
     return sorted(
         data.values(),
         key=lambda r: r.get("points", 0),
         reverse=True,
     )
-
 
 def check_rank_improvement(user_id: int, record: dict, context: CallbackContext = None):
     """يتأكد إذا ترتيب المستخدم تحسّن ويرسل له رسالة لو دخل توب 10 أو توب 100."""
@@ -623,9 +599,8 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
 
     best_rank = record.get("best_rank")
     if best_rank is not None and rank >= best_rank:
-        return  # ما تحسن ترتيبه
+        return
 
-    # حفظ أفضل ترتيب جديد
     record["best_rank"] = rank
     save_data()
 
@@ -652,20 +627,146 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
     except Exception as e:
         logger.error(f"Error sending rank improvement message to {user_id}: {e}")
 
+def check_daily_completion(user_id: int, context: CallbackContext = None):
+    """
+    يتحقق إذا أكمل المستخدم الماء + القرآن في نفس اليوم.
+    """
+    uid = str(user_id)
+    if uid not in data:
+        return False
+
+    record = data[uid]
+    
+    ensure_today_water(record)
+    ensure_today_quran(record)
+    
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    
+    water_completed = (
+        record.get("cups_goal") and 
+        record.get("today_cups", 0) >= record.get("cups_goal", 0)
+    )
+    quran_completed = (
+        record.get("quran_pages_goal") and 
+        record.get("quran_pages_today", 0) >= record.get("quran_pages_goal", 0)
+    )
+    
+    if not (water_completed and quran_completed):
+        return False
+    
+    last_date = record.get("last_completion_date")
+    
+    today_obj = datetime.fromisoformat(today_str).date()
+    
+    if last_date:
+        last_obj = datetime.fromisoformat(last_date).date()
+        days_diff = (today_obj - last_obj).days
+        
+        if days_diff == 1:
+            record["daily_completion_streak"] += 1
+        elif days_diff > 1:
+            record["daily_completion_streak"] = 1
+    else:
+        record["daily_completion_streak"] = 1
+    
+    record["last_completion_date"] = today_str
+    
+    if not record.get("has_daily_activity_medal"):
+        record["has_daily_activity_medal"] = True
+        if MEDAL_DAILY_ACTIVITY not in record.get("medals", []):
+            record["medals"].append(MEDAL_DAILY_ACTIVITY)
+        
+        if context:
+            try:
+                context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "🎉 مبروك! حصلت على ميدالية النشاط اليومي ⚡\n"
+                        "لأنك أكملت هدف الماء + القرآن في نفس اليوم.\n"
+                        "استمر على هذا الخط الممتاز!"
+                    ),
+                )
+            except Exception as e:
+                logger.error(f"Error sending daily activity medal message: {e}")
+    
+    if (record.get("daily_completion_streak", 0) >= 7 and 
+        not record.get("has_consistency_medal")):
+        record["has_consistency_medal"] = True
+        if MEDAL_CONSISTENCY not in record.get("medals", []):
+            record["medals"].append(MEDAL_CONSISTENCY)
+        
+        if context:
+            try:
+                context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "👑 عظيم جداً! حصلت على ميدالية الاستمرارية 📅\n\n"
+                        "استمررت 7 أيام متتالية في إكمال أهدافك اليومية!\n"
+                        "هذا دليل على عزيمة قوية وإصرار جميل.\n\n"
+                        "استمر في هذا المسار المبارك 🤍"
+                    ),
+                )
+            except Exception as e:
+                logger.error(f"Error sending consistency medal message: {e}")
+    
+    save_data()
+    return True
+
+def format_medals_list(medals: list) -> str:
+    """تنسيق قائمة الميداليات بشكل جميل."""
+    if not medals:
+        return "(لا توجد ميداليات بعد)"
+    return " — ".join(medals)
+
+def format_ranking_entry(rank: int, user_record: dict) -> str:
+    """تنسيق إدخال واحد من لوحة الترتيب."""
+    name = user_record.get("first_name", "مستخدم")
+    points = user_record.get("points", 0)
+    medals = user_record.get("medals", [])
+    
+    first_line = f"{rank}) {name} — 🎯 {points} نقطة"
+    medals_line = format_medals_list(medals)
+    
+    return f"{first_line}\n{medals_line}"
+
+def format_user_profile(user_record: dict) -> str:
+    """تنسيق ملف المستخدم التنافسي."""
+    name = user_record.get("first_name", "مستخدم")
+    points = user_record.get("points", 0)
+    level = user_record.get("level", 0)
+    medals = user_record.get("medals", [])
+    streak = user_record.get("daily_completion_streak", 0)
+    
+    sorted_users = get_users_sorted_by_points()
+    rank = None
+    for idx, rec in enumerate(sorted_users, start=1):
+        if rec.get("user_id") == user_record.get("user_id"):
+            rank = idx
+            break
+    
+    rank_text = f"#{rank}" if rank else "غير مصنف"
+    
+    profile_text = (
+        f"🎯 ملفك التنافسي:\n\n"
+        f"الاسم: {name}\n"
+        f"الترتيب: {rank_text}\n"
+        f"النقاط: 🎯 {points} نقطة\n"
+        f"المستوى: {level}\n"
+        f"سلسلة النشاط: {streak} يوم متتالي 🔥\n\n"
+    )
+    
+    profile_text += f"الميداليات:\n{format_medals_list(medals)}"
+    
+    return profile_text
 
 def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
     """تحديث المستوى والميداليات وإرسال رسائل التهنئة."""
     old_level = record.get("level", 0)
     points = record.get("points", 0)
 
-    # كل 20 نقطة = مستوى جديد
-    # 0–19 → مستوى 0
-    # 20–39 → مستوى 1
-    # 40–59 → مستوى 2 ... وهكذا
     new_level = points // 20
 
     if new_level == old_level:
-        # حتى لو ما تغير المستوى، لسه ممكن يتحسن الترتيب
         check_rank_improvement(user_id, record, context)
         return
 
@@ -673,12 +774,11 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     medals = record.get("medals", [])
     new_medals = []
 
-    # قواعد الميداليات (تعتمد على رقم المستوى)
     medal_rules = [
-        (1, "ميدالية بداية الطريق 🟢"),       # من 20 نقطة فأعلى
-        (3, "ميدالية الاستمرار 🎓"),         # تقريبًا من 60 نقطة
-        (5, "ميدالية الهمة العالية 🔥"),      # تقريبًا من 100 نقطة
-        (10, "ميدالية بطل سُقيا الكوثر 🏆"),  # تقريبًا من 200 نقطة
+        (1, "ميدالية بداية الطريق 🟢"),
+        (3, "ميدالية الاستمرار 🎓"),
+        (5, "ميدالية الهمة العالية 🔥"),
+        (10, "بطل سُقيا الكوثر 🏆"),
     ]
 
     for lvl, name in medal_rules:
@@ -689,10 +789,8 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     record["medals"] = medals
     save_data()
 
-    # أولًا: ترتيب المنافسة
     check_rank_improvement(user_id, record, context)
 
-    # ثانيًا: رسالة مستوى جديد + ميداليات
     if context is not None:
         try:
             msg = f"🎉 مبروك! وصلت إلى المستوى {new_level}.\n"
@@ -701,104 +799,6 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
             context.bot.send_message(chat_id=user_id, text=msg)
         except Exception as e:
             logger.error(f"Error sending level up message to {user_id}: {e}")
-
-
-def check_daily_full_activity(user_id: int, record: dict, context: CallbackContext = None):
-    """
-    يتحقق هل المستخدم أكمل:
-    - هدف الماء اليومي
-    - وهدف القرآن اليومي
-    في نفس اليوم.
-
-    ويحدّث:
-    - ميدالية النشاط اليومي ⚡ (أول مرة فقط)
-    - ميدالية الاستمرارية 📅 (عند ٧ أيام متتالية)
-    - عدّاد الاستمرارية اليومية.
-    """
-    # تأكد من تحديث تواريخ اليوم
-    ensure_today_water(record)
-    ensure_today_quran(record)
-
-    cups_goal = record.get("cups_goal")
-    q_goal = record.get("quran_pages_goal")
-    if not cups_goal or not q_goal:
-        return
-
-    today_cups = record.get("today_cups", 0)
-    q_today = record.get("quran_pages_today", 0)
-
-    # لازم يكون أنهى الهدفين
-    if today_cups < cups_goal or q_today < q_goal:
-        return
-
-    today_date = datetime.now(timezone.utc).date()
-    today_str = today_date.isoformat()
-
-    medals = record.get("medals", []) or []
-    streak = record.get("daily_full_streak", 0) or 0
-    last_full_day = record.get("last_full_day")
-
-    got_new_daily_medal = False
-    got_new_streak_medal = False
-
-    # 1) ميدالية النشاط اليومي ⚡ (أول مرة يكمل ماء + قرآن في نفس اليوم)
-    if "ميدالية النشاط اليومي ⚡" not in medals:
-        medals.append("ميدالية النشاط اليومي ⚡")
-        got_new_daily_medal = True
-
-    # 2) حساب الاستمرارية اليومية 📅
-    if last_full_day == today_str:
-        # هذا اليوم محسوب من قبل، لا نزيد الاستمرارية مرة أخرى
-        pass
-    elif last_full_day:
-        try:
-            y, m, d = map(int, last_full_day.split("-"))
-            last_date = datetime(y, m, d, tzinfo=timezone.utc).date()
-            if (today_date - last_date).days == 1:
-                streak += 1
-            else:
-                streak = 1
-        except Exception:
-            streak = 1
-    else:
-        streak = 1
-
-    record["daily_full_streak"] = streak
-    record["last_full_day"] = today_str
-
-    # 3) ميدالية الاستمرارية 📅 عند ٧ أيام متتالية
-    if streak >= 7 and "ميدالية الاستمرارية 📅" not in medals:
-        medals.append("ميدالية الاستمرارية 📅")
-        got_new_streak_medal = True
-
-    record["medals"] = medals
-    save_data()
-
-    # 4) رسائل التحفيز 💌
-    if context is not None:
-        try:
-            if got_new_daily_medal:
-                context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        "⚡ مبروك! أنجزت هدف الماء وهدف القرآن في نفس اليوم لأول مرة.\n"
-                        "هذه *ميدالية النشاط اليومي*، بداية جميلة لاستمرار أجمل 🤍"
-                    ),
-                    parse_mode="Markdown",
-                )
-            if got_new_streak_medal:
-                context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        "📅 ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة ٧ أيام متتالية.\n"
-                        "حصلت على *ميدالية الاستمرارية* 🏆\n"
-                        "استمر، فالقليل الدائم أحبّ إلى الله من الكثير المنقطع 🤍"
-                    ),
-                    parse_mode="Markdown",
-                )
-        except Exception as e:
-            logger.error(f"Error sending daily activity medals messages to {user_id}: {e}")
-
 
 def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
     """إضافة نقاط للمستخدم ثم تحديث مستواه وترتيبه."""
@@ -812,49 +812,106 @@ def add_points(user_id: int, amount: int, context: CallbackContext = None, reaso
     record = data[uid]
     record["points"] = record.get("points", 0) + amount
     update_level_and_medals(user_id, record, context)
+    
+    check_daily_completion(user_id, context)
 
-# =================== أذكار ثابتة (مختصرة) ===================
+# =================== دوال عرض الترتيب المحدثة ===================
+
+def get_top_rankings(count: int = 10) -> str:
+    """الحصول على أفضل X مستخدمين بالتنسيق الجديد."""
+    sorted_users = get_users_sorted_by_points()
+    top_users = sorted_users[:count]
+    
+    ranking_text = f"🏆 أفضل {count}:\n\n"
+    
+    for idx, user_rec in enumerate(top_users, start=1):
+        ranking_text += format_ranking_entry(idx, user_rec)
+        ranking_text += "\n\n"
+    
+    return ranking_text.strip()
+
+def handle_top_10(update: Update, context: CallbackContext):
+    """عرض أفضل 10 مستخدمين."""
+    user = update.effective_user
+    get_user_record(user)
+    
+    ranking_text = get_top_rankings(10)
+    
+    update.message.reply_text(
+        ranking_text,
+        reply_markup=COMP_MENU_KB,
+    )
+
+def handle_top_100(update: Update, context: CallbackContext):
+    """عرض أفضل 100 مستخدم."""
+    user = update.effective_user
+    get_user_record(user)
+    
+    ranking_text = get_top_rankings(100)
+    
+    if len(ranking_text) > 4096:
+        parts = [ranking_text[i:i+4000] for i in range(0, len(ranking_text), 4000)]
+        for part in parts:
+            update.message.reply_text(part)
+        update.message.reply_text(
+            "انتهت قائمة أفضل 100 مستخدم.",
+            reply_markup=COMP_MENU_KB,
+        )
+    else:
+        update.message.reply_text(
+            ranking_text,
+            reply_markup=COMP_MENU_KB,
+        )
+
+def handle_my_profile(update: Update, context: CallbackContext):
+    """عرض الملف التنافسي للمستخدم."""
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    profile_text = format_user_profile(record)
+    
+    update.message.reply_text(
+        profile_text,
+        reply_markup=COMP_MENU_KB,
+    )
+
+# =================== أذكار ثابتة ===================
 
 ADHKAR_MORNING_TEXT = (
-    "أذكار الصباح (من بعد الفجر حتى ارتفاع الشمس) 🌅:\n\n"
-    "1⃣ آية الكرسي: «اللّه لا إله إلا هو الحيّ القيّوم...» مرة واحدة.\n"
+    "أذكار الصباح 🌅:\n\n"
+    "1⃣ آية الكرسي مرة واحدة.\n"
     "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أصبحت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم» سبع مرات.\n"
+    "3⃣ «أصبحنا وأصبح الملك لله...».\n"
+    "4⃣ «اللهم ما أصبح بي من نعمة...».\n"
+    "5⃣ «اللهم إني أصبحت أشهدك...» أربع مرات.\n"
+    "6⃣ «حسبي الله لا إله إلا هو...» سبع مرات.\n"
     "7⃣ «اللهم صل وسلم على سيدنا محمد» عددًا كثيرًا.\n\n"
-    "للتسبيح بعدد معيّن (مثل 33 أو 100) يمكنك استخدام زر «السبحة 📿»."
+    "للتسبيح بعدد معيّن استخدم زر «السبحة 📿»."
 )
 
 ADHKAR_EVENING_TEXT = (
-    "أذكار المساء (من بعد العصر حتى الليل) 🌙:\n\n"
+    "أذكار المساء 🌙:\n\n"
     "1⃣ آية الكرسي مرة واحدة.\n"
     "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
-    "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
+    "3⃣ «أمسينا وأمسى الملك لله...».\n"
+    "4⃣ «اللهم ما أمسى بي من نعمة...».\n"
+    "5⃣ «اللهم إني أمسيت أشهدك...» أربع مرات.\n"
+    "6⃣ «باسم الله الذي لا يضر...» ثلاث مرات.\n"
+    "7⃣ الإكثار من الصلاة على النبي ﷺ.\n\n"
+    "للتسبيح بعدد معيّن استخدم زر «السبحة 📿»."
 )
 
 ADHKAR_GENERAL_TEXT = (
-    "أذكار عامة تثبّت القلب وتريح الصدر 💚:\n\n"
+    "أذكار عامة 💚:\n\n"
     "• «أستغفر الله العظيم وأتوب إليه».\n"
-    "• «لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "• «سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر».\n"
+    "• «لا إله إلا الله وحده لا شريك له».\n"
+    "• «سبحان الله، والحمد لله، ولا إله إلا الله».\n"
     "• «لا حول ولا قوة إلا بالله».\n"
     "• «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
+    "استعمل «السبحة 📿» لاختيار ذكر وعدد معيّن."
 )
 
 # =================== أوامر البوت ===================
-
 
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -866,47 +923,42 @@ def start_command(update: Update, context: CallbackContext):
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
         "أهلًا بك في بوت *سُقيا الكوثر*.\n"
-        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، "
-        "وتسجيل مذكّرات قلبك، مع نظام نقاط ومنافسات وميداليات تحفيزية 🎖\n\n"
-        "اختر من القائمة أسفل الشاشة ما يناسبك:",
+        "يساعدك على الأذكار والقرآن والماء والنقاط والميداليات 🎖\n\n"
+        "اختر من القائمة:",
         reply_markup=kb,
         parse_mode="Markdown",
     )
 
-    # إشعار الأدمن بدخول مستخدم جديد
     if is_new and ADMIN_ID is not None:
         try:
             context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=(
-                    "👤 مستخدم جديد دخل البوت:\n\n"
+                    "👤 مستخدم جديد:\n"
                     f"الاسم: {user.full_name}\n"
-                    f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
                     f"ID: `{user.id}`"
                 ),
                 parse_mode="Markdown",
             )
         except Exception as e:
-            logger.error(f"Error notifying admin about new user: {e}")
-
+            logger.error(f"Error notifying admin: {e}")
 
 def help_command(update: Update, context: CallbackContext):
     kb = user_main_keyboard(update.effective_user.id)
     update.message.reply_text(
-        "طريقة الاستخدام:\n\n"
-        "• أذكاري 🤲 → أذكار الصباح والمساء وأذكار عامة.\n"
-        "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
-        "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
-        "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
-        "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
-        "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
-        "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
-        "• المنافسات و المجتمع 🏅 → لرؤية مستواك ونقاطك ولوحات الشرف.",
+        "الأوامر المتاحة:\n\n"
+        "• أذكاري 🤲 → الأذكار\n"
+        "• وردي القرآني 📖 → القرآن\n"
+        "• السبحة 📿 → التسبيح\n"
+        "• مذكّرات قلبي 🩵 → المذكرات\n"
+        "• منبّه الماء 💧 → تتبع الماء\n"
+        "• احصائياتي 📊 → إحصائيات\n"
+        "• تواصل مع الدعم ✉️ → الدعم\n"
+        "• المنافسات و المجتمع 🏅 → لوحات الشرف",
         reply_markup=kb,
     )
 
 # =================== قسم منبّه الماء ===================
-
 
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -916,22 +968,20 @@ def open_water_menu(update: Update, context: CallbackContext):
         "منبّه الماء 💧:\n"
         "• سجّل ما تشربه من أكواب.\n"
         "• شاهد مستواك اليوم.\n"
-        "• عدّل إعداداتك وتشغيل التذكير.\n"
-        "كل كوب يزيد نقاطك ويرفع مستواك 🎯",
+        "• عدّل إعداداتك.\n"
+        "كل كوب يزيد نقاطك 🎯",
         reply_markup=kb,
     )
-
 
 def open_water_settings(update: Update, context: CallbackContext):
     kb = water_settings_keyboard(update.effective_user.id)
     update.message.reply_text(
         "إعدادات الماء ⚙️:\n"
-        "1) حساب احتياجك اليومي من الماء بناءً على الجنس والعمر والوزن.\n"
-        "2) تشغيل أو إيقاف التذكير الدوري بالماء.\n"
-        "3) الرجوع إلى منبّه الماء مباشرة.",
+        "1) حساب احتياجك اليومي من الماء.\n"
+        "2) تشغيل أو إيقاف التذكير.\n"
+        "3) الرجوع إلى منبّه الماء.",
         reply_markup=kb,
     )
-
 
 def handle_water_need_start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
@@ -945,7 +995,6 @@ def handle_water_need_start(update: Update, context: CallbackContext):
         reply_markup=GENDER_KB,
     )
 
-
 def handle_gender_input(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
@@ -954,14 +1003,14 @@ def handle_gender_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            "تم الإلغاء.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
 
     if text not in [BTN_GENDER_MALE, BTN_GENDER_FEMALE]:
         update.message.reply_text(
-            "رجاءً اختر من الخيارات الظاهرة:",
+            "رجاءً اختر من الخيارات:",
             reply_markup=GENDER_KB,
         )
         return
@@ -975,10 +1024,9 @@ def handle_gender_input(update: Update, context: CallbackContext):
     WAITING_AGE.add(user_id)
 
     update.message.reply_text(
-        "جميل.\nالآن أرسل عمرك (بالسنوات)، مثال: 25",
+        "أرسل عمرك (بالسنوات):",
         reply_markup=CANCEL_KB,
     )
-
 
 def handle_age_input(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -988,7 +1036,7 @@ def handle_age_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_AGE.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            "تم الإلغاء.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
@@ -999,7 +1047,7 @@ def handle_age_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عمرًا صحيحًا بالأرقام فقط، مثال: 20",
+            "رجاءً أرسل عمرًا صحيحًا:",
             reply_markup=CANCEL_KB,
         )
         return
@@ -1012,10 +1060,9 @@ def handle_age_input(update: Update, context: CallbackContext):
     WAITING_WEIGHT.add(user_id)
 
     update.message.reply_text(
-        "شكرًا.\nالآن أرسل وزنك بالكيلوغرام، مثال: 70",
+        "الآن أرسل وزنك بالكيلوغرام:",
         reply_markup=CANCEL_KB,
     )
-
 
 def handle_weight_input(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1025,7 +1072,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_WEIGHT.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            "تم الإلغاء.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
@@ -1036,7 +1083,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل وزنًا صحيحًا بالكيلوغرام، مثال: 65",
+            "رجاءً أرسل وزنًا صحيحًا:",
             reply_markup=CANCEL_KB,
         )
         return
@@ -1044,7 +1091,6 @@ def handle_weight_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     record["weight"] = weight
 
-    # حساب احتياج الماء حسب الجنس
     if record.get("gender") == "male":
         rate = 0.035
     else:
@@ -1062,12 +1108,10 @@ def handle_weight_input(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم حساب احتياجك اليومي من الماء 💧\n\n"
         f"- تقريبًا: {record['water_liters']} لتر في اليوم.\n"
-        f"- ما يعادل تقريبًا: {cups_goal} كوب (بمتوسط 250 مل للكوب).\n\n"
-        "وزّع أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.\n"
-        "كل كوب تسجّله يعطيك نقاطًا إضافية 🎯",
+        f"- ما يعادل: {cups_goal} كوب (250 مل للكوب).\n\n"
+        "كل كوب تسجّله يعطيك نقاطًا 🎯",
         reply_markup=water_menu_keyboard(user_id),
     )
-
 
 def handle_log_cup(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1075,8 +1119,7 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "لم تقم بعد بحساب احتياجك من الماء.\n"
-            "اذهب إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
+            "احسب احتياجك من الماء أولًا.",
             reply_markup=water_menu_keyboard(user.id),
         )
         return
@@ -1085,10 +1128,8 @@ def handle_log_cup(update: Update, context: CallbackContext):
     before = record.get("today_cups", 0)
     record["today_cups"] = before + 1
 
-    # نقاط على كل كوب
     add_points(user.id, POINTS_PER_WATER_CUP, context)
 
-    # مكافأة إكمال الهدف اليومي لأول مرة
     cups_goal = record.get("cups_goal")
     after = record["today_cups"]
     if cups_goal and before < cups_goal <= after:
@@ -1096,34 +1137,27 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
-    check_daily_full_activity(user.id, record, context)
-
     status_text = format_water_status_text(record)
     update.message.reply_text(
         f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
         reply_markup=water_menu_keyboard(user.id),
     )
 
-
 def handle_add_cups(update: Update, context: CallbackContext):
-    """وصف طريقة إضافة عدد أكواب، أو التعامل مع الرقم نفسه."""
     user = update.effective_user
     record = get_user_record(user)
     text = (update.message.text or "").strip()
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل استخدام هذه الميزة، احسب احتياجك من الماء أولًا من خلال:\n"
-            "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
+            "احسب احتياجك من الماء أولًا.",
             reply_markup=water_menu_keyboard(user.id),
         )
         return
 
     if text == BTN_WATER_ADD_CUPS:
         update.message.reply_text(
-            "أرسل الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
-            "وسيتم إضافتها مباشرة إلى عدّاد اليوم.",
+            "أرسل عدد الأكواب:",
             reply_markup=CANCEL_KB,
         )
         return
@@ -1134,8 +1168,7 @@ def handle_add_cups(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "لو كنت تريد إضافة عدد من الأكواب، أرسل رقمًا منطقيًا مثل: 2 أو 3.\n"
-            "أو استخدم بقية الأزرار للقائمة.",
+            "أرسل عددًا صحيحًا:",
             reply_markup=water_menu_keyboard(user.id),
         )
         return
@@ -1144,10 +1177,8 @@ def handle_add_cups(update: Update, context: CallbackContext):
     before = record.get("today_cups", 0)
     record["today_cups"] = before + cups
 
-    # نقاط على كل كوب ماء
     add_points(user.id, cups * POINTS_PER_WATER_CUP, context)
 
-    # مكافأة إكمال الهدف اليومي لأول مرة
     cups_goal = record.get("cups_goal")
     after = record["today_cups"]
     if cups_goal and before < cups_goal <= after:
@@ -1155,15 +1186,11 @@ def handle_add_cups(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
-    check_daily_full_activity(user.id, record, context)
-
     status_text = format_water_status_text(record)
     update.message.reply_text(
-        f"🥤 تم إضافة {cups} كوب إلى عدّادك اليوم.\n\n{status_text}",
+        f"🥤 تم إضافة {cups} كوب.\n\n{status_text}",
         reply_markup=water_menu_keyboard(user.id),
     )
-
 
 def handle_status(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1174,15 +1201,13 @@ def handle_status(update: Update, context: CallbackContext):
         reply_markup=water_menu_keyboard(user.id),
     )
 
-
 def handle_reminders_on(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
 
     if not record.get("cups_goal"):
         update.message.reply_text(
-            "قبل تشغيل التذكير، احسب احتياجك من الماء من خلال:\n"
-            "«حساب احتياج الماء 🧮».",
+            "احسب احتياجك أولًا.",
             reply_markup=water_settings_keyboard(user.id),
         )
         return
@@ -1191,11 +1216,9 @@ def handle_reminders_on(update: Update, context: CallbackContext):
     save_data()
 
     update.message.reply_text(
-        "تم تشغيل تذكيرات الماء ⏰\n"
-        "ستصلك رسائل خلال اليوم لتذكيرك بالشرب.",
+        "تم تشغيل التذكيرات ⏰",
         reply_markup=water_settings_keyboard(user.id),
     )
-
 
 def handle_reminders_off(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1204,13 +1227,11 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     save_data()
 
     update.message.reply_text(
-        "تم إيقاف تذكيرات الماء 📴\n"
-        "يمكنك تشغيلها مرة أخرى وقتما شئت.",
+        "تم إيقاف التذكيرات 📴",
         reply_markup=water_settings_keyboard(user.id),
     )
 
 # =================== قسم ورد القرآن ===================
-
 
 def open_quran_menu(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1221,11 +1242,9 @@ def open_quran_menu(update: Update, context: CallbackContext):
         "• عيّن عدد صفحات اليوم.\n"
         "• سجّل ما قرأته.\n"
         "• شاهد مستوى إنجازك.\n"
-        "• يمكنك إعادة تعيين ورد اليوم.\n"
-        "كل صفحة تضيفها تزيد نقاطك وترفع مستواك 🎯",
+        "كل صفحة تزيد نقاطك 🎯",
         reply_markup=kb,
     )
-
 
 def handle_quran_set_goal(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
@@ -1234,10 +1253,9 @@ def handle_quran_set_goal(update: Update, context: CallbackContext):
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
     update.message.reply_text(
-        "أرسل عدد الصفحات التي تريد قراءتها اليوم من القرآن، مثال: 5 أو 10.",
+        "أرسل عدد الصفحات لهذا اليوم:",
         reply_markup=CANCEL_KB,
     )
-
 
 def handle_quran_goal_input(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1247,7 +1265,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_QURAN_GOAL.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            "تم الإلغاء.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
@@ -1258,7 +1276,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
+            "أرسل عددًا صحيحًا:",
             reply_markup=CANCEL_KB,
         )
         return
@@ -1271,11 +1289,9 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
     WAITING_QURAN_GOAL.discard(user_id)
 
     update.message.reply_text(
-        f"تم تعيين ورد اليوم: {pages} صفحة.\n"
-        "يمكنك تسجيل ما قرأته من خلال «سجلت صفحات اليوم ✅».",
+        f"تم تعيين ورد اليوم: {pages} صفحة.",
         reply_markup=quran_menu_keyboard(user_id),
     )
-
 
 def handle_quran_add_pages_start(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1283,18 +1299,16 @@ def handle_quran_add_pages_start(update: Update, context: CallbackContext):
 
     if not record.get("quran_pages_goal"):
         update.message.reply_text(
-            "لم تضبط بعد ورد اليوم.\n"
-            "استخدم «تعيين ورد اليوم 📌» أولًا.",
+            "عيّن الورد أولًا.",
             reply_markup=quran_menu_keyboard(user.id),
         )
         return
 
     WAITING_QURAN_ADD_PAGES.add(user.id)
     update.message.reply_text(
-        "أرسل الآن عدد الصفحات التي قرأتها من ورد اليوم، مثال: 2 أو 3.",
+        "أرسل عدد الصفحات التي قرأتها:",
         reply_markup=CANCEL_KB,
     )
-
 
 def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1304,7 +1318,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            "تم الإلغاء.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
@@ -1315,7 +1329,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
             raise ValueError()
     except ValueError:
         update.message.reply_text(
-            "رجاءً أرسل عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
+            "أرسل عددًا صحيحًا:",
             reply_markup=CANCEL_KB,
         )
         return
@@ -1326,10 +1340,8 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     before = record.get("quran_pages_today", 0)
     record["quran_pages_today"] = before + pages
 
-    # نقاط لكل صفحة
     add_points(user_id, pages * POINTS_PER_QURAN_PAGE, context)
 
-    # مكافأة إكمال ورد اليوم لأول مرة
     goal = record.get("quran_pages_goal")
     after = record["quran_pages_today"]
     if goal and before < goal <= after:
@@ -1337,17 +1349,13 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
-    check_daily_full_activity(user_id, record, context)
-
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
     status_text = format_quran_status_text(record)
     update.message.reply_text(
-        f"تم إضافة {pages} صفحة إلى وردك اليوم.\n\n{status_text}",
+        f"تم إضافة {pages} صفحة.\n\n{status_text}",
         reply_markup=quran_menu_keyboard(user_id),
     )
-
 
 def handle_quran_status(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1358,7 +1366,6 @@ def handle_quran_status(update: Update, context: CallbackContext):
         reply_markup=quran_menu_keyboard(user.id),
     )
 
-
 def handle_quran_reset_day(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
@@ -1368,13 +1375,11 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
     save_data()
 
     update.message.reply_text(
-        "تم إعادة تعيين ورد اليوم.\n"
-        "يمكنك البدء من جديد في حساب الصفحات لهذا اليوم.",
+        "تم إعادة تعيين الورد.",
         reply_markup=quran_menu_keyboard(user.id),
     )
 
 # =================== قسم الأذكار ===================
-
 
 def open_adhkar_menu(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1384,10 +1389,9 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
         "أذكاري 🤲:\n"
         "• أذكار الصباح.\n"
         "• أذكار المساء.\n"
-        "• أذكار عامة تريح القلب.",
+        "• أذكار عامة.",
         reply_markup=kb,
     )
-
 
 def send_morning_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1398,7 +1402,6 @@ def send_morning_adhkar(update: Update, context: CallbackContext):
         reply_markup=kb,
     )
 
-
 def send_evening_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
     increment_adhkar_count(user.id, 1)
@@ -1407,7 +1410,6 @@ def send_evening_adhkar(update: Update, context: CallbackContext):
         ADHKAR_EVENING_TEXT,
         reply_markup=kb,
     )
-
 
 def send_general_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -1420,25 +1422,21 @@ def send_general_adhkar(update: Update, context: CallbackContext):
 
 # =================== قسم السبحة ===================
 
-
 def open_tasbih_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     ACTIVE_TASBIH.pop(user.id, None)
     WAITING_TASBIH.discard(user.id)
 
     kb = build_tasbih_menu(is_admin(user.id))
-    text = "اختر الذكر الذي تريد التسبيح به، وسيقوم البوت بالعدّ لك:"
     update.message.reply_text(
-        text,
+        "اختر الذكر الذي تريد التسبيح به:",
         reply_markup=kb,
     )
-
 
 def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_text: str):
     user = update.effective_user
     user_id = user.id
 
-    # choice_text شكلها: "سبحان الله (33)"
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if choice_text == label:
@@ -1451,898 +1449,204 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
             update.message.reply_text(
                 f"بدأنا التسبيح:\n"
                 f"الذكر: {dhikr}\n"
-                f"العدد المطلوب: {count} مرة.\n\n"
-                "اضغط «تسبيحة ✅» في كل مرة تذكر فيها، أو «إنهاء الذكر ⬅️» عندما تنتهي.",
+                f"العدد: {count} مرة.\n\n"
+                "اضغط «تسبيحة ✅».",
                 reply_markup=tasbih_run_keyboard(user_id),
             )
             return
 
     update.message.reply_text(
-        "رجاءً اختر من الأذكار الظاهرة في القائمة.",
-        reply_markup=build_tasbih_menu(is_admin(user_id)),
+        "اختر من القائمة."
     )
-
 
 def handle_tasbih_tick(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
 
-    state = ACTIVE_TASBIH.get(user_id)
-    if not state:
+    if user_id not in ACTIVE_TASBIH:
         update.message.reply_text(
-            "ابدأ أولًا باختيار ذكر من قائمة «السبحة 📿».",
-            reply_markup=build_tasbih_menu(is_admin(user_id)),
+            "لم تبدأ التسبيح بعد."
         )
         return
 
-    state["current"] += 1
-    increment_tasbih_total(user_id, 1)
+    session = ACTIVE_TASBIH[user_id]
+    session["current"] += 1
 
-    current = state["current"]
-    target = state["target"]
-    dhikr = state["text"]
+    current = session["current"]
+    target = session["target"]
 
     if current < target:
         update.message.reply_text(
-            f"{dhikr}\n"
-            f"العدد الحالي: {current} / {target}.",
+            f"✅ التسبيحة رقم {current} من {target}",
             reply_markup=tasbih_run_keyboard(user_id),
         )
     else:
-        # احتساب النقاط عند اكتمال جلسة التسبيح
-        reward_points = tasbih_points_for_session(target)
-        add_points(user_id, reward_points, context)
+        points_earned = tasbih_points_for_session(target)
+        increment_tasbih_total(user_id, target)
+        add_points(user_id, points_earned, context)
 
-        update.message.reply_text(
-            f"اكتمل التسبيح على: {dhikr}\n"
-            f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.\n\n"
-            "اختر تسبيحة أخرى من القائمة:",
-            reply_markup=build_tasbih_menu(is_admin(user_id)),
-        )
-        ACTIVE_TASBIH.pop(user_id, None)
+        del ACTIVE_TASBIH[user_id]
         WAITING_TASBIH.discard(user_id)
 
+        update.message.reply_text(
+            f"🎉 أتممت التسبيح!\n\n"
+            f"الذكر: {session['text']}\n"
+            f"عدد التسبيحات: {target}\n"
+            f"النقاط المكتسبة: {points_earned} 🎯",
+            reply_markup=user_main_keyboard(user_id),
+        )
 
 def handle_tasbih_end(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    ACTIVE_TASBIH.pop(user_id, None)
+    user = update.effective_user
+    user_id = user.id
+
+    if user_id in ACTIVE_TASBIH:
+        session = ACTIVE_TASBIH[user_id]
+        completed = session["current"]
+        total = session["target"]
+
+        if completed > 0:
+            increment_tasbih_total(user_id, completed)
+            points_earned = tasbih_points_for_session(completed)
+            add_points(user_id, points_earned, context)
+
+        del ACTIVE_TASBIH[user_id]
+
     WAITING_TASBIH.discard(user_id)
 
     update.message.reply_text(
-        "تم إنهاء جلسة التسبيح الحالية.\n"
-        "يمكنك اختيار ذكر جديد من «السبحة 📿».",
-        reply_markup=build_tasbih_menu(is_admin(user_id)),
-    )
-
-# =================== مذكّرات قلبي ===================
-
-
-def format_memos_list(memos):
-    if not memos:
-        return "لا توجد مذكّرات بعد."
-    return "\n\n".join(f"{idx+1}. {m}" for idx, m in enumerate(memos))
-
-
-def open_memos_menu(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-
-    # تفعيل حالة قائمة المذكرات
-    WAITING_MEMO_MENU.add(user_id)
-    WAITING_MEMO_ADD.discard(user_id)
-    WAITING_MEMO_EDIT_SELECT.discard(user_id)
-    WAITING_MEMO_EDIT_TEXT.discard(user_id)
-    WAITING_MEMO_DELETE_SELECT.discard(user_id)
-    MEMO_EDIT_INDEX.pop(user_id, None)
-
-    memos_text = format_memos_list(memos)
-    kb = build_memos_menu_kb(is_admin(user_id))
-
-    update.message.reply_text(
-        f"🩵 مذكّرات قلبي:\n\n{memos_text}\n\n"
-        "يمكنك إضافة، تعديل، أو حذف أي مذكرة من الأزرار بالأسفل.",
-        reply_markup=kb,
-    )
-
-
-def handle_memo_add_start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-
-    WAITING_MEMO_MENU.discard(user_id)
-    WAITING_MEMO_ADD.add(user_id)
-
-    update.message.reply_text(
-        "اكتب الآن المذكرة التي تريد حفظها في قلبك.\n"
-        "يمكن أن تكون شعورًا، دعاءً، موقفًا، أو أي شيء يهمّك 🤍",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_memo_add_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_MEMO_ADD.discard(user_id)
-        open_memos_menu(update, context)
-        return
-
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-    memos.append(text)
-    record["heart_memos"] = memos
-    save_data()
-
-    WAITING_MEMO_ADD.discard(user_id)
-
-    update.message.reply_text(
-        "تم حفظ مذكّرتك في قلب البوت 🤍.",
-        reply_markup=build_memos_menu_kb(is_admin(user_id)),
-    )
-    open_memos_menu(update, context)
-
-
-def handle_memo_edit_select(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-
-    if not memos:
-        update.message.reply_text(
-            "لا توجد مذكّرات لتعديلها حاليًا.",
-            reply_markup=build_memos_menu_kb(is_admin(user_id)),
-        )
-        return
-
-    WAITING_MEMO_MENU.discard(user_id)
-    WAITING_MEMO_EDIT_SELECT.add(user_id)
-
-    memos_text = format_memos_list(memos)
-    update.message.reply_text(
-        f"✏️ اختر رقم المذكرة التي تريد تعديلها:\n\n{memos_text}\n\n"
-        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_memo_edit_index_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_MEMO_EDIT_SELECT.discard(user_id)
-        open_memos_menu(update, context)
-        return
-
-    try:
-        idx = int(text) - 1
-        if idx < 0 or idx >= len(memos):
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسل رقم صحيح من القائمة الموجودة أمامك، أو اضغط «إلغاء ❌».",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    MEMO_EDIT_INDEX[user_id] = idx
-    WAITING_MEMO_EDIT_SELECT.discard(user_id)
-    WAITING_MEMO_EDIT_TEXT.add(user_id)
-
-    update.message.reply_text(
-        f"✏️ أرسل النص الجديد للمذكرة رقم {idx+1}:",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_memo_edit_text_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_MEMO_EDIT_TEXT.discard(user_id)
-        MEMO_EDIT_INDEX.pop(user_id, None)
-        open_memos_menu(update, context)
-        return
-
-    idx = MEMO_EDIT_INDEX.get(user_id)
-    if idx is None or idx < 0 or idx >= len(memos):
-        WAITING_MEMO_EDIT_TEXT.discard(user_id)
-        MEMO_EDIT_INDEX.pop(user_id, None)
-        update.message.reply_text(
-            "حدث خطأ بسيط في اختيار المذكرة، جرّب من جديد من «مذكّرات قلبي 🩵».",
-            reply_markup=user_main_keyboard(user_id),
-        )
-        return
-
-    memos[idx] = text
-    record["heart_memos"] = memos
-    save_data()
-
-    WAITING_MEMO_EDIT_TEXT.discard(user_id)
-    MEMO_EDIT_INDEX.pop(user_id, None)
-
-    update.message.reply_text(
-        "تم تعديل المذكرة بنجاح ✅.",
-        reply_markup=build_memos_menu_kb(is_admin(user_id)),
-    )
-    open_memos_menu(update, context)
-
-
-def handle_memo_delete_select(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-
-    if not memos:
-        update.message.reply_text(
-            "لا توجد مذكّرات لحذفها حاليًا.",
-            reply_markup=build_memos_menu_kb(is_admin(user_id)),
-        )
-        return
-
-    WAITING_MEMO_MENU.discard(user_id)
-    WAITING_MEMO_DELETE_SELECT.add(user_id)
-
-    memos_text = format_memos_list(memos)
-    update.message.reply_text(
-        f"🗑 اختر رقم المذكرة التي تريد حذفها:\n\n{memos_text}\n\n"
-        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_memo_delete_index_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    memos = record.get("heart_memos", [])
-    text = (update.message.text or "").strip()
-
-    if text == BTN_CANCEL:
-        WAITING_MEMO_DELETE_SELECT.discard(user_id)
-        open_memos_menu(update, context)
-        return
-
-    try:
-        idx = int(text) - 1
-        if idx < 0 or idx >= len(memos):
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسل رقم صحيح من القائمة الموجودة أمامك، أو اضغط «إلغاء ❌».",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    deleted = memos.pop(idx)
-    record["heart_memos"] = memos
-    save_data()
-
-    WAITING_MEMO_DELETE_SELECT.discard(user_id)
-
-    update.message.reply_text(
-        f"🗑 تم حذف المذكرة:\n\n{deleted}",
-        reply_markup=build_memos_menu_kb(is_admin(user_id)),
-    )
-    open_memos_menu(update, context)
-
-# =================== احصائياتي ===================
-
-
-def handle_stats(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-
-    ensure_today_water(record)
-    ensure_today_quran(record)
-
-    cups_goal = record.get("cups_goal")
-    today_cups = record.get("today_cups", 0)
-
-    q_goal = record.get("quran_pages_goal")
-    q_today = record.get("quran_pages_today", 0)
-
-    tasbih_total = record.get("tasbih_total", 0)
-    adhkar_count = record.get("adhkar_count", 0)
-
-    memos_count = len(record.get("heart_memos", []))
-
-    points = record.get("points", 0)
-    level = record.get("level", 0)
-    medals = record.get("medals", [])
-
-    text_lines = ["احصائياتك لليوم 📊:\n"]
-
-    # الماء
-    if cups_goal:
-        text_lines.append(f"- الماء: {today_cups} / {cups_goal} كوب.")
-    else:
-        text_lines.append("- الماء: لم يتم حساب احتياجك بعد.")
-
-    # القرآن
-    if q_goal:
-        text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
-    else:
-        text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
-
-    # الأذكار
-    text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
-
-    # التسبيح
-    text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
-
-    # المذكرات
-    text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
-
-    # النقاط والمستوى
-    text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
-    if level <= 0:
-        text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
-    else:
-        text_lines.append(f"- مستواك الحالي: {level}.")
-    if medals:
-        text_lines.append("- ميدالياتك: " + "، ".join(medals))
-
-    update.message.reply_text(
-        "\n".join(text_lines),
+        "انتهى التسبيح.",
         reply_markup=user_main_keyboard(user_id),
     )
 
-# =================== تذكيرات الماء (JobQueue) ===================
+# =================== معالج رسائل عام ===================
 
-REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-
-
-def water_reminder_job(context: CallbackContext):
-    logger.info("Running water reminder job...")
-    bot = context.bot
-
-    for uid in get_all_user_ids():
-        rec = data.get(str(uid)) or {}
-        if not rec.get("reminders_on"):
-            continue
-
-        ensure_today_water(rec)
-        cups_goal = rec.get("cups_goal")
-        today_cups = rec.get("today_cups", 0)
-        if not cups_goal:
-            continue
-
-        remaining = max(cups_goal - today_cups, 0)
-
-        try:
-            bot.send_message(
-                chat_id=uid,
-                text=(
-                    "تذكير لطيف بشرب الماء 💧:\n\n"
-                    f"شربت حتى الآن: {today_cups} من {cups_goal} كوب.\n"
-                    f"المتبقي لهذا اليوم تقريبًا: {remaining} كوب.\n\n"
-                    "لو استطعت الآن، خذ كوب ماء وسجّله في البوت."
-                ),
-            )
-        except Exception as e:
-            logger.error(f"Error sending water reminder to {uid}: {e}")
-
-# =================== نظام المنافسات و المجتمع ===================
-
-
-def open_comp_menu(update: Update, context: CallbackContext):
-    user = update.effective_user
-    update.message.reply_text(
-        "المنافسات و المجتمع 🏅:\n"
-        "• شاهد ملفك التنافسي (مستواك، نقاطك، ميدالياتك، ترتيبك).\n"
-        "• اطّلع على أفضل 10 و أفضل 100 مستخدم.\n"
-        "كل عمل صالح تسجّله هنا يرفعك في لوحة الشرف 🤍",
-        reply_markup=COMP_MENU_KB,
-    )
-
-
-def handle_my_profile(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-
-    points = record.get("points", 0)
-    level = record.get("level", 0)
-    medals = record.get("medals", []) or []
-    best_rank = record.get("best_rank")
-
-    # حساب الترتيب الحالي
-    sorted_users = get_users_sorted_by_points()
-    rank = None
-    for idx, rec in enumerate(sorted_users, start=1):
-        if rec.get("user_id") == user_id:
-            rank = idx
-            break
-
-    lines = [
-        "ملفي التنافسي 🎯:\n",
-        f"- النقاط الكلية: 🎯 {points} نقطة",
-    ]
-
-    if level <= 0:
-        lines.append("- المستوى الحالي: 0 (أول مستوى يبدأ من 20 نقطة).")
-    else:
-        lines.append(f"- المستوى الحالي: {level}")
-
-    if rank is not None:
-        lines.append(f"- ترتيبي الحالي: #{rank}")
-    if best_rank is not None:
-        lines.append(f"- أفضل ترتيب وصلت له: #{best_rank}")
-
-    # الميداليات في سطر منفصل
-    if medals:
-        lines.append("\n- ميدالياتي:")
-        lines.append("  " + " — ".join(medals))
-    else:
-        lines.append("\n- ميدالياتي: (لا توجد ميداليات بعد)")
-
-    update.message.reply_text(
-        "\n".join(lines),
-        reply_markup=COMP_MENU_KB,
-    )
-
-
-def handle_top10(update: Update, context: CallbackContext):
-    sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:10]
-
-    if not top:
-        update.message.reply_text(
-            "لا توجد بيانات منافسة كافية حتى الآن.",
-            reply_markup=COMP_MENU_KB,
-        )
-        return
-
-    lines = ["🏅 أفضل 10 مستخدمين:\n"]
-    for idx, rec in enumerate(top, start=1):
-        name = rec.get("first_name") or "مستخدم"
-        points = rec.get("points", 0)
-        medals = rec.get("medals", []) or []
-
-        # السطر الأول: الترتيب + الاسم + النقاط 🎯
-        lines.append(f"{idx}) {name} — 🎯 {points} نقطة")
-
-        # السطر الثاني: الميداليات
-        if medals:
-            medals_line = " — ".join(medals)
-        else:
-            medals_line = "(لا توجد ميداليات بعد)"
-        lines.append(medals_line)
-        lines.append("")  # سطر فارغ للفصل
-
-    update.message.reply_text(
-        "\n".join(lines),
-        reply_markup=COMP_MENU_KB,
-    )
-
-
-def handle_top100(update: Update, context: CallbackContext):
-    sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:100]
-
-    if not top:
-        update.message.reply_text(
-            "لا توجد بيانات منافسة كافية حتى الآن.",
-            reply_markup=COMP_MENU_KB,
-        )
-        return
-
-    lines = ["🏆 أفضل 100 مستخدم:\n"]
-    for idx, rec in enumerate(top, start=1):
-        name = rec.get("first_name") or "مستخدم"
-        points = rec.get("points", 0)
-        medals = rec.get("medals", []) or []
-
-        lines.append(f"{idx}) {name} — 🎯 {points} نقطة")
-
-        if medals:
-            medals_line = " — ".join(medals)
-        else:
-            medals_line = "(لا توجد ميداليات بعد)"
-        lines.append(medals_line)
-        lines.append("")
-
-    update.message.reply_text(
-        "\n".join(lines),
-        reply_markup=COMP_MENU_KB,
-    )
-
-# =================== نظام الدعم ولوحة التحكم ===================
-
-
-def handle_contact_support(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user)
-    user_id = user.id
-
-    gender = record.get("gender")
-
-    # لو الجنس معروف مسبقًا → مباشرة نطلب الرسالة
-    if gender in ["male", "female"]:
-        WAITING_SUPPORT.add(user_id)
-        update.message.reply_text(
-            "✉️ اكتب الآن رسالتك التي تريد إرسالها للدعم.\n"
-            "اشرح ما تحتاجه بهدوء، وسيتم الاطلاع عليها بإذن الله.\n\n"
-            "للإلغاء اضغط «إلغاء ❌».",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    # أول مرة: نطلب تحديد الجنس
-    WAITING_SUPPORT_GENDER.add(user_id)
-    update.message.reply_text(
-        "قبل إرسال رسالتك للدعم، اختر الجنس:\n\n"
-        "🧔‍♂️ لو كنت رجلًا → تصل رسالتك للمشرف.\n"
-        "👩 لو كنت امرأة → تصل رسالتك للمشرفة.\n\n"
-        "اختر من الأزرار بالأسفل 👇",
-        reply_markup=GENDER_KB,
-    )
-
-
-def handle_admin_panel(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not is_admin(user.id):
-        update.message.reply_text(
-            "هذا القسم خاص بالمدير فقط.",
-            reply_markup=user_main_keyboard(user.id),
-        )
-        return
-
-    update.message.reply_text(
-        "لوحة التحكم 🛠:\n"
-        "• عرض عدد المستخدمين.\n"
-        "• عرض قائمة المستخدمين.\n"
-        "• إرسال رسالة جماعية.\n"
-        "• عرض ترتيب المنافسة تفصيليًا.",
-        reply_markup=ADMIN_PANEL_KB,
-    )
-
-
-def handle_admin_users_count(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
-
-    total_users = len(get_all_user_ids())
-    update.message.reply_text(
-        f"👥 عدد المستخدمين المسجلين في البوت: {total_users}",
-        reply_markup=ADMIN_PANEL_KB,
-    )
-
-
-def handle_admin_users_list(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
-
-    lines = []
-    for uid_str, rec in data.items():
-        name = rec.get("first_name") or "بدون اسم"
-        username = rec.get("username")
-        line = f"- {name} | ID: {uid_str}"
-        if username:
-            line += f" | @{username}"
-        lines.append(line)
-
-    if not lines:
-        text = "لا يوجد مستخدمون مسجّلون بعد."
-    else:
-        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])  # حد معقول
-
-    update.message.reply_text(
-        text,
-        reply_markup=ADMIN_PANEL_KB,
-    )
-
-
-def handle_admin_broadcast_start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
-
-    WAITING_BROADCAST.add(user.id)
-    update.message.reply_text(
-        "اكتب الآن الرسالة التي تريد إرسالها لكل مستخدمي البوت.\n"
-        "مثال: تذكير، نصيحة، أو إعلان مهم.\n\n"
-        "للإلغاء اضغط «إلغاء ❌».",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def handle_admin_broadcast_input(update: Update, context: CallbackContext):
+def handle_message(update: Update, context: CallbackContext):
+    """معالج رسائل النص العام."""
     user = update.effective_user
     user_id = user.id
     text = (update.message.text or "").strip()
 
-    if text == BTN_CANCEL:
-        WAITING_BROADCAST.discard(user_id)
-        handle_admin_panel(update, context)
+    # المنافسات
+    if text == BTN_MY_PROFILE:
+        handle_my_profile(update, context)
+        return
+    elif text == BTN_TOP10:
+        handle_top_10(update, context)
+        return
+    elif text == BTN_TOP100:
+        handle_top_100(update, context)
         return
 
-    if not is_admin(user_id):
-        WAITING_BROADCAST.discard(user_id)
+    # منبّه الماء
+    elif text == BTN_WATER_MAIN:
+        open_water_menu(update, context)
+        return
+    elif text == BTN_WATER_LOG:
+        handle_log_cup(update, context)
+        return
+    elif text == BTN_WATER_ADD_CUPS:
+        handle_add_cups(update, context)
+        return
+    elif text == BTN_WATER_STATUS:
+        handle_status(update, context)
+        return
+    elif text == BTN_WATER_SETTINGS:
+        open_water_settings(update, context)
+        return
+    elif text == BTN_WATER_NEED:
+        handle_water_need_start(update, context)
+        return
+    elif text == BTN_WATER_REM_ON:
+        handle_reminders_on(update, context)
+        return
+    elif text == BTN_WATER_REM_OFF:
+        handle_reminders_off(update, context)
+        return
+    elif text == BTN_WATER_BACK_MENU:
+        open_water_menu(update, context)
+        return
+
+    # ورد القرآن
+    elif text == BTN_QURAN_MAIN:
+        open_quran_menu(update, context)
+        return
+    elif text == BTN_QURAN_SET_GOAL:
+        handle_quran_set_goal(update, context)
+        return
+    elif text == BTN_QURAN_ADD_PAGES:
+        handle_quran_add_pages_start(update, context)
+        return
+    elif text == BTN_QURAN_STATUS:
+        handle_quran_status(update, context)
+        return
+    elif text == BTN_QURAN_RESET_DAY:
+        handle_quran_reset_day(update, context)
+        return
+
+    # الأذكار
+    elif text == BTN_ADHKAR_MAIN:
+        open_adhkar_menu(update, context)
+        return
+    elif text == BTN_ADHKAR_MORNING:
+        send_morning_adhkar(update, context)
+        return
+    elif text == BTN_ADHKAR_EVENING:
+        send_evening_adhkar(update, context)
+        return
+    elif text == BTN_ADHKAR_GENERAL:
+        send_general_adhkar(update, context)
+        return
+
+    # السبحة
+    elif text == BTN_TASBIH_MAIN:
+        open_tasbih_menu(update, context)
+        return
+    elif text == BTN_TASBIH_TICK:
+        handle_tasbih_tick(update, context)
+        return
+    elif text == BTN_TASBIH_END:
+        handle_tasbih_end(update, context)
+        return
+    elif user_id in WAITING_TASBIH:
+        for dhikr, count in TASBIH_ITEMS:
+            if text == f"{dhikr} ({count})":
+                start_tasbih_for_choice(update, context, text)
+                return
+
+    # حالات الانتظار - الماء
+    elif user_id in WAITING_GENDER:
+        handle_gender_input(update, context)
+        return
+    elif user_id in WAITING_AGE:
+        handle_age_input(update, context)
+        return
+    elif user_id in WAITING_WEIGHT:
+        handle_weight_input(update, context)
+        return
+
+    # حالات الانتظار - القرآن
+    elif user_id in WAITING_QURAN_GOAL:
+        handle_quran_goal_input(update, context)
+        return
+    elif user_id in WAITING_QURAN_ADD_PAGES:
+        handle_quran_add_pages_input(update, context)
+        return
+
+    # أزرار أخرى
+    elif text == BTN_COMP_MAIN:
         update.message.reply_text(
-            "هذه الميزة خاصة بالمدير فقط.",
+            "المنافسات و المجتمع 🏅",
+            reply_markup=COMP_MENU_KB,
+        )
+        return
+    elif text == BTN_BACK_MAIN:
+        update.message.reply_text(
+            "رجعنا للقائمة الرئيسية ⬅️",
             reply_markup=user_main_keyboard(user_id),
         )
         return
-
-    user_ids = get_all_user_ids()
-    sent = 0
-    for uid in user_ids:
-        try:
-            update.effective_message.bot.send_message(
-                chat_id=uid,
-                text=f"📢 رسالة من الدعم:\n\n{text}",
-            )
-            sent += 1
-        except Exception as e:
-            logger.error(f"Error sending broadcast to {uid}: {e}")
-
-    WAITING_BROADCAST.discard(user_id)
-
-    update.message.reply_text(
-        f"تم إرسال الرسالة إلى {sent} مستخدم.",
-        reply_markup=ADMIN_PANEL_KB,
-    )
-
-
-def handle_admin_rankings(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
-
-    sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:200]  # عرض أول 200 مستخدم بالنقاط
-
-    if not top:
-        update.message.reply_text(
-            "لا توجد بيانات منافسة كافية حتى الآن.",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-        return
-
-    lines = ["📊 ترتيب المستخدمين بالنقاط (تفصيلي):\n"]
-    for idx, rec in enumerate(top, start=1):
-        name = rec.get("first_name") or "مستخدم"
-        username = rec.get("username")
-        uid = rec.get("user_id")
-        level = rec.get("level", 0)
-        points = rec.get("points", 0)
-        medals = rec.get("medals", [])
-        medals_text = "، ".join(medals) if medals else "لا توجد"
-
-        line = f"{idx}) {name} (ID: {uid}"
-        if username:
-            line += f" | @{username}"
-        line += f") — مستوى {level} — {points} نقطة — ميداليات: {medals_text}"
-        lines.append(line)
-
-    # لتفادي طول الرسالة، نقسمها لو احتاج
-    chunk = "\n".join(lines[:80])
-    update.message.reply_text(
-        chunk,
-        reply_markup=ADMIN_PANEL_KB,
-    )
-
-
-def forward_support_to_admin(user, text: str, context: CallbackContext):
-    """
-    إرسال رسالة الدعم:
-    - الرجال → للأدمن فقط.
-    - النساء → للأدمن + للمشرفة.
-    """
-    uid = str(user.id)
-    record = data.get(uid, {})
-    gender = record.get("gender")
-
-    # نص مشترك للأدمن
-    admin_msg = (
-        "📩 رسالة جديدة للدعم:\n\n"
-        f"الاسم: {user.full_name}\n"
-        f"اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n"
-        f"ID: `{user.id}`\n"
-        f"الجنس: {'ذكر' if gender == 'male' else 'أنثى' if gender == 'female' else 'غير محدد'}\n\n"
-        f"محتوى الرسالة:\n{text}"
-    )
-
-    # إرسال للأدمن دائمًا
-    if ADMIN_ID is not None:
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=admin_msg,
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            logger.error(f"Error sending support message to admin: {e}")
-
-    # لو أنثى → نرسل أيضًا للمشرفة
-    if gender == "female" and SUPERVISOR_ID is not None:
-        supervisor_msg = (
-            "📩 رسالة جديدة من أخت (دعم نسائي):\n\n"
-            f"الاسم: {user.full_name}\n"
-            f"اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n"
-            f"ID: {user.id}\n"
-            "الجنس: أنثى\n\n"
-            f"محتوى الرسالة:\n{text}"
-        )
-        try:
-            context.bot.send_message(
-                chat_id=SUPERVISOR_ID,
-                text=supervisor_msg,
-            )
-        except Exception as e:
-            logger.error(f"Error sending support message to supervisor: {e}")
-
-
-def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
-    """
-    إذا كان الأدمن يرد على رسالة دعم / رد من المستخدم، نلتقط ID ونرسل الرد للمستخدم.
-    ترجع True إذا تم التعامل مع الرسالة كـ رد أدمن.
-    """
-    user = update.effective_user
-    msg = update.message
-    text = (msg.text or "").strip()
-
-    if not is_admin(user.id):
-        return False
-
-    if not msg.reply_to_message:
-        return False
-
-    original = msg.reply_to_message.text or ""
-    m = re.search(r"ID:\s*`?(\d+)`?", original)
-    if not m:
-        return False
-
-    target_id = int(m.group(1))
-    try:
-        context.bot.send_message(
-            chat_id=target_id,
-            text=f"💌 رد من الدعم:\n\n{text}",
-        )
-        msg.reply_text(
-            "تم إرسال ردّك للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-    except Exception as e:
-        logger.error(f"Error sending admin reply to {target_id}: {e}")
-        msg.reply_text(
-            "حدث خطأ أثناء إرسال الرد للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-    return True
-
-# =================== هاندلر الرسائل ===================
-
-
-def handle_text(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    msg = update.message
-    text = (msg.text or "").strip()
-
-    record = get_user_record(user)
-    main_kb = user_main_keyboard(user_id)
-
-    # 0️⃣ تحديد الجنس قبل أول رسالة دعم
-    if user_id in WAITING_SUPPORT_GENDER:
-        if text == BTN_GENDER_MALE:
-            record["gender"] = "male"
-            save_data()
-            WAITING_SUPPORT_GENDER.discard(user_id)
-            WAITING_SUPPORT.add(user_id)
-            msg.reply_text(
-                "جميل 🤍\n"
-                "الآن اكتب رسالتك التي تريد إرسالها للدعم:",
-                reply_markup=CANCEL_KB,
-            )
-            return
-        elif text == BTN_GENDER_FEMALE:
-            record["gender"] = "female"
-            save_data()
-            WAITING_SUPPORT_GENDER.discard(user_id)
-            WAITING_SUPPORT.add(user_id)
-            msg.reply_text(
-                "جميل 🤍\n"
-                "الآن اكتب رسالتك التي تريد إرسالها للدعم النسائي:",
-                reply_markup=CANCEL_KB,
-            )
-            return
-        elif text == BTN_CANCEL:
-            WAITING_SUPPORT_GENDER.discard(user_id)
-            msg.reply_text(
-                "تم الإلغاء. عدنا للقائمة الرئيسية.",
-                reply_markup=main_kb,
-            )
-            return
-        else:
-            msg.reply_text(
-                "رجاءً اختر من الأزرار الموجودة 👇",
-                reply_markup=GENDER_KB,
-            )
-            return
-
-    # 1️⃣ رد المشرفة على رسائل الأخوات (Reply)
-    if is_supervisor(user_id) and msg.reply_to_message:
-        original = msg.reply_to_message.text or ""
-        m = re.search(r"ID:\s*`?(\d+)`?", original)
-        if m:
-            target_id = int(m.group(1))
-            try:
-                # إرسال الرد للمستخدمة
-                context.bot.send_message(
-                    chat_id=target_id,
-                    text=f"💌 رد من المشرفة:\n\n{text}",
-                )
-                # نسخة للأدمن
-                if ADMIN_ID is not None:
-                    try:
-                        context.bot.send_message(
-                            chat_id=ADMIN_ID,
-                            text=(
-                                "📨 نسخة من رد المشرفة:\n\n"
-                                f"إلى ID: {target_id}\n"
-                                f"نص الرد:\n{text}"
-                            ),
-                        )
-                    except Exception as e:
-                        logger.error(f"Error sending supervisor reply copy to admin: {e}")
-
-                msg.reply_text(
-                    "✅ تم إرسال ردّك للأخت.",
-                    reply_markup=main_kb,
-                )
-            except Exception as e:
-                logger.error(f"Error sending supervisor reply to user {target_id}: {e}")
-                msg.reply_text(
-                    "⚠️ حدث خطأ أثناء إرسال الرد.",
-                    reply_markup=main_kb,
-                )
-            return
-
-    # 2️⃣ رد الأدمن على رسالة فيها ID → يرسل الرد للمستخدم
-    if try_handle_admin_reply(update, context):
-        return
-
-    # 3️⃣ رد المستخدم (رجل أو امرأة) على رسائل الدعم / رد / رسالة جماعية (Reply)
-    if (
-        not is_admin(user_id)
-        and not is_supervisor(user_id)
-        and msg.reply_to_message
-        and msg.reply_to_message.from_user.id == context.bot.id
-    ):
-        original = msg.reply_to_message.text or ""
-        if (
-            original.startswith("💌 رد من الدعم")
-            or original.startswith("📢 رسالة من الدعم")
-            or original.startswith("💌 رد من المشرفة")
-            or "رسالتك وصلت للدعم" in original
-        ):
-            forward_support_to_admin(user, text, context)
-            msg.reply_text(
-                "📨 ردّك وصل للدعم 🤍",
-                reply_markup=main_kb,
-            )
-            return
-
-    # زر الإلغاء العام
-    if text == BTN_CANCEL:
+    elif text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
         WAITING_AGE.discard(user_id)
         WAITING_WEIGHT.discard(user_id)
@@ -2350,312 +1654,36 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         WAITING_TASBIH.discard(user_id)
         ACTIVE_TASBIH.pop(user_id, None)
-        WAITING_MEMO_MENU.discard(user_id)
-        WAITING_MEMO_ADD.discard(user_id)
-        WAITING_MEMO_EDIT_SELECT.discard(user_id)
-        WAITING_MEMO_EDIT_TEXT.discard(user_id)
-        WAITING_MEMO_DELETE_SELECT.discard(user_id)
-        MEMO_EDIT_INDEX.pop(user_id, None)
-        WAITING_SUPPORT_GENDER.discard(user_id)
-        WAITING_SUPPORT.discard(user_id)
-        WAITING_BROADCAST.discard(user_id)
-
-        msg.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=main_kb,
+        update.message.reply_text(
+            "تم الإلغاء.",
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
-    # ===== حالات إدخال الماء =====
-    if user_id in WAITING_GENDER:
-        handle_gender_input(update, context)
-        return
-
-    if user_id in WAITING_AGE:
-        handle_age_input(update, context)
-        return
-
-    if user_id in WAITING_WEIGHT:
-        handle_weight_input(update, context)
-        return
-
-    # ===== حالات إدخال ورد القرآن =====
-    if user_id in WAITING_QURAN_GOAL:
-        handle_quran_goal_input(update, context)
-        return
-
-    if user_id in WAITING_QURAN_ADD_PAGES:
-        handle_quran_add_pages_input(update, context)
-        return
-
-    # ===== حالة السبحة أثناء العدّ =====
-    if user_id in WAITING_TASBIH:
-        if text == BTN_TASBIH_TICK:
-            handle_tasbih_tick(update, context)
-            return
-        elif text == BTN_TASBIH_END:
-            handle_tasbih_end(update, context)
-            return
-        else:
-            handle_tasbih_tick(update, context)
-            return
-
-    # ===== حالات مذكّرات قلبي =====
-    if user_id in WAITING_MEMO_ADD:
-        handle_memo_add_input(update, context)
-        return
-
-    if user_id in WAITING_MEMO_EDIT_SELECT:
-        handle_memo_edit_index_input(update, context)
-        return
-
-    if user_id in WAITING_MEMO_EDIT_TEXT:
-        handle_memo_edit_text_input(update, context)
-        return
-
-    if user_id in WAITING_MEMO_DELETE_SELECT:
-        handle_memo_delete_index_input(update, context)
-        return
-
-    # ===== حالة الدعم =====
-    if user_id in WAITING_SUPPORT:
-        WAITING_SUPPORT.discard(user_id)
-        forward_support_to_admin(user, text, context)
-
-        gender = record.get("gender")
-        if gender == "female":
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
-                "سيتم الاطلاع عليها والرد عليك في أقرب وقت بإذن الله."
-            )
-        else:
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
-                "سيتم الاطلاع عليها والرد عليك في أقرب وقت بإذن الله."
-            )
-
-        msg.reply_text(
-            reply_txt,
-            reply_markup=main_kb,
-        )
-        return
-
-    # ===== حالة الرسالة الجماعية (نص الرسالة) =====
-    if user_id in WAITING_BROADCAST:
-        handle_admin_broadcast_input(update, context)
-        return
-
-    # ===== الأزرار الرئيسية =====
-    if text == BTN_ADHKAR_MAIN:
-        open_adhkar_menu(update, context)
-        return
-
-    if text == BTN_QURAN_MAIN:
-        open_quran_menu(update, context)
-        return
-
-    if text == BTN_TASBIH_MAIN:
-        open_tasbih_menu(update, context)
-        return
-
-    if text == BTN_MEMOS_MAIN:
-        open_memos_menu(update, context)
-        return
-
-    if text == BTN_WATER_MAIN:
-        open_water_menu(update, context)
-        return
-
-    if text == BTN_STATS:
-        handle_stats(update, context)
-        return
-
-    if text == BTN_SUPPORT:
-        handle_contact_support(update, context)
-        return
-
-    if text == BTN_COMP_MAIN:
-        open_comp_menu(update, context)
-        return
-
-    if text == BTN_BACK_MAIN:
-        msg.reply_text(
-            "عدنا إلى القائمة الرئيسية.",
-            reply_markup=main_kb,
-        )
-        return
-
-    # ===== قوائم الأذكار =====
-    if text == BTN_ADHKAR_MORNING:
-        send_morning_adhkar(update, context)
-        return
-
-    if text == BTN_ADHKAR_EVENING:
-        send_evening_adhkar(update, context)
-        return
-
-    if text == BTN_ADHKAR_GENERAL:
-        send_general_adhkar(update, context)
-        return
-
-    # ===== منبّه الماء =====
-    if text == BTN_WATER_LOG:
-        handle_log_cup(update, context)
-        return
-
-    if text == BTN_WATER_STATUS:
-        handle_status(update, context)
-        return
-
-    if text == BTN_WATER_SETTINGS:
-        open_water_settings(update, context)
-        return
-
-    if text == BTN_WATER_NEED:
-        handle_water_need_start(update, context)
-        return
-
-    if text == BTN_WATER_REM_ON:
-        handle_reminders_on(update, context)
-        return
-
-    if text == BTN_WATER_REM_OFF:
-        handle_reminders_off(update, context)
-        return
-
-    if text == BTN_WATER_ADD_CUPS:
-        handle_add_cups(update, context)
-        return
-
-    if text == BTN_WATER_BACK_MENU:
-        open_water_menu(update, context)
-        return
-
-    # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية
-    if text.isdigit():
-        handle_add_cups(update, context)
-        return
-
-    # ===== ورد القرآن =====
-    if text == BTN_QURAN_SET_GOAL:
-        handle_quran_set_goal(update, context)
-        return
-
-    if text == BTN_QURAN_ADD_PAGES:
-        handle_quran_add_pages_start(update, context)
-        return
-
-    if text == BTN_QURAN_STATUS:
-        handle_quran_status(update, context)
-        return
-
-    if text == BTN_QURAN_RESET_DAY:
-        handle_quran_reset_day(update, context)
-        return
-
-    # ===== السبحة: اختيار الذكر =====
-    for dhikr, count in TASBIH_ITEMS:
-        label = f"{dhikr} ({count})"
-        if text == label:
-            start_tasbih_for_choice(update, context, text)
-            return
-
-    # ===== مذكّرات قلبي: زر القائمة الداخلي =====
-    if text == BTN_MEMO_ADD:
-        handle_memo_add_start(update, context)
-        return
-
-    if text == BTN_MEMO_EDIT:
-        handle_memo_edit_select(update, context)
-        return
-
-    if text == BTN_MEMO_DELETE:
-        handle_memo_delete_select(update, context)
-        return
-
-    if text == BTN_MEMO_BACK:
-        msg.reply_text(
-            "تم الرجوع للقائمة الرئيسية.",
-            reply_markup=main_kb,
-        )
-        return
-
-    # ===== المنافسات و المجتمع =====
-    if text == BTN_MY_PROFILE:
-        handle_my_profile(update, context)
-        return
-
-    if text == BTN_TOP10:
-        handle_top10(update, context)
-        return
-
-    if text == BTN_TOP100:
-        handle_top100(update, context)
-        return
-
-    # ===== لوحة التحكم (المدير) =====
-    if text == BTN_ADMIN_PANEL:
-        handle_admin_panel(update, context)
-        return
-
-    if text == BTN_ADMIN_USERS_COUNT:
-        handle_admin_users_count(update, context)
-        return
-
-    if text == BTN_ADMIN_USERS_LIST:
-        handle_admin_users_list(update, context)
-        return
-
-    if text == BTN_ADMIN_BROADCAST:
-        handle_admin_broadcast_start(update, context)
-        return
-
-    if text == BTN_ADMIN_RANKINGS:
-        handle_admin_rankings(update, context)
-        return
-
-    # ===== أي نص آخر =====
-    msg.reply_text(
-        "تنبيه: رسالتك الآن لا تصل للدعم بشكل مباشر.\n"
-        "لو حاب ترسل رسالة للدعم:\n"
-        "1️⃣ اضغط على زر «تواصل مع الدعم ✉️»\n"
-        "2️⃣ أو اضغط على الرسالة التي وصلتك من البوت، ثم اختر Reply / الرد، واكتب رسالتك.",
-        reply_markup=main_kb,
+    # إذا لم يطابق أي شيء
+    update.message.reply_text(
+        "لم أفهم الأمر. اختر من القائمة.",
+        reply_markup=user_main_keyboard(user_id),
     )
 
-# =================== تشغيل البوت ===================
-
+# =================== إعداد البوت الرئيسي ===================
 
 def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN غير موجود في متغيرات البيئة!")
-
-    updater = Updater(BOT_TOKEN, use_context=True)
+    updater = Updater(BOT_TOKEN)
     dp = updater.dispatcher
-    job_queue = updater.job_queue
 
-    # أوامر
     dp.add_handler(CommandHandler("start", start_command))
     dp.add_handler(CommandHandler("help", help_command))
+    
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
-    # جميع الرسائل النصية
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+    # تشغيل Flask في خيط منفصل
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
-    # جدولة التذكيرات اليومية للماء
-    for h in REMINDER_HOURS_UTC:
-        job_queue.run_daily(
-            water_reminder_job,
-            time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-            name=f"water_reminder_{h}",
-        )
-
-    # تشغيل Flask في ثريد منفصل (لـ Render)
-    Thread(target=run_flask, daemon=True).start()
-
-    logger.info("Suqya Al-Kawther bot is starting...")
+    # تشغيل البوت
     updater.start_polling()
     updater.idle()
-
 
 if __name__ == "__main__":
     main()
