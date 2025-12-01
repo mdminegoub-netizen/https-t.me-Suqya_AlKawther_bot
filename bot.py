@@ -29,9 +29,6 @@ DATA_FILE = "suqya_users.json"
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
-# الأدمن الإضافي (له نفس صلاحيات الأدمن)
-SECOND_ADMIN_ID = 8480319433  # الأدمن الإضافي الذي يملك لوحة تحكم ورسائل جماعية والجرعة
-
 # معرف المشرفة (الأخوات)
 SUPERVISOR_ID = 8395818573  # المشرفة
 
@@ -239,14 +236,7 @@ def get_all_user_ids():
 
 
 def is_admin(user_id: int) -> bool:
-    """
-    الأدمن = صاحب البوت + الأدمن الإضافي
-    """
-    if ADMIN_ID is not None and user_id == ADMIN_ID:
-        return True
-    if SECOND_ADMIN_ID is not None and user_id == SECOND_ADMIN_ID:
-        return True
-    return False
+    return ADMIN_ID is not None and user_id == ADMIN_ID
 
 
 def is_supervisor(user_id: int) -> bool:
@@ -334,6 +324,17 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 )
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
@@ -526,6 +527,16 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_USERS_COUNT)],
+        [KeyboardButton(BTN_ADMIN_BROADCAST)],
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
 ADMIN_MOTIVATION_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_MOTIVATION_LIST)],
@@ -585,7 +596,19 @@ def tasbih_points_for_session(target_count: int) -> int:
 
 
 def user_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
-    return MAIN_KEYBOARD_ADMIN if is_admin(user_id) else MAIN_KEYBOARD_USER
+    if is_admin(user_id):
+        return MAIN_KEYBOARD_ADMIN
+    if is_supervisor(user_id):
+        return MAIN_KEYBOARD_SUPERVISOR
+    return MAIN_KEYBOARD_USER
+
+
+def admin_panel_keyboard_for(user_id: int) -> ReplyKeyboardMarkup:
+    if is_admin(user_id):
+        return ADMIN_PANEL_KB
+    if is_supervisor(user_id):
+        return SUPERVISOR_PANEL_KB
+    return user_main_keyboard(user_id)
 
 
 def water_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
@@ -918,7 +941,7 @@ ADHKAR_EVENING_TEXT = (
     "له الملك وله الحمد وهو على كل شيء قدير».\n"
     "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
     "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحده لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
+    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
     "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
     "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
     "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
@@ -1966,14 +1989,14 @@ def motivation_job(context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending motivation message to {uid}: {e}")
 
-# ======== لوحة التحكم لإدارة الجرعة التحفيزية (أدمن فقط) ========
+# ======== لوحة التحكم لإدارة الجرعة التحفيزية (أدمن + مشرفة) ========
 
 
 def open_admin_motivation_menu(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         update.message.reply_text(
-            "هذا القسم خاص بالمدير فقط.",
+            "هذا القسم خاص بالإدارة فقط.",
             reply_markup=user_main_keyboard(user.id),
         )
         return
@@ -1996,7 +2019,7 @@ def open_admin_motivation_menu(update: Update, context: CallbackContext):
 
 def handle_admin_motivation_list(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     if not MOTIVATION_MESSAGES:
@@ -2015,7 +2038,7 @@ def handle_admin_motivation_list(update: Update, context: CallbackContext):
 
 def handle_admin_motivation_add_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     WAITING_MOTIVATION_ADD.add(user.id)
@@ -2032,7 +2055,7 @@ def handle_admin_motivation_add_start(update: Update, context: CallbackContext):
 def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    if not is_admin(user_id):
+    if not (is_admin(user_id) or is_supervisor(user_id)):
         WAITING_MOTIVATION_ADD.discard(user_id)
         return
 
@@ -2067,7 +2090,7 @@ def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
 
 def handle_admin_motivation_delete_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     if not MOTIVATION_MESSAGES:
@@ -2094,7 +2117,7 @@ def handle_admin_motivation_delete_start(update: Update, context: CallbackContex
 def handle_admin_motivation_delete_input(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    if not is_admin(user_id):
+    if not (is_admin(user_id) or is_supervisor(user_id)):
         WAITING_MOTIVATION_DELETE.discard(user_id)
         return
 
@@ -2133,7 +2156,7 @@ def handle_admin_motivation_delete_input(update: Update, context: CallbackContex
 
 def handle_admin_motivation_times_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     WAITING_MOTIVATION_TIMES.add(user.id)
@@ -2155,7 +2178,7 @@ def handle_admin_motivation_times_start(update: Update, context: CallbackContext
 def handle_admin_motivation_times_input(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    if not is_admin(user_id):
+    if not (is_admin(user_id) or is_supervisor(user_id)):
         WAITING_MOTIVATION_TIMES.discard(user_id)
         return
 
@@ -2364,33 +2387,47 @@ def handle_contact_support(update: Update, context: CallbackContext):
 
 def handle_admin_panel(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    user_id = user.id
+
+    if not (is_admin(user_id) or is_supervisor(user_id)):
         update.message.reply_text(
-            "هذا القسم خاص بالمدير فقط.",
-            reply_markup=user_main_keyboard(user.id),
+            "هذا القسم خاص بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user_id),
         )
         return
 
+    if is_admin(user_id):
+        text = (
+            "لوحة التحكم 🛠:\n"
+            "• عرض عدد المستخدمين.\n"
+            "• عرض قائمة المستخدمين.\n"
+            "• إرسال رسالة جماعية.\n"
+            "• عرض ترتيب المنافسة تفصيليًا.\n"
+            "• إدارة رسائل وأوقات الجرعة التحفيزية 💡."
+        )
+    else:
+        text = (
+            "لوحة التحكم 🛠 (المشرفة):\n"
+            "• إرسال رسالة جماعية لكل المستخدمين.\n"
+            "• عرض عدد المستخدمين.\n"
+            "• إدارة رسائل وأوقات الجرعة التحفيزية 💡."
+        )
+
     update.message.reply_text(
-        "لوحة التحكم 🛠:\n"
-        "• عرض عدد المستخدمين.\n"
-        "• عرض قائمة المستخدمين.\n"
-        "• إرسال رسالة جماعية.\n"
-        "• عرض ترتيب المنافسة تفصيليًا.\n"
-        "• إدارة رسائل وأوقات الجرعة التحفيزية 💡.",
-        reply_markup=ADMIN_PANEL_KB,
+        text,
+        reply_markup=admin_panel_keyboard_for(user_id),
     )
 
 
 def handle_admin_users_count(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     total_users = len(get_all_user_ids())
     update.message.reply_text(
         f"👥 عدد المستخدمين المسجلين في البوت: {total_users}",
-        reply_markup=ADMIN_PANEL_KB,
+        reply_markup=admin_panel_keyboard_for(user.id),
     )
 
 
@@ -2423,7 +2460,7 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
 
 def handle_admin_broadcast_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    if not is_admin(user.id):
+    if not (is_admin(user.id) or is_supervisor(user.id)):
         return
 
     WAITING_BROADCAST.add(user.id)
@@ -2445,10 +2482,10 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
         handle_admin_panel(update, context)
         return
 
-    if not is_admin(user_id):
+    if not (is_admin(user_id) or is_supervisor(user_id)):
         WAITING_BROADCAST.discard(user_id)
         update.message.reply_text(
-            "هذه الميزة خاصة بالمدير فقط.",
+            "هذه الميزة خاصة بالإدارة فقط.",
             reply_markup=user_main_keyboard(user_id),
         )
         return
@@ -2469,7 +2506,7 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         f"تم إرسال الرسالة إلى {sent} مستخدم.",
-        reply_markup=ADMIN_PANEL_KB,
+        reply_markup=admin_panel_keyboard_for(user_id),
     )
 
 
@@ -2577,13 +2614,13 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
         )
         msg.reply_text(
             "تم إرسال ردّك للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
+            reply_markup=admin_panel_keyboard_for(user.id),
         )
     except Exception as e:
         logger.error(f"Error sending admin reply to {target_id}: {e}")
         msg.reply_text(
             "حدث خطأ أثناء إرسال الرد للمستخدم.",
-            reply_markup=ADMIN_PANEL_KB,
+            reply_markup=admin_panel_keyboard_for(user.id),
         )
     return True
 
@@ -2978,7 +3015,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_motivation_off(update, context)
         return
 
-    # لوحة التحكم (أدمن)
+    # لوحة التحكم (أدمن / مشرفة)
     if text == BTN_ADMIN_PANEL:
         handle_admin_panel(update, context)
         return
