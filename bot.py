@@ -93,11 +93,9 @@ DEFAULT_MOTIVATION_MESSAGES = [
 
 GLOBAL_KEY = "_global_config"
 
-# سيتم ملؤها بعد قراءة الإعدادات
 MOTIVATION_HOURS_UTC = []
 MOTIVATION_MESSAGES = []
 
-# لتتبع Jobs الخاصة بالجرعة التحفيزية
 CURRENT_MOTIVATION_JOBS = []
 
 
@@ -127,7 +125,6 @@ def get_global_config():
     return cfg
 
 
-# تهيئة الإعدادات العامة للجرعة التحفيزية
 _global_cfg = get_global_config()
 MOTIVATION_HOURS_UTC = _global_cfg["motivation_hours"]
 MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
@@ -171,7 +168,7 @@ def get_user_record(user):
             "heart_memos": [],
             # نظام النقاط والمستويات والميداليات
             "points": 0,
-            "level": 0,  # يبدأ من 0، أول مستوى فعلي عند 20 نقطة
+            "level": 0,
             "medals": [],
             "best_rank": None,
             # الاستمرارية اليومية (ماء + قرآن)
@@ -209,7 +206,6 @@ def get_user_record(user):
         record.setdefault("last_full_day", None)
         record.setdefault("motivation_on", True)
 
-        # تحديث أسماء بعض الميداليات القديمة إلى الإيموجيات الجديدة
         medals = record.get("medals", [])
         if medals:
             new_medals = []
@@ -236,7 +232,6 @@ def update_user_record(user_id: int, **kwargs):
 
 
 def get_all_user_ids():
-    # نتجاهل المفتاح العالمي لو موجود
     return [int(uid) for uid in data.keys() if uid != GLOBAL_KEY]
 
 
@@ -256,7 +251,7 @@ WAITING_WEIGHT = set()
 WAITING_QURAN_GOAL = set()
 WAITING_QURAN_ADD_PAGES = set()
 
-WAITING_TASBIH = set()  # أثناء العدّ
+WAITING_TASBIH = set()
 ACTIVE_TASBIH = {}      # user_id -> { "text": str, "target": int, "current": int }
 
 # مذكّرات قلبي
@@ -268,7 +263,7 @@ WAITING_MEMO_DELETE_SELECT = set()
 MEMO_EDIT_INDEX = {}
 
 # دعم / إدارة
-WAITING_SUPPORT_GENDER = set()  # تحديد الجنس قبل أول رسالة دعم
+WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
 
@@ -299,7 +294,7 @@ BTN_MY_PROFILE = "ملفي التنافسي 🎯"
 BTN_TOP10 = "أفضل 10 🏅"
 BTN_TOP100 = "أفضل 100 🏆"
 
-# لوحة المدير (تظهر فقط للأدمن)
+# لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
 BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
 BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
@@ -379,22 +374,22 @@ WATER_MENU_KB_ADMIN = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_WATER_NEED)],
-        [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
-        [KeyboardButton(BTN_WATER_BACK_MENU)],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
-
 WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
         [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_WATER_NEED)],
+        [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_WATER_BACK_MENU)],
+        [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -475,7 +470,6 @@ TASBIH_RUN_KB_ADMIN = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# قائمة الأذكار المتاحة في السبحة (ذكر، عدد)
 TASBIH_ITEMS = [
     ("سبحان الله", 33),
     ("الحمد لله", 33),
@@ -522,7 +516,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# ---- لوحة إعدادات الجرعة التحفيزية (خاصة بالأدمن) ----
 ADMIN_MOTIVATION_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_MOTIVATION_LIST)],
@@ -535,7 +528,6 @@ ADMIN_MOTIVATION_KB = ReplyKeyboardMarkup(
 )
 
 # ---- المنافسات و المجتمع ----
-
 COMP_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_MY_PROFILE)],
@@ -567,7 +559,7 @@ def notifications_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
             resize_keyboard=True,
         )
 
-# =================== نظام النقاط (ثوابت) ===================
+# =================== نظام النقاط ===================
 
 POINTS_PER_WATER_CUP = 1
 POINTS_WATER_DAILY_BONUS = 20
@@ -577,7 +569,6 @@ POINTS_QURAN_DAILY_BONUS = 30
 
 
 def tasbih_points_for_session(target_count: int) -> int:
-    # مثال: 100 تسبيحة → 10 نقاط
     return max(target_count // 10, 1)
 
 # =================== دوال مساعدة عامة ===================
@@ -608,7 +599,6 @@ def tasbih_run_keyboard(user_id: int) -> ReplyKeyboardMarkup:
 
 
 def ensure_today_water(record):
-    """تصفير عدّاد الماء إذا تغيّر اليوم."""
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("today_date") != today_str:
         record["today_date"] = today_str
@@ -617,7 +607,6 @@ def ensure_today_water(record):
 
 
 def ensure_today_quran(record):
-    """تصفير ورد اليوم لو تغيّر التاريخ (تبقى الأهداف كما هي)."""
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("quran_today_date") != today_str:
         record["quran_today_date"] = today_str
@@ -626,7 +615,6 @@ def ensure_today_quran(record):
 
 
 def format_water_status_text(record):
-    """نص حالة الماء اليوم."""
     ensure_today_water(record)
     cups_goal = record.get("cups_goal")
     today_cups = record.get("today_cups", 0)
@@ -661,7 +649,6 @@ def format_water_status_text(record):
 
 
 def format_quran_status_text(record):
-    """نص حالة ورد القرآن اليوم."""
     ensure_today_quran(record)
     goal = record.get("quran_pages_goal")
     today = record.get("quran_pages_today", 0)
@@ -712,7 +699,7 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
     record["tasbih_total"] = record.get("tasbih_total", 0) + amount
     save_data()
 
-# =================== نظام النقاط / المستويات / الميداليات / الترتيب ===================
+# =================== نظام النقاط / المستويات / الميداليات ===================
 
 
 def get_users_sorted_by_points():
@@ -724,7 +711,6 @@ def get_users_sorted_by_points():
 
 
 def check_rank_improvement(user_id: int, record: dict, context: CallbackContext = None):
-    """يتأكد إذا ترتيب المستخدم تحسّن ويرسل له رسالة لو دخل توب 10 أو توب 100."""
     sorted_users = get_users_sorted_by_points()
     rank = None
     for idx, rec in enumerate(sorted_users, start=1):
@@ -737,9 +723,8 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
 
     best_rank = record.get("best_rank")
     if best_rank is not None and rank >= best_rank:
-        return  # ما تحسن ترتيبه
+        return
 
-    # حفظ أفضل ترتيب جديد
     record["best_rank"] = rank
     save_data()
 
@@ -768,11 +753,9 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
 
 
 def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
-    """تحديث المستوى والميداليات وإرسال رسائل التهنئة."""
     old_level = record.get("level", 0)
     points = record.get("points", 0)
 
-    # كل 20 نقطة = مستوى جديد
     new_level = points // 20
 
     if new_level == old_level:
@@ -811,12 +794,6 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
 
 
 def check_daily_full_activity(user_id: int, record: dict, context: CallbackContext = None):
-    """
-    يتحقق هل المستخدم أكمل:
-    - هدف الماء اليومي
-    - وهدف القرآن اليومي
-    في نفس اليوم.
-    """
     ensure_today_water(record)
     ensure_today_quran(record)
 
@@ -1000,9 +977,6 @@ def help_command(update: Update, context: CallbackContext):
     )
 
 # =================== قسم منبّه الماء ===================
-
-# (نفس الدوال بالضبط كما في النسخة السابقة، لم يتم تعديلها)
-# --- للحجم، أبقيها كما هي دون تعليق إضافي ---
 
 
 def open_water_menu(update: Update, context: CallbackContext):
@@ -1299,8 +1273,6 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     )
 
 # =================== قسم ورد القرآن ===================
-
-# (كما هو في النسخة السابقة)
 
 
 def open_quran_menu(update: Update, context: CallbackContext):
@@ -1878,7 +1850,7 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
-# =================== الاشعارات / الجرعة التحفيزية (للمستخدم) ===================
+# =================== الاشعارات / الجرعة التحفيزية للمستخدم ===================
 
 
 def open_notifications_menu(update: Update, context: CallbackContext):
@@ -1923,7 +1895,7 @@ def handle_motivation_off(update: Update, context: CallbackContext):
         reply_markup=notifications_menu_keyboard(user.id),
     )
 
-# =================== تذكيرات الماء (JobQueue) ===================
+# =================== تذكيرات الماء ===================
 
 REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
 
@@ -2068,7 +2040,6 @@ def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
         )
         return
 
-    global MOTIVATION_MESSAGES
     MOTIVATION_MESSAGES.append(text)
 
     cfg = get_global_config()
@@ -2135,7 +2106,6 @@ def handle_admin_motivation_delete_input(update: Update, context: CallbackContex
         )
         return
 
-    global MOTIVATION_MESSAGES
     deleted = MOTIVATION_MESSAGES.pop(idx)
 
     cfg = get_global_config()
@@ -2231,7 +2201,7 @@ def handle_admin_motivation_times_input(update: Update, context: CallbackContext
         reply_markup=ADMIN_MOTIVATION_KB,
     )
 
-# =================== نظام المنافسات و المجتمع ===================
+# =================== المنافسات و المجتمع ===================
 
 
 def open_comp_menu(update: Update, context: CallbackContext):
@@ -2619,7 +2589,7 @@ def handle_text(update: Update, context: CallbackContext):
     record = get_user_record(user)
     main_kb = user_main_keyboard(user_id)
 
-    # 0️⃣ تحديد الجنس قبل أول رسالة دعم
+    # تحديد الجنس للدعم
     if user_id in WAITING_SUPPORT_GENDER:
         if text == BTN_GENDER_MALE:
             record["gender"] = "male"
@@ -2657,7 +2627,7 @@ def handle_text(update: Update, context: CallbackContext):
             )
             return
 
-    # رد المشرفة على الأخوات
+    # رد المشرفة
     if is_supervisor(user_id) and msg.reply_to_message:
         original = msg.reply_to_message.text or ""
         m = re.search(r"ID:\s*`?(\d+)`?", original)
@@ -2693,11 +2663,11 @@ def handle_text(update: Update, context: CallbackContext):
                 )
             return
 
-    # رد الأدمن على رسائل فيها ID
+    # رد الأدمن
     if try_handle_admin_reply(update, context):
         return
 
-    # رد المستخدم على ردود الدعم/الرسائل الجماعية
+    # رد المستخدم على ردود الدعم
     if (
         not is_admin(user_id)
         and not is_supervisor(user_id)
@@ -2718,7 +2688,7 @@ def handle_text(update: Update, context: CallbackContext):
             )
             return
 
-    # زر الإلغاء العام
+    # زر إلغاء عام
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
         WAITING_AGE.discard(user_id)
@@ -2746,7 +2716,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    # ===== حالات إدخال الماء =====
+    # حالات إدخال الماء
     if user_id in WAITING_GENDER:
         handle_gender_input(update, context)
         return
@@ -2759,7 +2729,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_weight_input(update, context)
         return
 
-    # ===== حالات إدخال ورد القرآن =====
+    # حالات ورد القرآن
     if user_id in WAITING_QURAN_GOAL:
         handle_quran_goal_input(update, context)
         return
@@ -2768,7 +2738,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_quran_add_pages_input(update, context)
         return
 
-    # ===== حالة السبحة أثناء العدّ =====
+    # حالة السبحة
     if user_id in WAITING_TASBIH:
         if text == BTN_TASBIH_TICK:
             handle_tasbih_tick(update, context)
@@ -2780,7 +2750,7 @@ def handle_text(update: Update, context: CallbackContext):
             handle_tasbih_tick(update, context)
             return
 
-    # ===== حالات مذكّرات قلبي =====
+    # مذكّرات قلبي
     if user_id in WAITING_MEMO_ADD:
         handle_memo_add_input(update, context)
         return
@@ -2797,7 +2767,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_memo_delete_index_input(update, context)
         return
 
-    # ===== حالات إدارة الجرعة التحفيزية (أدمن) =====
+    # إدارة الجرعة التحفيزية
     if user_id in WAITING_MOTIVATION_ADD:
         handle_admin_motivation_add_input(update, context)
         return
@@ -2810,7 +2780,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_motivation_times_input(update, context)
         return
 
-    # ===== حالة الدعم =====
+    # الدعم
     if user_id in WAITING_SUPPORT:
         WAITING_SUPPORT.discard(user_id)
         forward_support_to_admin(user, text, context)
@@ -2833,12 +2803,12 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    # ===== حالة الرسالة الجماعية =====
+    # رسالة جماعية
     if user_id in WAITING_BROADCAST:
         handle_admin_broadcast_input(update, context)
         return
 
-    # ===== الأزرار الرئيسية =====
+    # الأزرار الرئيسية
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
         return
@@ -2882,7 +2852,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    # ===== قوائم الأذكار =====
+    # قوائم الأذكار
     if text == BTN_ADHKAR_MORNING:
         send_morning_adhkar(update, context)
         return
@@ -2895,7 +2865,7 @@ def handle_text(update: Update, context: CallbackContext):
         send_general_adhkar(update, context)
         return
 
-    # ===== منبّه الماء =====
+    # منبّه الماء
     if text == BTN_WATER_LOG:
         handle_log_cup(update, context)
         return
@@ -2932,7 +2902,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_add_cups(update, context)
         return
 
-    # ===== ورد القرآن =====
+    # ورد القرآن
     if text == BTN_QURAN_SET_GOAL:
         handle_quran_set_goal(update, context)
         return
@@ -2949,14 +2919,14 @@ def handle_text(update: Update, context: CallbackContext):
         handle_quran_reset_day(update, context)
         return
 
-    # ===== السبحة: اختيار الذكر =====
+    # السبحة: اختيار الذكر
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if text == label:
             start_tasbih_for_choice(update, context, text)
             return
 
-    # ===== مذكّرات قلبي =====
+    # مذكّرات قلبي
     if text == BTN_MEMO_ADD:
         handle_memo_add_start(update, context)
         return
@@ -2976,7 +2946,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    # ===== المنافسات و المجتمع =====
+    # المنافسات
     if text == BTN_MY_PROFILE:
         handle_my_profile(update, context)
         return
@@ -2989,7 +2959,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_top100(update, context)
         return
 
-    # ===== الجرعة التحفيزية (زر المستخدم) =====
+    # الجرعة التحفيزية للمستخدم
     if text == BTN_MOTIVATION_ON:
         handle_motivation_on(update, context)
         return
@@ -2998,7 +2968,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_motivation_off(update, context)
         return
 
-    # ===== لوحة التحكم (المدير) =====
+    # لوحة التحكم (أدمن)
     if text == BTN_ADMIN_PANEL:
         handle_admin_panel(update, context)
         return
@@ -3039,7 +3009,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_motivation_times_start(update, context)
         return
 
-    # ===== أي نص آخر =====
+    # أي نص آخر
     msg.reply_text(
         "تنبيه: رسالتك الآن لا تصل للدعم بشكل مباشر.\n"
         "لو حاب ترسل رسالة للدعم:\n"
