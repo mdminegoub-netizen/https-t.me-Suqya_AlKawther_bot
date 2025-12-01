@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import re
+import random
 from datetime import datetime, timezone, time
 from threading import Thread
 
@@ -119,6 +120,8 @@ def get_user_record(user):
             # الاستمرارية اليومية (ماء + قرآن)
             "daily_full_streak": 0,
             "last_full_day": None,
+            # الجرعة التحفيزية (الإشعارات)
+            "motivation_on": True,
         }
     else:
         record = data[user_id]
@@ -147,6 +150,7 @@ def get_user_record(user):
         record.setdefault("best_rank", None)
         record.setdefault("daily_full_streak", 0)
         record.setdefault("last_full_day", None)
+        record.setdefault("motivation_on", True)
 
         # تحديث أسماء بعض الميداليات القديمة إلى الإيموجيات الجديدة
         medals = record.get("medals", [])
@@ -221,6 +225,7 @@ BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
+BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
@@ -238,12 +243,17 @@ BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
 BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
 BTN_ADMIN_RANKINGS = "ترتيب المنافسة (تفصيلي) 📊"
 
+# جرعة تحفيزية
+BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
+BTN_MOTIVATION_OFF = "إيقاف الجرعة التحفيزية 😴"
+
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
         [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -254,7 +264,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
         [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_ADMIN_PANEL)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -452,6 +462,27 @@ COMP_MENU_KB = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+
+# ---- الاشعارات / الجرعة التحفيزية ----
+def notifications_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    if is_admin(user_id):
+        return ReplyKeyboardMarkup(
+            [
+                [KeyboardButton(BTN_MOTIVATION_ON)],
+                [KeyboardButton(BTN_MOTIVATION_OFF)],
+                [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+            ],
+            resize_keyboard=True,
+        )
+    else:
+        return ReplyKeyboardMarkup(
+            [
+                [KeyboardButton(BTN_MOTIVATION_ON)],
+                [KeyboardButton(BTN_MOTIVATION_OFF)],
+                [KeyboardButton(BTN_BACK_MAIN)],
+            ],
+            resize_keyboard=True,
+        )
 
 # =================== نظام النقاط (ثوابت) ===================
 
@@ -837,7 +868,7 @@ ADHKAR_EVENING_TEXT = (
     "له الملك وله الحمد وهو على كل شيء قدير».\n"
     "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
     "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
+    "أنك أنت الله لا إله إلا أنت وحده لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
     "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
     "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
     "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
@@ -901,7 +932,8 @@ def help_command(update: Update, context: CallbackContext):
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
         "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
-        "• المنافسات و المجتمع 🏅 → لرؤية مستواك ونقاطك ولوحات الشرف.",
+        "• المنافسات و المجتمع 🏅 → لرؤية مستواك ونقاطك ولوحات الشرف.\n"
+        "• الاشعارات 🔔 → تشغيل أو إيقاف الجرعة التحفيزية خلال اليوم.",
         reply_markup=kb,
     )
 
@@ -1801,9 +1833,67 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
+# =================== الاشعارات / الجرعة التحفيزية ===================
+
+
+def open_notifications_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    kb = notifications_menu_keyboard(user.id)
+
+    status = "مفعّلة ✅" if record.get("motivation_on", True) else "موقفة ⛔️"
+
+    update.message.reply_text(
+        "الاشعارات 🔔:\n"
+        f"• حالة الجرعة التحفيزية الحالية: {status}\n\n"
+        "الجرعة التحفيزية هي رسائل قصيرة ولطيفة خلال اليوم تشرح القلب "
+        "وتعينك على الاستمرار في الماء والقرآن والذكر 🤍\n\n"
+        "يمكنك تشغيلها أو إيقافها من الأزرار بالأسفل.",
+        reply_markup=kb,
+    )
+
+
+def handle_motivation_on(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    record["motivation_on"] = True
+    save_data()
+
+    update.message.reply_text(
+        "تم تشغيل الجرعة التحفيزية ✨\n"
+        "ستصلك رسائل تحفيزية في أوقات مختلفة من اليوم 🤍",
+        reply_markup=notifications_menu_keyboard(user.id),
+    )
+
+
+def handle_motivation_off(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    record["motivation_on"] = False
+    save_data()
+
+    update.message.reply_text(
+        "تم إيقاف الجرعة التحفيزية 😴\n"
+        "يمكنك تشغيلها مرة أخرى من نفس المكان متى أحببت.",
+        reply_markup=notifications_menu_keyboard(user.id),
+    )
+
 # =================== تذكيرات الماء (JobQueue) ===================
 
 REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
+
+# أوقات الجرعة التحفيزية (بتوقيت UTC)
+MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
+
+MOTIVATION_MESSAGES = [
+    "🍃 تذكّر: قليلٌ دائم خيرٌ من كثير منقطع، خطوة اليوم تقرّبك من نسختك الأفضل 🤍",
+    "💧 جرعة ماء + آية من القرآن + ذكر بسيط = راحة قلب يوم كامل بإذن الله.",
+    "🤍 مهما كان يومك مزدحمًا، قلبك يستحق لحظات هدوء مع ذكر الله.",
+    "📖 لو شعرت بثقل، افتح المصحف صفحة واحدة فقط… ستشعر أن همّك خفّ ولو قليلًا.",
+    "💫 لا تستصغر كوب ماء تشربه بنية حفظ الصحة، ولا صفحة قرآن تقرؤها بنية القرب من الله.",
+    "🕊 قل: الحمد لله الآن… أحيانًا شكرٌ صادق يغيّر مزاج يومك كله.",
+    "🌿 استعن بالله ولا تعجز، كل محاولة للالتزام خير، حتى لو تعثّرت بعدها.",
+]
 
 
 def water_reminder_job(context: CallbackContext):
@@ -1835,6 +1925,28 @@ def water_reminder_job(context: CallbackContext):
             )
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
+
+
+def motivation_job(context: CallbackContext):
+    logger.info("Running motivation job...")
+    bot = context.bot
+
+    for uid in get_all_user_ids():
+        rec = data.get(str(uid)) or {}
+
+        # لو الجرعة التحفيزية مقفلة لهذا المستخدم
+        if rec.get("motivation_on") is False:
+            continue
+
+        msg = random.choice(MOTIVATION_MESSAGES)
+
+        try:
+            bot.send_message(
+                chat_id=uid,
+                text=msg,
+            )
+        except Exception as e:
+            logger.error(f"Error sending motivation message to {uid}: {e}")
 
 # =================== نظام المنافسات و المجتمع ===================
 
@@ -2478,6 +2590,10 @@ def handle_text(update: Update, context: CallbackContext):
         open_comp_menu(update, context)
         return
 
+    if text == BTN_NOTIFICATIONS_MAIN:
+        open_notifications_menu(update, context)
+        return
+
     if text == BTN_BACK_MAIN:
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
@@ -2593,6 +2709,15 @@ def handle_text(update: Update, context: CallbackContext):
         handle_top100(update, context)
         return
 
+    # ===== الاشعارات / الجرعة التحفيزية =====
+    if text == BTN_MOTIVATION_ON:
+        handle_motivation_on(update, context)
+        return
+
+    if text == BTN_MOTIVATION_OFF:
+        handle_motivation_off(update, context)
+        return
+
     # ===== لوحة التحكم (المدير) =====
     if text == BTN_ADMIN_PANEL:
         handle_admin_panel(update, context)
@@ -2647,6 +2772,14 @@ def main():
             water_reminder_job,
             time=time(hour=h, minute=0, tzinfo=pytz.UTC),
             name=f"water_reminder_{h}",
+        )
+
+    # جدولة الجرعة التحفيزية
+    for h in MOTIVATION_HOURS_UTC:
+        job_queue.run_daily(
+            motivation_job,
+            time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+            name=f"motivation_job_{h}",
         )
 
     # تشغيل Flask في ثريد منفصل (لـ Render)
