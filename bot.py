@@ -116,6 +116,9 @@ def get_user_record(user):
             "level": 0,  # يبدأ من 0، أول مستوى فعلي عند 20 نقطة
             "medals": [],
             "best_rank": None,
+            # الاستمرارية اليومية (ماء + قرآن)
+            "daily_full_streak": 0,
+            "last_full_day": None,
         }
     else:
         record = data[user_id]
@@ -142,6 +145,21 @@ def get_user_record(user):
         record.setdefault("level", 0)
         record.setdefault("medals", [])
         record.setdefault("best_rank", None)
+        record.setdefault("daily_full_streak", 0)
+        record.setdefault("last_full_day", None)
+
+        # تحديث أسماء بعض الميداليات القديمة إلى الإيموجيات الجديدة
+        medals = record.get("medals", [])
+        if medals:
+            new_medals = []
+            for m in medals:
+                if m == "ميدالية الاستمرار 💫":
+                    new_medals.append("ميدالية الاستمرار 🎓")
+                elif m == "ميدالية بطل سُقيا الكوثر 👑":
+                    new_medals.append("ميدالية بطل سُقيا الكوثر 🏆")
+                else:
+                    new_medals.append(m)
+            record["medals"] = new_medals
 
     save_data()
     return data[user_id]
@@ -658,9 +676,9 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     # قواعد الميداليات (تعتمد على رقم المستوى)
     medal_rules = [
         (1, "ميدالية بداية الطريق 🟢"),       # من 20 نقطة فأعلى
-        (3, "ميدالية الاستمرار 💫"),         # تقريبًا من 60 نقطة
+        (3, "ميدالية الاستمرار 🎓"),         # تقريبًا من 60 نقطة
         (5, "ميدالية الهمة العالية 🔥"),      # تقريبًا من 100 نقطة
-        (10, "ميدالية بطل سُقيا الكوثر 👑"),  # تقريبًا من 200 نقطة
+        (10, "ميدالية بطل سُقيا الكوثر 🏆"),  # تقريبًا من 200 نقطة
     ]
 
     for lvl, name in medal_rules:
@@ -683,6 +701,103 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
             context.bot.send_message(chat_id=user_id, text=msg)
         except Exception as e:
             logger.error(f"Error sending level up message to {user_id}: {e}")
+
+
+def check_daily_full_activity(user_id: int, record: dict, context: CallbackContext = None):
+    """
+    يتحقق هل المستخدم أكمل:
+    - هدف الماء اليومي
+    - وهدف القرآن اليومي
+    في نفس اليوم.
+
+    ويحدّث:
+    - ميدالية النشاط اليومي ⚡ (أول مرة فقط)
+    - ميدالية الاستمرارية 📅 (عند ٧ أيام متتالية)
+    - عدّاد الاستمرارية اليومية.
+    """
+    # تأكد من تحديث تواريخ اليوم
+    ensure_today_water(record)
+    ensure_today_quran(record)
+
+    cups_goal = record.get("cups_goal")
+    q_goal = record.get("quran_pages_goal")
+    if not cups_goal or not q_goal:
+        return
+
+    today_cups = record.get("today_cups", 0)
+    q_today = record.get("quran_pages_today", 0)
+
+    # لازم يكون أنهى الهدفين
+    if today_cups < cups_goal or q_today < q_goal:
+        return
+
+    today_date = datetime.now(timezone.utc).date()
+    today_str = today_date.isoformat()
+
+    medals = record.get("medals", []) or []
+    streak = record.get("daily_full_streak", 0) or 0
+    last_full_day = record.get("last_full_day")
+
+    got_new_daily_medal = False
+    got_new_streak_medal = False
+
+    # 1) ميدالية النشاط اليومي ⚡ (أول مرة يكمل ماء + قرآن في نفس اليوم)
+    if "ميدالية النشاط اليومي ⚡" not in medals:
+        medals.append("ميدالية النشاط اليومي ⚡")
+        got_new_daily_medal = True
+
+    # 2) حساب الاستمرارية اليومية 📅
+    if last_full_day == today_str:
+        # هذا اليوم محسوب من قبل، لا نزيد الاستمرارية مرة أخرى
+        pass
+    elif last_full_day:
+        try:
+            y, m, d = map(int, last_full_day.split("-"))
+            last_date = datetime(y, m, d, tzinfo=timezone.utc).date()
+            if (today_date - last_date).days == 1:
+                streak += 1
+            else:
+                streak = 1
+        except Exception:
+            streak = 1
+    else:
+        streak = 1
+
+    record["daily_full_streak"] = streak
+    record["last_full_day"] = today_str
+
+    # 3) ميدالية الاستمرارية 📅 عند ٧ أيام متتالية
+    if streak >= 7 and "ميدالية الاستمرارية 📅" not in medals:
+        medals.append("ميدالية الاستمرارية 📅")
+        got_new_streak_medal = True
+
+    record["medals"] = medals
+    save_data()
+
+    # 4) رسائل التحفيز 💌
+    if context is not None:
+        try:
+            if got_new_daily_medal:
+                context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "⚡ مبروك! أنجزت هدف الماء وهدف القرآن في نفس اليوم لأول مرة.\n"
+                        "هذه *ميدالية النشاط اليومي*، بداية جميلة لاستمرار أجمل 🤍"
+                    ),
+                    parse_mode="Markdown",
+                )
+            if got_new_streak_medal:
+                context.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        "📅 ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة ٧ أيام متتالية.\n"
+                        "حصلت على *ميدالية الاستمرارية* 🏆\n"
+                        "استمر، فالقليل الدائم أحبّ إلى الله من الكثير المنقطع 🤍"
+                    ),
+                    parse_mode="Markdown",
+                )
+        except Exception as e:
+            logger.error(f"Error sending daily activity medals messages to {user_id}: {e}")
 
 
 def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
@@ -981,6 +1096,9 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     save_data()
 
+    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
+    check_daily_full_activity(user.id, record, context)
+
     status_text = format_water_status_text(record)
     update.message.reply_text(
         f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
@@ -1036,6 +1154,9 @@ def handle_add_cups(update: Update, context: CallbackContext):
         add_points(user.id, POINTS_WATER_DAILY_BONUS, context)
 
     save_data()
+
+    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
+    check_daily_full_activity(user.id, record, context)
 
     status_text = format_water_status_text(record)
     update.message.reply_text(
@@ -1215,6 +1336,9 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
         add_points(user_id, POINTS_QURAN_DAILY_BONUS, context)
 
     save_data()
+
+    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
+    check_daily_full_activity(user_id, record, context)
 
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
@@ -1733,7 +1857,7 @@ def handle_my_profile(update: Update, context: CallbackContext):
 
     points = record.get("points", 0)
     level = record.get("level", 0)
-    medals = record.get("medals", [])
+    medals = record.get("medals", []) or []
     best_rank = record.get("best_rank")
 
     # حساب الترتيب الحالي
@@ -1744,11 +1868,9 @@ def handle_my_profile(update: Update, context: CallbackContext):
             rank = idx
             break
 
-    medals_text = "، ".join(medals) if medals else "لا توجد ميداليات بعد."
-
     lines = [
         "ملفي التنافسي 🎯:\n",
-        f"- النقاط الكلية: {points}",
+        f"- النقاط الكلية: 🎯 {points} نقطة",
     ]
 
     if level <= 0:
@@ -1756,12 +1878,17 @@ def handle_my_profile(update: Update, context: CallbackContext):
     else:
         lines.append(f"- المستوى الحالي: {level}")
 
-    lines.append(f"- الميداليات: {medals_text}")
-
     if rank is not None:
-        lines.append(f"- ترتيبك الحالي: #{rank}")
+        lines.append(f"- ترتيبي الحالي: #{rank}")
     if best_rank is not None:
         lines.append(f"- أفضل ترتيب وصلت له: #{best_rank}")
+
+    # الميداليات في سطر منفصل
+    if medals:
+        lines.append("\n- ميدالياتي:")
+        lines.append("  " + " — ".join(medals))
+    else:
+        lines.append("\n- ميدالياتي: (لا توجد ميداليات بعد)")
 
     update.message.reply_text(
         "\n".join(lines),
@@ -1784,12 +1911,18 @@ def handle_top10(update: Update, context: CallbackContext):
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
         points = rec.get("points", 0)
-        medals = rec.get("medals", [])
+        medals = rec.get("medals", []) or []
+
+        # السطر الأول: الترتيب + الاسم + النقاط 🎯
+        lines.append(f"{idx}) {name} — 🎯 {points} نقطة")
+
+        # السطر الثاني: الميداليات
         if medals:
-            medals_text = "، ".join(medals)
+            medals_line = " — ".join(medals)
         else:
-            medals_text = "لا توجد ميداليات بعد"
-        lines.append(f"{idx}) {name} — {points} نقطة — 🏅 {medals_text}")
+            medals_line = "(لا توجد ميداليات بعد)"
+        lines.append(medals_line)
+        lines.append("")  # سطر فارغ للفصل
 
     update.message.reply_text(
         "\n".join(lines),
@@ -1812,12 +1945,16 @@ def handle_top100(update: Update, context: CallbackContext):
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
         points = rec.get("points", 0)
-        medals = rec.get("medals", [])
+        medals = rec.get("medals", []) or []
+
+        lines.append(f"{idx}) {name} — 🎯 {points} نقطة")
+
         if medals:
-            medals_text = "، ".join(medals)
+            medals_line = " — ".join(medals)
         else:
-            medals_text = "لا توجد ميداليات بعد"
-        lines.append(f"{idx}) {name} — {points} نقطة — 🏅 {medals_text}")
+            medals_line = "(لا توجد ميداليات بعد)"
+        lines.append(medals_line)
+        lines.append("")
 
     update.message.reply_text(
         "\n".join(lines),
