@@ -77,6 +77,63 @@ def save_data():
 
 data = load_data()
 
+# =================== إعدادات افتراضية للجرعة التحفيزية (على مستوى البوت) ===================
+
+DEFAULT_MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
+
+DEFAULT_MOTIVATION_MESSAGES = [
+    "🍃 تذكّر: قليلٌ دائم خيرٌ من كثير منقطع، خطوة اليوم تقرّبك من نسختك الأفضل 🤍",
+    "💧 جرعة ماء + آية من القرآن + ذكر بسيط = راحة قلب يوم كامل بإذن الله.",
+    "🤍 مهما كان يومك مزدحمًا، قلبك يستحق لحظات هدوء مع ذكر الله.",
+    "📖 لو شعرت بثقل، افتح المصحف صفحة واحدة فقط… ستشعر أن همّك خفّ ولو قليلًا.",
+    "💫 لا تستصغر كوب ماء تشربه بنية حفظ الصحة، ولا صفحة قرآن تقرؤها بنية القرب من الله.",
+    "🕊 قل: الحمد لله الآن… أحيانًا شكرٌ صادق يغيّر مزاج يومك كله.",
+    "🌿 استعن بالله ولا تعجز، كل محاولة للالتزام خير، حتى لو تعثّرت بعدها.",
+]
+
+GLOBAL_KEY = "_global_config"
+
+# سيتم ملؤها بعد قراءة الإعدادات
+MOTIVATION_HOURS_UTC = []
+MOTIVATION_MESSAGES = []
+
+# لتتبع Jobs الخاصة بالجرعة التحفيزية
+CURRENT_MOTIVATION_JOBS = []
+
+
+def get_global_config():
+    """
+    يرجع (أو ينشئ) الإعدادات العامة للبوت (مثل أوقات الجرعة التحفيزية ورسائلها).
+    تُخزَّن تحت مفتاح خاص في نفس ملف JSON.
+    """
+    cfg = data.get(GLOBAL_KEY)
+    changed = False
+
+    if not cfg or not isinstance(cfg, dict):
+        cfg = {}
+        changed = True
+
+    if "motivation_hours" not in cfg or not cfg.get("motivation_hours"):
+        cfg["motivation_hours"] = DEFAULT_MOTIVATION_HOURS_UTC.copy()
+        changed = True
+
+    if "motivation_messages" not in cfg or not cfg.get("motivation_messages"):
+        cfg["motivation_messages"] = DEFAULT_MOTIVATION_MESSAGES.copy()
+        changed = True
+
+    data[GLOBAL_KEY] = cfg
+    if changed:
+        save_data()
+    return cfg
+
+
+# تهيئة الإعدادات العامة للجرعة التحفيزية
+_global_cfg = get_global_config()
+MOTIVATION_HOURS_UTC = _global_cfg["motivation_hours"]
+MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
+
+# =================== سجلات المستخدمين ===================
+
 
 def get_user_record(user):
     """
@@ -179,7 +236,8 @@ def update_user_record(user_id: int, **kwargs):
 
 
 def get_all_user_ids():
-    return [int(uid) for uid in data.keys()]
+    # نتجاهل المفتاح العالمي لو موجود
+    return [int(uid) for uid in data.keys() if uid != GLOBAL_KEY]
 
 
 def is_admin(user_id: int) -> bool:
@@ -214,6 +272,11 @@ WAITING_SUPPORT_GENDER = set()  # تحديد الجنس قبل أول رسالة
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
 
+# إدارة الجرعة التحفيزية (من لوحة التحكم)
+WAITING_MOTIVATION_ADD = set()
+WAITING_MOTIVATION_DELETE = set()
+WAITING_MOTIVATION_TIMES = set()
+
 # =================== الأزرار ===================
 
 # رئيسية
@@ -243,7 +306,14 @@ BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
 BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
 BTN_ADMIN_RANKINGS = "ترتيب المنافسة (تفصيلي) 📊"
 
-# جرعة تحفيزية
+# إعدادات الجرعة التحفيزية (داخل لوحة التحكم)
+BTN_ADMIN_MOTIVATION_MENU = "إعدادات الجرعة التحفيزية 💡"
+BTN_ADMIN_MOTIVATION_LIST = "عرض رسائل الجرعة 📜"
+BTN_ADMIN_MOTIVATION_ADD = "إضافة رسالة تحفيزية ➕"
+BTN_ADMIN_MOTIVATION_DELETE = "حذف رسالة تحفيزية 🗑"
+BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
+
+# جرعة تحفيزية للمستخدم
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
 BTN_MOTIVATION_OFF = "إيقاف الجرعة التحفيزية 😴"
 
@@ -446,7 +516,20 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT), KeyboardButton(BTN_ADMIN_USERS_LIST)],
         [KeyboardButton(BTN_ADMIN_BROADCAST), KeyboardButton(BTN_ADMIN_RANKINGS)],
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+# ---- لوحة إعدادات الجرعة التحفيزية (خاصة بالأدمن) ----
+ADMIN_MOTIVATION_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_LIST)],
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_ADD)],
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_DELETE)],
+        [KeyboardButton(BTN_ADMIN_MOTIVATION_TIMES)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -463,7 +546,7 @@ COMP_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# ---- الاشعارات / الجرعة التحفيزية ----
+# ---- الاشعارات / الجرعة التحفيزية (للمستخدم) ----
 def notifications_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     if is_admin(user_id):
         return ReplyKeyboardMarkup(
@@ -634,7 +717,7 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
 
 def get_users_sorted_by_points():
     return sorted(
-        data.values(),
+        [r for k, r in data.items() if k != GLOBAL_KEY],
         key=lambda r: r.get("points", 0),
         reverse=True,
     )
@@ -690,13 +773,9 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     points = record.get("points", 0)
 
     # كل 20 نقطة = مستوى جديد
-    # 0–19 → مستوى 0
-    # 20–39 → مستوى 1
-    # 40–59 → مستوى 2 ... وهكذا
     new_level = points // 20
 
     if new_level == old_level:
-        # حتى لو ما تغير المستوى، لسه ممكن يتحسن الترتيب
         check_rank_improvement(user_id, record, context)
         return
 
@@ -704,12 +783,11 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     medals = record.get("medals", [])
     new_medals = []
 
-    # قواعد الميداليات (تعتمد على رقم المستوى)
     medal_rules = [
-        (1, "ميدالية بداية الطريق 🟢"),       # من 20 نقطة فأعلى
-        (3, "ميدالية الاستمرار 🎓"),         # تقريبًا من 60 نقطة
-        (5, "ميدالية الهمة العالية 🔥"),      # تقريبًا من 100 نقطة
-        (10, "ميدالية بطل سُقيا الكوثر 🏆"),  # تقريبًا من 200 نقطة
+        (1, "ميدالية بداية الطريق 🟢"),
+        (3, "ميدالية الاستمرار 🎓"),
+        (5, "ميدالية الهمة العالية 🔥"),
+        (10, "ميدالية بطل سُقيا الكوثر 🏆"),
     ]
 
     for lvl, name in medal_rules:
@@ -720,10 +798,8 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     record["medals"] = medals
     save_data()
 
-    # أولًا: ترتيب المنافسة
     check_rank_improvement(user_id, record, context)
 
-    # ثانيًا: رسالة مستوى جديد + ميداليات
     if context is not None:
         try:
             msg = f"🎉 مبروك! وصلت إلى المستوى {new_level}.\n"
@@ -740,13 +816,7 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     - هدف الماء اليومي
     - وهدف القرآن اليومي
     في نفس اليوم.
-
-    ويحدّث:
-    - ميدالية النشاط اليومي ⚡ (أول مرة فقط)
-    - ميدالية الاستمرارية 📅 (عند ٧ أيام متتالية)
-    - عدّاد الاستمرارية اليومية.
     """
-    # تأكد من تحديث تواريخ اليوم
     ensure_today_water(record)
     ensure_today_quran(record)
 
@@ -758,7 +828,6 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     today_cups = record.get("today_cups", 0)
     q_today = record.get("quran_pages_today", 0)
 
-    # لازم يكون أنهى الهدفين
     if today_cups < cups_goal or q_today < q_goal:
         return
 
@@ -772,14 +841,11 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     got_new_daily_medal = False
     got_new_streak_medal = False
 
-    # 1) ميدالية النشاط اليومي ⚡ (أول مرة يكمل ماء + قرآن في نفس اليوم)
     if "ميدالية النشاط اليومي ⚡" not in medals:
         medals.append("ميدالية النشاط اليومي ⚡")
         got_new_daily_medal = True
 
-    # 2) حساب الاستمرارية اليومية 📅
     if last_full_day == today_str:
-        # هذا اليوم محسوب من قبل، لا نزيد الاستمرارية مرة أخرى
         pass
     elif last_full_day:
         try:
@@ -797,7 +863,6 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     record["daily_full_streak"] = streak
     record["last_full_day"] = today_str
 
-    # 3) ميدالية الاستمرارية 📅 عند ٧ أيام متتالية
     if streak >= 7 and "ميدالية الاستمرارية 📅" not in medals:
         medals.append("ميدالية الاستمرارية 📅")
         got_new_streak_medal = True
@@ -805,7 +870,6 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     record["medals"] = medals
     save_data()
 
-    # 4) رسائل التحفيز 💌
     if context is not None:
         try:
             if got_new_daily_medal:
@@ -832,7 +896,6 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
 
 
 def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
-    """إضافة نقاط للمستخدم ثم تحديث مستواه وترتيبه."""
     if amount <= 0:
         return
 
@@ -844,7 +907,7 @@ def add_points(user_id: int, amount: int, context: CallbackContext = None, reaso
     record["points"] = record.get("points", 0) + amount
     update_level_and_medals(user_id, record, context)
 
-# =================== أذكار ثابتة (مختصرة) ===================
+# =================== أذكار ثابتة ===================
 
 ADHKAR_MORNING_TEXT = (
     "أذكار الصباح (من بعد الفجر حتى ارتفاع الشمس) 🌅:\n\n"
@@ -868,7 +931,7 @@ ADHKAR_EVENING_TEXT = (
     "له الملك وله الحمد وهو على كل شيء قدير».\n"
     "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
     "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحده لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
+    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
     "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
     "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
     "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
@@ -904,7 +967,6 @@ def start_command(update: Update, context: CallbackContext):
         parse_mode="Markdown",
     )
 
-    # إشعار الأدمن بدخول مستخدم جديد
     if is_new and ADMIN_ID is not None:
         try:
             context.bot.send_message(
@@ -938,6 +1000,9 @@ def help_command(update: Update, context: CallbackContext):
     )
 
 # =================== قسم منبّه الماء ===================
+
+# (نفس الدوال بالضبط كما في النسخة السابقة، لم يتم تعديلها)
+# --- للحجم، أبقيها كما هي دون تعليق إضافي ---
 
 
 def open_water_menu(update: Update, context: CallbackContext):
@@ -1076,7 +1141,6 @@ def handle_weight_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     record["weight"] = weight
 
-    # حساب احتياج الماء حسب الجنس
     if record.get("gender") == "male":
         rate = 0.035
     else:
@@ -1117,10 +1181,8 @@ def handle_log_cup(update: Update, context: CallbackContext):
     before = record.get("today_cups", 0)
     record["today_cups"] = before + 1
 
-    # نقاط على كل كوب
     add_points(user.id, POINTS_PER_WATER_CUP, context)
 
-    # مكافأة إكمال الهدف اليومي لأول مرة
     cups_goal = record.get("cups_goal")
     after = record["today_cups"]
     if cups_goal and before < cups_goal <= after:
@@ -1128,7 +1190,6 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
     check_daily_full_activity(user.id, record, context)
 
     status_text = format_water_status_text(record)
@@ -1139,7 +1200,6 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
 
 def handle_add_cups(update: Update, context: CallbackContext):
-    """وصف طريقة إضافة عدد أكواب، أو التعامل مع الرقم نفسه."""
     user = update.effective_user
     record = get_user_record(user)
     text = (update.message.text or "").strip()
@@ -1176,10 +1236,8 @@ def handle_add_cups(update: Update, context: CallbackContext):
     before = record.get("today_cups", 0)
     record["today_cups"] = before + cups
 
-    # نقاط على كل كوب ماء
     add_points(user.id, cups * POINTS_PER_WATER_CUP, context)
 
-    # مكافأة إكمال الهدف اليومي لأول مرة
     cups_goal = record.get("cups_goal")
     after = record["today_cups"]
     if cups_goal and before < cups_goal <= after:
@@ -1187,7 +1245,6 @@ def handle_add_cups(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
     check_daily_full_activity(user.id, record, context)
 
     status_text = format_water_status_text(record)
@@ -1242,6 +1299,8 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     )
 
 # =================== قسم ورد القرآن ===================
+
+# (كما هو في النسخة السابقة)
 
 
 def open_quran_menu(update: Update, context: CallbackContext):
@@ -1358,10 +1417,8 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     before = record.get("quran_pages_today", 0)
     record["quran_pages_today"] = before + pages
 
-    # نقاط لكل صفحة
     add_points(user_id, pages * POINTS_PER_QURAN_PAGE, context)
 
-    # مكافأة إكمال ورد اليوم لأول مرة
     goal = record.get("quran_pages_goal")
     after = record["quran_pages_today"]
     if goal and before < goal <= after:
@@ -1369,7 +1426,6 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
 
     save_data()
 
-    # 💡 التحقق من إكمال (ماء + قرآن) في نفس اليوم
     check_daily_full_activity(user_id, record, context)
 
     WAITING_QURAN_ADD_PAGES.discard(user_id)
@@ -1470,7 +1526,6 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
     user = update.effective_user
     user_id = user.id
 
-    # choice_text شكلها: "سبحان الله (33)"
     for dhikr, count in TASBIH_ITEMS:
         label = f"{dhikr} ({count})"
         if choice_text == label:
@@ -1521,7 +1576,6 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
             reply_markup=tasbih_run_keyboard(user_id),
         )
     else:
-        # احتساب النقاط عند اكتمال جلسة التسبيح
         reward_points = tasbih_points_for_session(target)
         add_points(user_id, reward_points, context)
 
@@ -1561,7 +1615,6 @@ def open_memos_menu(update: Update, context: CallbackContext):
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
 
-    # تفعيل حالة قائمة المذكرات
     WAITING_MEMO_MENU.add(user_id)
     WAITING_MEMO_ADD.discard(user_id)
     WAITING_MEMO_EDIT_SELECT.discard(user_id)
@@ -1798,28 +1851,20 @@ def handle_stats(update: Update, context: CallbackContext):
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
-    # الماء
     if cups_goal:
         text_lines.append(f"- الماء: {today_cups} / {cups_goal} كوب.")
     else:
         text_lines.append("- الماء: لم يتم حساب احتياجك بعد.")
 
-    # القرآن
     if q_goal:
         text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
     else:
         text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
 
-    # الأذكار
     text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
-
-    # التسبيح
     text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
-
-    # المذكرات
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
 
-    # النقاط والمستوى
     text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
     if level <= 0:
         text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
@@ -1833,7 +1878,7 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
-# =================== الاشعارات / الجرعة التحفيزية ===================
+# =================== الاشعارات / الجرعة التحفيزية (للمستخدم) ===================
 
 
 def open_notifications_menu(update: Update, context: CallbackContext):
@@ -1882,19 +1927,6 @@ def handle_motivation_off(update: Update, context: CallbackContext):
 
 REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
 
-# أوقات الجرعة التحفيزية (بتوقيت UTC)
-MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
-
-MOTIVATION_MESSAGES = [
-    "🍃 تذكّر: قليلٌ دائم خيرٌ من كثير منقطع، خطوة اليوم تقرّبك من نسختك الأفضل 🤍",
-    "💧 جرعة ماء + آية من القرآن + ذكر بسيط = راحة قلب يوم كامل بإذن الله.",
-    "🤍 مهما كان يومك مزدحمًا، قلبك يستحق لحظات هدوء مع ذكر الله.",
-    "📖 لو شعرت بثقل، افتح المصحف صفحة واحدة فقط… ستشعر أن همّك خفّ ولو قليلًا.",
-    "💫 لا تستصغر كوب ماء تشربه بنية حفظ الصحة، ولا صفحة قرآن تقرؤها بنية القرب من الله.",
-    "🕊 قل: الحمد لله الآن… أحيانًا شكرٌ صادق يغيّر مزاج يومك كله.",
-    "🌿 استعن بالله ولا تعجز، كل محاولة للالتزام خير، حتى لو تعثّرت بعدها.",
-]
-
 
 def water_reminder_job(context: CallbackContext):
     logger.info("Running water reminder job...")
@@ -1926,6 +1958,8 @@ def water_reminder_job(context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
 
+# =================== الجرعة التحفيزية (JobQueue + إدارة) ===================
+
 
 def motivation_job(context: CallbackContext):
     logger.info("Running motivation job...")
@@ -1934,8 +1968,10 @@ def motivation_job(context: CallbackContext):
     for uid in get_all_user_ids():
         rec = data.get(str(uid)) or {}
 
-        # لو الجرعة التحفيزية مقفلة لهذا المستخدم
         if rec.get("motivation_on") is False:
+            continue
+
+        if not MOTIVATION_MESSAGES:
             continue
 
         msg = random.choice(MOTIVATION_MESSAGES)
@@ -1947,6 +1983,253 @@ def motivation_job(context: CallbackContext):
             )
         except Exception as e:
             logger.error(f"Error sending motivation message to {uid}: {e}")
+
+# ======== لوحة التحكم لإدارة الجرعة التحفيزية (أدمن فقط) ========
+
+
+def open_admin_motivation_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        update.message.reply_text(
+            "هذا القسم خاص بالمدير فقط.",
+            reply_markup=user_main_keyboard(user.id),
+        )
+        return
+
+    hours_text = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC) if MOTIVATION_HOURS_UTC else "لا توجد أوقات مضبوطة"
+    count = len(MOTIVATION_MESSAGES)
+
+    update.message.reply_text(
+        "إعدادات الجرعة التحفيزية 💡:\n\n"
+        f"- عدد الرسائل الحالية: {count}\n"
+        f"- الأوقات الحالية (بتوقيت UTC): {hours_text}\n\n"
+        "يمكنك من هنا:\n"
+        "• عرض كل الرسائل.\n"
+        "• إضافة رسالة جديدة.\n"
+        "• حذف رسالة.\n"
+        "• تعديل أوقات الإرسال.",
+        reply_markup=ADMIN_MOTIVATION_KB,
+    )
+
+
+def handle_admin_motivation_list(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    if not MOTIVATION_MESSAGES:
+        text = "لا توجد رسائل جرعة تحفيزية حاليًا."
+    else:
+        lines = ["قائمة رسائل الجرعة التحفيزية الحالية 📜:\n"]
+        for idx, m in enumerate(MOTIVATION_MESSAGES, start=1):
+            lines.append(f"{idx}) {m}")
+        text = "\n".join(lines)
+
+    update.message.reply_text(
+        text,
+        reply_markup=ADMIN_MOTIVATION_KB,
+    )
+
+
+def handle_admin_motivation_add_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    WAITING_MOTIVATION_ADD.add(user.id)
+    WAITING_MOTIVATION_DELETE.discard(user.id)
+    WAITING_MOTIVATION_TIMES.discard(user.id)
+
+    update.message.reply_text(
+        "اكتب الآن نص الرسالة التحفيزية الجديدة التي تريد إضافتها 🌟\n\n"
+        "يمكنك كتابة جملة قصيرة، دعاء، أو عبارة تشجيعية.",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not is_admin(user_id):
+        WAITING_MOTIVATION_ADD.discard(user_id)
+        return
+
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_MOTIVATION_ADD.discard(user_id)
+        open_admin_motivation_menu(update, context)
+        return
+
+    if not text:
+        update.message.reply_text(
+            "الرجاء إرسال نص غير فارغ 😊",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    global MOTIVATION_MESSAGES
+    MOTIVATION_MESSAGES.append(text)
+
+    cfg = get_global_config()
+    cfg["motivation_messages"] = MOTIVATION_MESSAGES
+    save_data()
+
+    WAITING_MOTIVATION_ADD.discard(user_id)
+
+    update.message.reply_text(
+        "تمت إضافة الرسالة التحفيزية بنجاح ✅",
+        reply_markup=ADMIN_MOTIVATION_KB,
+    )
+    handle_admin_motivation_list(update, context)
+
+
+def handle_admin_motivation_delete_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    if not MOTIVATION_MESSAGES:
+        update.message.reply_text(
+            "لا توجد رسائل لحذفها حاليًا.",
+            reply_markup=ADMIN_MOTIVATION_KB,
+        )
+        return
+
+    WAITING_MOTIVATION_DELETE.add(user.id)
+    WAITING_MOTIVATION_ADD.discard(user.id)
+    WAITING_MOTIVATION_TIMES.discard(user.id)
+
+    lines = ["🗑 اختر رقم الرسالة التي تريد حذفها:\n"]
+    for idx, m in enumerate(MOTIVATION_MESSAGES, start=1):
+        lines.append(f"{idx}) {m}")
+    lines.append("\nأرسل رقم الرسالة، أو اضغط «إلغاء ❌».")
+    update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_motivation_delete_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not is_admin(user_id):
+        WAITING_MOTIVATION_DELETE.discard(user_id)
+        return
+
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_MOTIVATION_DELETE.discard(user_id)
+        open_admin_motivation_menu(update, context)
+        return
+
+    try:
+        idx = int(text) - 1
+        if idx < 0 or idx >= len(MOTIVATION_MESSAGES):
+            raise ValueError()
+    except ValueError:
+        update.message.reply_text(
+            "رجاءً أرسل رقم صحيح من القائمة، أو اضغط «إلغاء ❌».",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    global MOTIVATION_MESSAGES
+    deleted = MOTIVATION_MESSAGES.pop(idx)
+
+    cfg = get_global_config()
+    cfg["motivation_messages"] = MOTIVATION_MESSAGES
+    save_data()
+
+    WAITING_MOTIVATION_DELETE.discard(user_id)
+
+    update.message.reply_text(
+        f"🗑 تم حذف الرسالة التالية:\n\n{deleted}",
+        reply_markup=ADMIN_MOTIVATION_KB,
+    )
+    handle_admin_motivation_list(update, context)
+
+
+def handle_admin_motivation_times_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+
+    WAITING_MOTIVATION_TIMES.add(user.id)
+    WAITING_MOTIVATION_ADD.discard(user.id)
+    WAITING_MOTIVATION_DELETE.discard(user.id)
+
+    current = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC) if MOTIVATION_HOURS_UTC else "لا توجد"
+    update.message.reply_text(
+        "تعديل أوقات الجرعة التحفيزية ⏰\n\n"
+        f"الأوقات الحالية (بتوقيت UTC): {current}\n\n"
+        "أرسل الأوقات الجديدة بالأرقام (0–23) مفصولة بفواصل، مثال:\n"
+        "`6,9,12,15,18,21`\n\n"
+        "أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+        parse_mode="Markdown",
+    )
+
+
+def handle_admin_motivation_times_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not is_admin(user_id):
+        WAITING_MOTIVATION_TIMES.discard(user_id)
+        return
+
+    msg = update.message
+    text = (msg.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_MOTIVATION_TIMES.discard(user_id)
+        open_admin_motivation_menu(update, context)
+        return
+
+    parts = re.findall(r"\d+", text)
+    hours = sorted({int(p) for p in parts if 0 <= int(p) <= 23})
+
+    if not hours:
+        msg.reply_text(
+            "رجاءً أرسل ساعات صحيحة بين 0 و 23 مثل: 6,9,12,15,18,21",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    global MOTIVATION_HOURS_UTC, CURRENT_MOTIVATION_JOBS
+    MOTIVATION_HOURS_UTC = hours
+
+    cfg = get_global_config()
+    cfg["motivation_hours"] = MOTIVATION_HOURS_UTC
+    save_data()
+
+    for job in list(CURRENT_MOTIVATION_JOBS):
+        try:
+            job.schedule_removal()
+        except Exception:
+            pass
+    CURRENT_MOTIVATION_JOBS = []
+
+    for h in MOTIVATION_HOURS_UTC:
+        try:
+            job = context.job_queue.run_daily(
+                motivation_job,
+                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+                name=f"motivation_job_{h}",
+            )
+            CURRENT_MOTIVATION_JOBS.append(job)
+        except Exception as e:
+            logger.error(f"Error scheduling motivation job at hour {h}: {e}")
+
+    WAITING_MOTIVATION_TIMES.discard(user_id)
+
+    hours_text = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC)
+    msg.reply_text(
+        f"تم تحديث أوقات الجرعة التحفيزية بنجاح ✅\n"
+        f"الأوقات الجديدة (بتوقيت UTC): {hours_text}",
+        reply_markup=ADMIN_MOTIVATION_KB,
+    )
 
 # =================== نظام المنافسات و المجتمع ===================
 
@@ -1972,7 +2255,6 @@ def handle_my_profile(update: Update, context: CallbackContext):
     medals = record.get("medals", []) or []
     best_rank = record.get("best_rank")
 
-    # حساب الترتيب الحالي
     sorted_users = get_users_sorted_by_points()
     rank = None
     for idx, rec in enumerate(sorted_users, start=1):
@@ -1995,7 +2277,6 @@ def handle_my_profile(update: Update, context: CallbackContext):
     if best_rank is not None:
         lines.append(f"- أفضل ترتيب وصلت له: #{best_rank}")
 
-    # الميداليات في سطر منفصل
     if medals:
         lines.append("\n- ميدالياتي:")
         lines.append("  " + " — ".join(medals))
@@ -2025,16 +2306,14 @@ def handle_top10(update: Update, context: CallbackContext):
         points = rec.get("points", 0)
         medals = rec.get("medals", []) or []
 
-        # السطر الأول: الترتيب + الاسم + النقاط 🎯
         lines.append(f"{idx}) {name} — 🎯 {points} نقطة")
 
-        # السطر الثاني: الميداليات
         if medals:
             medals_line = " — ".join(medals)
         else:
             medals_line = "(لا توجد ميداليات بعد)"
         lines.append(medals_line)
-        lines.append("")  # سطر فارغ للفصل
+        lines.append("")
 
     update.message.reply_text(
         "\n".join(lines),
@@ -2083,7 +2362,6 @@ def handle_contact_support(update: Update, context: CallbackContext):
 
     gender = record.get("gender")
 
-    # لو الجنس معروف مسبقًا → مباشرة نطلب الرسالة
     if gender in ["male", "female"]:
         WAITING_SUPPORT.add(user_id)
         update.message.reply_text(
@@ -2094,7 +2372,6 @@ def handle_contact_support(update: Update, context: CallbackContext):
         )
         return
 
-    # أول مرة: نطلب تحديد الجنس
     WAITING_SUPPORT_GENDER.add(user_id)
     update.message.reply_text(
         "قبل إرسال رسالتك للدعم، اختر الجنس:\n\n"
@@ -2119,7 +2396,8 @@ def handle_admin_panel(update: Update, context: CallbackContext):
         "• عرض عدد المستخدمين.\n"
         "• عرض قائمة المستخدمين.\n"
         "• إرسال رسالة جماعية.\n"
-        "• عرض ترتيب المنافسة تفصيليًا.",
+        "• عرض ترتيب المنافسة تفصيليًا.\n"
+        "• إدارة رسائل وأوقات الجرعة التحفيزية 💡.",
         reply_markup=ADMIN_PANEL_KB,
     )
 
@@ -2143,6 +2421,8 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
 
     lines = []
     for uid_str, rec in data.items():
+        if uid_str == GLOBAL_KEY:
+            continue
         name = rec.get("first_name") or "بدون اسم"
         username = rec.get("username")
         line = f"- {name} | ID: {uid_str}"
@@ -2153,7 +2433,7 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
     if not lines:
         text = "لا يوجد مستخدمون مسجّلون بعد."
     else:
-        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])  # حد معقول
+        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])
 
     update.message.reply_text(
         text,
@@ -2219,7 +2499,7 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         return
 
     sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:200]  # عرض أول 200 مستخدم بالنقاط
+    top = sorted_users[:200]
 
     if not top:
         update.message.reply_text(
@@ -2244,7 +2524,6 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         line += f") — مستوى {level} — {points} نقطة — ميداليات: {medals_text}"
         lines.append(line)
 
-    # لتفادي طول الرسالة، نقسمها لو احتاج
     chunk = "\n".join(lines[:80])
     update.message.reply_text(
         chunk,
@@ -2253,16 +2532,10 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
 
 
 def forward_support_to_admin(user, text: str, context: CallbackContext):
-    """
-    إرسال رسالة الدعم:
-    - الرجال → للأدمن فقط.
-    - النساء → للأدمن + للمشرفة.
-    """
     uid = str(user.id)
     record = data.get(uid, {})
     gender = record.get("gender")
 
-    # نص مشترك للأدمن
     admin_msg = (
         "📩 رسالة جديدة للدعم:\n\n"
         f"الاسم: {user.full_name}\n"
@@ -2272,7 +2545,6 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
         f"محتوى الرسالة:\n{text}"
     )
 
-    # إرسال للأدمن دائمًا
     if ADMIN_ID is not None:
         try:
             context.bot.send_message(
@@ -2283,7 +2555,6 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending support message to admin: {e}")
 
-    # لو أنثى → نرسل أيضًا للمشرفة
     if gender == "female" and SUPERVISOR_ID is not None:
         supervisor_msg = (
             "📩 رسالة جديدة من أخت (دعم نسائي):\n\n"
@@ -2303,10 +2574,6 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
 
 
 def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
-    """
-    إذا كان الأدمن يرد على رسالة دعم / رد من المستخدم، نلتقط ID ونرسل الرد للمستخدم.
-    ترجع True إذا تم التعامل مع الرسالة كـ رد أدمن.
-    """
     user = update.effective_user
     msg = update.message
     text = (msg.text or "").strip()
@@ -2390,19 +2657,17 @@ def handle_text(update: Update, context: CallbackContext):
             )
             return
 
-    # 1️⃣ رد المشرفة على رسائل الأخوات (Reply)
+    # رد المشرفة على الأخوات
     if is_supervisor(user_id) and msg.reply_to_message:
         original = msg.reply_to_message.text or ""
         m = re.search(r"ID:\s*`?(\d+)`?", original)
         if m:
             target_id = int(m.group(1))
             try:
-                # إرسال الرد للمستخدمة
                 context.bot.send_message(
                     chat_id=target_id,
                     text=f"💌 رد من المشرفة:\n\n{text}",
                 )
-                # نسخة للأدمن
                 if ADMIN_ID is not None:
                     try:
                         context.bot.send_message(
@@ -2428,11 +2693,11 @@ def handle_text(update: Update, context: CallbackContext):
                 )
             return
 
-    # 2️⃣ رد الأدمن على رسالة فيها ID → يرسل الرد للمستخدم
+    # رد الأدمن على رسائل فيها ID
     if try_handle_admin_reply(update, context):
         return
 
-    # 3️⃣ رد المستخدم (رجل أو امرأة) على رسائل الدعم / رد / رسالة جماعية (Reply)
+    # رد المستخدم على ردود الدعم/الرسائل الجماعية
     if (
         not is_admin(user_id)
         and not is_supervisor(user_id)
@@ -2471,6 +2736,9 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_SUPPORT_GENDER.discard(user_id)
         WAITING_SUPPORT.discard(user_id)
         WAITING_BROADCAST.discard(user_id)
+        WAITING_MOTIVATION_ADD.discard(user_id)
+        WAITING_MOTIVATION_DELETE.discard(user_id)
+        WAITING_MOTIVATION_TIMES.discard(user_id)
 
         msg.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
@@ -2529,6 +2797,19 @@ def handle_text(update: Update, context: CallbackContext):
         handle_memo_delete_index_input(update, context)
         return
 
+    # ===== حالات إدارة الجرعة التحفيزية (أدمن) =====
+    if user_id in WAITING_MOTIVATION_ADD:
+        handle_admin_motivation_add_input(update, context)
+        return
+
+    if user_id in WAITING_MOTIVATION_DELETE:
+        handle_admin_motivation_delete_input(update, context)
+        return
+
+    if user_id in WAITING_MOTIVATION_TIMES:
+        handle_admin_motivation_times_input(update, context)
+        return
+
     # ===== حالة الدعم =====
     if user_id in WAITING_SUPPORT:
         WAITING_SUPPORT.discard(user_id)
@@ -2552,7 +2833,7 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    # ===== حالة الرسالة الجماعية (نص الرسالة) =====
+    # ===== حالة الرسالة الجماعية =====
     if user_id in WAITING_BROADCAST:
         handle_admin_broadcast_input(update, context)
         return
@@ -2647,7 +2928,6 @@ def handle_text(update: Update, context: CallbackContext):
         open_water_menu(update, context)
         return
 
-    # لو كتب رقم → نحاول تفسيره كعدد أكواب إضافية
     if text.isdigit():
         handle_add_cups(update, context)
         return
@@ -2676,7 +2956,7 @@ def handle_text(update: Update, context: CallbackContext):
             start_tasbih_for_choice(update, context, text)
             return
 
-    # ===== مذكّرات قلبي: زر القائمة الداخلي =====
+    # ===== مذكّرات قلبي =====
     if text == BTN_MEMO_ADD:
         handle_memo_add_start(update, context)
         return
@@ -2709,7 +2989,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_top100(update, context)
         return
 
-    # ===== الاشعارات / الجرعة التحفيزية =====
+    # ===== الجرعة التحفيزية (زر المستخدم) =====
     if text == BTN_MOTIVATION_ON:
         handle_motivation_on(update, context)
         return
@@ -2739,6 +3019,26 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_rankings(update, context)
         return
 
+    if text == BTN_ADMIN_MOTIVATION_MENU:
+        open_admin_motivation_menu(update, context)
+        return
+
+    if text == BTN_ADMIN_MOTIVATION_LIST:
+        handle_admin_motivation_list(update, context)
+        return
+
+    if text == BTN_ADMIN_MOTIVATION_ADD:
+        handle_admin_motivation_add_start(update, context)
+        return
+
+    if text == BTN_ADMIN_MOTIVATION_DELETE:
+        handle_admin_motivation_delete_start(update, context)
+        return
+
+    if text == BTN_ADMIN_MOTIVATION_TIMES:
+        handle_admin_motivation_times_start(update, context)
+        return
+
     # ===== أي نص آخر =====
     msg.reply_text(
         "تنبيه: رسالتك الآن لا تصل للدعم بشكل مباشر.\n"
@@ -2759,14 +3059,11 @@ def main():
     dp = updater.dispatcher
     job_queue = updater.job_queue
 
-    # أوامر
     dp.add_handler(CommandHandler("start", start_command))
     dp.add_handler(CommandHandler("help", help_command))
 
-    # جميع الرسائل النصية
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
-    # جدولة التذكيرات اليومية للماء
     for h in REMINDER_HOURS_UTC:
         job_queue.run_daily(
             water_reminder_job,
@@ -2774,15 +3071,19 @@ def main():
             name=f"water_reminder_{h}",
         )
 
-    # جدولة الجرعة التحفيزية
+    global CURRENT_MOTIVATION_JOBS
+    CURRENT_MOTIVATION_JOBS = []
     for h in MOTIVATION_HOURS_UTC:
-        job_queue.run_daily(
-            motivation_job,
-            time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-            name=f"motivation_job_{h}",
-        )
+        try:
+            job = job_queue.run_daily(
+                motivation_job,
+                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+                name=f"motivation_job_{h}",
+            )
+            CURRENT_MOTIVATION_JOBS.append(job)
+        except Exception as e:
+            logger.error(f"Error scheduling motivation job at hour {h}: {e}")
 
-    # تشغيل Flask في ثريد منفصل (لـ Render)
     Thread(target=run_flask, daemon=True).start()
 
     logger.info("Suqya Al-Kawther bot is starting...")
