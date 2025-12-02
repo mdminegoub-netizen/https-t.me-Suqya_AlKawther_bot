@@ -148,6 +148,11 @@ def get_user_record(user):
             "username": user.username,
             "created_at": now_iso,
             "last_active": now_iso,
+            # حالة الحظر
+            "is_banned": False,
+            "banned_by": None,
+            "banned_at": None,
+            "ban_reason": None,
             # إعدادات الماء
             "gender": None,  # نستخدمها أيضًا في الدعم
             "age": None,
@@ -187,6 +192,10 @@ def get_user_record(user):
         record["last_active"] = now_iso
 
         # ضمان الحقول
+        record.setdefault("is_banned", False)
+        record.setdefault("banned_by", None)
+        record.setdefault("banned_at", None)
+        record.setdefault("ban_reason", None)
         record.setdefault("gender", None)
         record.setdefault("age", None)
         record.setdefault("weight", None)
@@ -239,6 +248,18 @@ def get_all_user_ids():
     return [int(uid) for uid in data.keys() if uid != GLOBAL_KEY]
 
 
+def get_active_user_ids():
+    """يرجع قائمة المستخدمين النشطين (غير المحظورين)"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != GLOBAL_KEY and not rec.get("is_banned", False)]
+
+
+def get_banned_user_ids():
+    """يرجع قائمة المستخدمين المحظورين"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != GLOBAL_KEY and rec.get("is_banned", False)]
+
+
 def is_admin(user_id: int) -> bool:
     return ADMIN_ID is not None and user_id == ADMIN_ID
 
@@ -285,6 +306,12 @@ WAITING_MOTIVATION_ADD = set()
 WAITING_MOTIVATION_DELETE = set()
 WAITING_MOTIVATION_TIMES = set()
 
+# نظام الحظر
+WAITING_BAN_USER = set()
+WAITING_UNBAN_USER = set()
+WAITING_BAN_REASON = set()
+BAN_TARGET_ID = {}  # user_id -> target_user_id
+
 # =================== الأزرار ===================
 
 # رئيسية
@@ -314,6 +341,9 @@ BTN_ADMIN_USERS_COUNT = "عدد المستخدمين 👥"
 BTN_ADMIN_USERS_LIST = "قائمة المستخدمين 📄"
 BTN_ADMIN_BROADCAST = "رسالة جماعية 📢"
 BTN_ADMIN_RANKINGS = "ترتيب المنافسة (تفصيلي) 📊"
+BTN_ADMIN_BAN_USER = "حظر مستخدم ⚠️"
+BTN_ADMIN_UNBAN_USER = "فك حظر مستخدم ✅"
+BTN_ADMIN_BANNED_LIST = "قائمة المحظورين 🚫"
 
 # إعدادات الجرعة التحفيزية (داخل لوحة التحكم)
 BTN_ADMIN_MOTIVATION_MENU = "إعدادات الجرعة التحفيزية 💡"
@@ -591,6 +621,8 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT), KeyboardButton(BTN_ADMIN_USERS_LIST)],
         [KeyboardButton(BTN_ADMIN_BROADCAST), KeyboardButton(BTN_ADMIN_RANKINGS)],
+        [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
+        [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -601,6 +633,8 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT)],
         [KeyboardButton(BTN_ADMIN_BROADCAST)],
+        [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
+        [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -1033,6 +1067,33 @@ ADHKAR_GENERAL_TEXT = (
 
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        ban_reason = record.get("ban_reason", "لم يتم تحديد السبب")
+        banned_at = record.get("banned_at")
+        banned_by = record.get("banned_by")
+        
+        try:
+            banned_by_name = data.get(str(banned_by), {}).get("first_name", "إدارة البوت") if banned_by else "إدارة البوت"
+        except:
+            banned_by_name = "إدارة البوت"
+            
+        message_text = (
+            "⛔️ *لقد تم حظرك من استخدام البوت*\n\n"
+            f"🔒 *السبب:* {ban_reason}\n"
+            f"🕒 *تاريخ الحظر:* {banned_at if banned_at else 'غير محدد'}\n"
+            f"👤 *بواسطة:* {banned_by_name}\n\n"
+            "للاستفسار يمكنك التواصل مع الدعم."
+        )
+        
+        update.message.reply_text(
+            message_text,
+            parse_mode="Markdown"
+        )
+        return
+    
     is_new = str(user.id) not in data
     get_user_record(user)
 
@@ -1065,6 +1126,13 @@ def start_command(update: Update, context: CallbackContext):
 
 
 def help_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     kb = user_main_keyboard(update.effective_user.id)
     update.message.reply_text(
         "طريقة الاستخدام:\n\n"
@@ -1086,6 +1154,12 @@ def help_command(update: Update, context: CallbackContext):
 
 def open_letters_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     letters = record.get("letters_to_self", [])
@@ -1140,7 +1214,14 @@ def format_letters_list(letters: List[Dict]) -> str:
 
 
 def handle_letter_add_start(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
 
     WAITING_LETTER_MENU.discard(user_id)
     WAITING_LETTER_ADD.add(user_id)
@@ -1158,6 +1239,12 @@ def handle_letter_add_start(update: Update, context: CallbackContext):
 
 def handle_letter_add_content(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -1191,6 +1278,12 @@ def handle_letter_add_content(update: Update, context: CallbackContext):
 
 def handle_reminder_option(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -1297,6 +1390,12 @@ def handle_reminder_option(update: Update, context: CallbackContext):
 
 def handle_custom_date_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -1419,6 +1518,12 @@ def send_letter_reminder(context: CallbackContext):
 def handle_letter_view(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     letters = record.get("letters_to_self", [])
 
     if not letters:
@@ -1473,6 +1578,12 @@ def handle_letter_view(update: Update, context: CallbackContext):
 
 def handle_letter_delete_select(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     letters = record.get("letters_to_self", [])
@@ -1497,6 +1608,12 @@ def handle_letter_delete_select(update: Update, context: CallbackContext):
 
 def handle_letter_delete_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     letters = record.get("letters_to_self", [])
@@ -1536,6 +1653,12 @@ def handle_letter_delete_input(update: Update, context: CallbackContext):
 
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     get_user_record(user)
     kb = water_menu_keyboard(user.id)
     update.message.reply_text(
@@ -1549,6 +1672,13 @@ def open_water_menu(update: Update, context: CallbackContext):
 
 
 def open_water_settings(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     kb = water_settings_keyboard(update.effective_user.id)
     update.message.reply_text(
         "إعدادات الماء ⚙️:\n"
@@ -1560,6 +1690,13 @@ def open_water_settings(update: Update, context: CallbackContext):
 
 
 def handle_water_need_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = update.effective_user.id
 
     WAITING_GENDER.add(user_id)
@@ -1574,6 +1711,12 @@ def handle_water_need_start(update: Update, context: CallbackContext):
 
 def handle_gender_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = update.message.text.strip()
 
@@ -1608,6 +1751,12 @@ def handle_gender_input(update: Update, context: CallbackContext):
 
 def handle_age_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = update.message.text.strip()
 
@@ -1645,6 +1794,12 @@ def handle_age_input(update: Update, context: CallbackContext):
 
 def handle_weight_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = update.message.text.strip()
 
@@ -1697,6 +1852,12 @@ def handle_weight_input(update: Update, context: CallbackContext):
 def handle_log_cup(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
 
     if not record.get("cups_goal"):
         update.message.reply_text(
@@ -1730,6 +1891,12 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
 def handle_add_cups(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     record = get_user_record(user)
     text = (update.message.text or "").strip()
 
@@ -1786,6 +1953,12 @@ def handle_add_cups(update: Update, context: CallbackContext):
 def handle_status(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     text = format_water_status_text(record)
     update.message.reply_text(
         text,
@@ -1795,6 +1968,12 @@ def handle_status(update: Update, context: CallbackContext):
 
 def handle_reminders_on(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     record = get_user_record(user)
 
     if not record.get("cups_goal"):
@@ -1818,6 +1997,12 @@ def handle_reminders_on(update: Update, context: CallbackContext):
 def handle_reminders_off(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     record["reminders_on"] = False
     save_data()
 
@@ -1832,6 +2017,12 @@ def handle_reminders_off(update: Update, context: CallbackContext):
 
 def open_quran_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     get_user_record(user)
     kb = quran_menu_keyboard(user.id)
     update.message.reply_text(
@@ -1846,6 +2037,13 @@ def open_quran_menu(update: Update, context: CallbackContext):
 
 
 def handle_quran_set_goal(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = update.effective_user.id
 
     WAITING_QURAN_GOAL.add(user_id)
@@ -1859,6 +2057,12 @@ def handle_quran_set_goal(update: Update, context: CallbackContext):
 
 def handle_quran_goal_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -1898,6 +2102,12 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
 def handle_quran_add_pages_start(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
 
     if not record.get("quran_pages_goal"):
         update.message.reply_text(
@@ -1916,6 +2126,12 @@ def handle_quran_add_pages_start(update: Update, context: CallbackContext):
 
 def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -1967,6 +2183,12 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
 def handle_quran_status(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     text = format_quran_status_text(record)
     update.message.reply_text(
         text,
@@ -1976,6 +2198,12 @@ def handle_quran_status(update: Update, context: CallbackContext):
 
 def handle_quran_reset_day(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     record = get_user_record(user)
 
     ensure_today_quran(record)
@@ -1993,6 +2221,12 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 
 def open_adhkar_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     get_user_record(user)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
@@ -2006,6 +2240,12 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
 
 def send_morning_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     increment_adhkar_count(user.id, 1)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
@@ -2016,6 +2256,12 @@ def send_morning_adhkar(update: Update, context: CallbackContext):
 
 def send_evening_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     increment_adhkar_count(user.id, 1)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
@@ -2026,6 +2272,12 @@ def send_evening_adhkar(update: Update, context: CallbackContext):
 
 def send_general_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     increment_adhkar_count(user.id, 1)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
@@ -2038,6 +2290,12 @@ def send_general_adhkar(update: Update, context: CallbackContext):
 
 def open_tasbih_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     ACTIVE_TASBIH.pop(user.id, None)
     WAITING_TASBIH.discard(user.id)
 
@@ -2051,6 +2309,12 @@ def open_tasbih_menu(update: Update, context: CallbackContext):
 
 def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_text: str):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
 
     for dhikr, count in TASBIH_ITEMS:
@@ -2079,6 +2343,12 @@ def start_tasbih_for_choice(update: Update, context: CallbackContext, choice_tex
 
 def handle_tasbih_tick(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
 
     state = ACTIVE_TASBIH.get(user_id)
@@ -2117,6 +2387,13 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
 
 
 def handle_tasbih_end(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = update.effective_user.id
     ACTIVE_TASBIH.pop(user_id, None)
     WAITING_TASBIH.discard(user_id)
@@ -2138,6 +2415,12 @@ def format_memos_list(memos):
 
 def open_memos_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2160,6 +2443,13 @@ def open_memos_menu(update: Update, context: CallbackContext):
 
 
 def handle_memo_add_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = update.effective_user.id
 
     WAITING_MEMO_MENU.discard(user_id)
@@ -2174,6 +2464,12 @@ def handle_memo_add_start(update: Update, context: CallbackContext):
 
 def handle_memo_add_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     text = (update.message.text or "").strip()
 
@@ -2199,6 +2495,12 @@ def handle_memo_add_input(update: Update, context: CallbackContext):
 
 def handle_memo_edit_select(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2223,6 +2525,12 @@ def handle_memo_edit_select(update: Update, context: CallbackContext):
 
 def handle_memo_edit_index_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2256,6 +2564,12 @@ def handle_memo_edit_index_input(update: Update, context: CallbackContext):
 
 def handle_memo_edit_text_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2293,6 +2607,12 @@ def handle_memo_edit_text_input(update: Update, context: CallbackContext):
 
 def handle_memo_delete_select(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2317,6 +2637,12 @@ def handle_memo_delete_select(update: Update, context: CallbackContext):
 
 def handle_memo_delete_index_input(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
     memos = record.get("heart_memos", [])
@@ -2355,6 +2681,12 @@ def handle_memo_delete_index_input(update: Update, context: CallbackContext):
 
 def handle_stats(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
 
@@ -2413,6 +2745,12 @@ def handle_stats(update: Update, context: CallbackContext):
 def open_notifications_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     kb = notifications_menu_keyboard(user.id)
 
     status = "مفعّلة ✅" if record.get("motivation_on", True) else "موقفة ⛔️"
@@ -2430,6 +2768,12 @@ def open_notifications_menu(update: Update, context: CallbackContext):
 def handle_motivation_on(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
     record["motivation_on"] = True
     save_data()
 
@@ -2442,6 +2786,12 @@ def handle_motivation_on(update: Update, context: CallbackContext):
 
 def handle_motivation_off(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     record = get_user_record(user)
     record["motivation_on"] = False
     save_data()
@@ -2461,7 +2811,7 @@ def water_reminder_job(context: CallbackContext):
     logger.info("Running water reminder job...")
     bot = context.bot
 
-    for uid in get_all_user_ids():
+    for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
         if not rec.get("reminders_on"):
             continue
@@ -2494,7 +2844,7 @@ def motivation_job(context: CallbackContext):
     logger.info("Running motivation job...")
     bot = context.bot
 
-    for uid in get_all_user_ids():
+    for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
 
         if rec.get("motivation_on") is False:
@@ -2763,6 +3113,12 @@ def handle_admin_motivation_times_input(update: Update, context: CallbackContext
 
 def open_comp_menu(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     update.message.reply_text(
         "المنافسات و المجتمع 🏅:\n"
         "• شاهد ملفك التنافسي (مستواك، نقاطك، ميدالياتك، ترتيبك).\n"
@@ -2774,6 +3130,12 @@ def open_comp_menu(update: Update, context: CallbackContext):
 
 def handle_my_profile(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     user_id = user.id
     record = get_user_record(user)
 
@@ -2818,7 +3180,8 @@ def handle_my_profile(update: Update, context: CallbackContext):
 
 def handle_top10(update: Update, context: CallbackContext):
     sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:10]
+    # استبعاد المستخدمين المحظورين
+    top = [user for user in sorted_users if not user.get("is_banned", False)][:10]
 
     if not top:
         update.message.reply_text(
@@ -2850,7 +3213,8 @@ def handle_top10(update: Update, context: CallbackContext):
 
 def handle_top100(update: Update, context: CallbackContext):
     sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:100]
+    # استبعاد المستخدمين المحظورين
+    top = [user for user in sorted_users if not user.get("is_banned", False)][:100]
 
     if not top:
         update.message.reply_text(
@@ -2879,11 +3243,352 @@ def handle_top100(update: Update, context: CallbackContext):
         reply_markup=COMP_MENU_KB,
     )
 
+# =================== نظام الحظر ===================
+
+
+def handle_admin_ban_user(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not (is_admin(user.id) or is_supervisor(user.id)):
+        update.message.reply_text(
+            "هذا القسم خاص بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user.id),
+        )
+        return
+
+    WAITING_BAN_USER.add(user.id)
+    WAITING_UNBAN_USER.discard(user.id)
+    WAITING_BAN_REASON.discard(user.id)
+    BAN_TARGET_ID.pop(user.id, None)
+
+    update.message.reply_text(
+        "⚡ حظر مستخدم:\n\n"
+        "أرسل الآن معرف المستخدم (ID) الذي تريد حظره.\n"
+        "يمكنك الحصول على ID من «قائمة المستخدمين 📄» أو من الرد على رسالة المستخدم.\n\n"
+        "أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_unban_user(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not (is_admin(user.id) or is_supervisor(user.id)):
+        update.message.reply_text(
+            "هذا القسم خاص بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user.id),
+        )
+        return
+
+    WAITING_UNBAN_USER.add(user.id)
+    WAITING_BAN_USER.discard(user.id)
+    WAITING_BAN_REASON.discard(user.id)
+    BAN_TARGET_ID.pop(user.id, None)
+
+    banned_users = get_banned_user_ids()
+    if not banned_users:
+        update.message.reply_text(
+            "لا يوجد مستخدمون محظورون حاليًا.",
+            reply_markup=admin_panel_keyboard_for(user.id),
+        )
+        WAITING_UNBAN_USER.discard(user.id)
+        return
+
+    banned_list = []
+    for uid in banned_users[:50]:  # عرض أول 50 فقط
+        rec = data.get(str(uid), {})
+        name = rec.get("first_name", "مستخدم") or "مستخدم"
+        ban_reason = rec.get("ban_reason", "بدون سبب") or "بدون سبب"
+        banned_at = rec.get("banned_at", "غير محدد") or "غير محدد"
+        banned_list.append(f"• {name} (ID: {uid})\n  السبب: {ban_reason}\n  التاريخ: {banned_at}")
+
+    update.message.reply_text(
+        "✅ فك حظر مستخدم:\n\n"
+        "قائمة المستخدمين المحظورين:\n\n" + "\n\n".join(banned_list) + "\n\n"
+        "أرسل الآن معرف المستخدم (ID) الذي تريد فك حظره.\n"
+        "أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_admin_banned_list(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not (is_admin(user.id) or is_supervisor(user.id)):
+        update.message.reply_text(
+            "هذا القسم خاص بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user.id),
+        )
+        return
+
+    banned_users = get_banned_user_ids()
+    if not banned_users:
+        update.message.reply_text(
+            "لا يوجد مستخدمون محظورون حاليًا 🎉",
+            reply_markup=admin_panel_keyboard_for(user.id),
+        )
+        return
+
+    banned_list = []
+    total = len(banned_users)
+    
+    for idx, uid in enumerate(banned_users[:100], start=1):  # عرض أول 100 فقط
+        rec = data.get(str(uid), {})
+        name = rec.get("first_name", "مستخدم") or "مستخدم"
+        username = rec.get("username", "لا يوجد")
+        ban_reason = rec.get("ban_reason", "بدون سبب") or "بدون سبب"
+        banned_at = rec.get("banned_at", "غير محدد") or "غير محدد"
+        banned_by = rec.get("banned_by", "غير معروف")
+        
+        banned_by_name = "إدارة البوت"
+        if banned_by:
+            banned_by_rec = data.get(str(banned_by), {})
+            banned_by_name = banned_by_rec.get("first_name", "إدارة البوت") or "إدارة البوت"
+        
+        user_info = f"{idx}. {name}"
+        if username and username != "لا يوجد":
+            user_info += f" (@{username})"
+        user_info += f" (ID: {uid})"
+        
+        banned_list.append(
+            f"{user_info}\n"
+            f"   السبب: {ban_reason}\n"
+            f"   التاريخ: {banned_at}\n"
+            f"   المحظور بواسطة: {banned_by_name}"
+        )
+
+    text = f"🚫 قائمة المستخدمين المحظورين (الإجمالي: {total}):\n\n" + "\n\n".join(banned_list)
+    
+    if total > 100:
+        text += f"\n\n... وهناك {total - 100} مستخدم محظور إضافي."
+
+    update.message.reply_text(
+        text,
+        reply_markup=admin_panel_keyboard_for(user.id),
+    )
+
+
+def handle_ban_user_id_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        WAITING_BAN_USER.discard(user_id)
+        return
+
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_BAN_USER.discard(user_id)
+        handle_admin_panel(update, context)
+        return
+
+    try:
+        target_id = int(text)
+        
+        # منع حظر الأدمن أو المشرفة
+        if target_id == ADMIN_ID or target_id == SUPERVISOR_ID:
+            update.message.reply_text(
+                "❌ لا يمكن حظر الأدمن أو المشرفة!",
+                reply_markup=CANCEL_KB,
+            )
+            return
+            
+        # منع حظر النفس
+        if target_id == user_id:
+            update.message.reply_text(
+                "❌ لا يمكنك حظر نفسك!",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        target_record = data.get(str(target_id))
+        if not target_record:
+            update.message.reply_text(
+                "❌ المستخدم غير موجود في قاعدة البيانات.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        if target_record.get("is_banned", False):
+            update.message.reply_text(
+                "⚠️ هذا المستخدم محظور بالفعل.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        BAN_TARGET_ID[user_id] = target_id
+        WAITING_BAN_USER.discard(user_id)
+        WAITING_BAN_REASON.add(user_id)
+
+        target_name = target_record.get("first_name", "مستخدم") or "مستخدم"
+        update.message.reply_text(
+            f"📝 المستخدم المحدد: {target_name} (ID: {target_id})\n\n"
+            "الآن أرسل سبب الحظر:\n"
+            "(مثال: مخالفة الشروط، إساءة استخدام، إلخ)",
+            reply_markup=CANCEL_KB,
+        )
+
+    except ValueError:
+        update.message.reply_text(
+            "❌ رجاءً أرسل معرف مستخدم صحيح (أرقام فقط).\n"
+            "مثال: 123456789",
+            reply_markup=CANCEL_KB,
+        )
+
+
+def handle_unban_user_id_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        WAITING_UNBAN_USER.discard(user_id)
+        return
+
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_UNBAN_USER.discard(user_id)
+        handle_admin_panel(update, context)
+        return
+
+    try:
+        target_id = int(text)
+        
+        target_record = data.get(str(target_id))
+        if not target_record:
+            update.message.reply_text(
+                "❌ المستخدم غير موجود في قاعدة البيانات.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        if not target_record.get("is_banned", False):
+            update.message.reply_text(
+                "✅ هذا المستخدم غير محظور أصلاً.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        # فك الحظر
+        target_record["is_banned"] = False
+        target_record["banned_by"] = None
+        target_record["banned_at"] = None
+        target_record["ban_reason"] = None
+        save_data()
+
+        WAITING_UNBAN_USER.discard(user_id)
+
+        target_name = target_record.get("first_name", "مستخدم") or "مستخدم"
+        
+        # إرسال رسالة للمستخدم المحظور سابقاً
+        try:
+            context.bot.send_message(
+                chat_id=target_id,
+                text=f"🎉 تم فك حظرك من بوت سُقيا الكوثر!\n\n"
+                     f"يمكنك الآن استخدام البوت مرة أخرى 🤍\n\n"
+                     f"نرحب بك مجدداً ونتمنى لك تجربة مفيدة."
+            )
+        except Exception as e:
+            logger.error(f"Error notifying unbanned user {target_id}: {e}")
+
+        update.message.reply_text(
+            f"✅ تم فك حظر المستخدم: {target_name} (ID: {target_id}) بنجاح.",
+            reply_markup=admin_panel_keyboard_for(user_id),
+        )
+
+    except ValueError:
+        update.message.reply_text(
+            "❌ رجاءً أرسل معرف مستخدم صحيح (أرقام فقط).\n"
+            "مثال: 123456789",
+            reply_markup=CANCEL_KB,
+        )
+
+
+def handle_ban_reason_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        WAITING_BAN_REASON.discard(user_id)
+        return
+
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_BAN_REASON.discard(user_id)
+        BAN_TARGET_ID.pop(user_id, None)
+        handle_admin_panel(update, context)
+        return
+
+    if user_id not in BAN_TARGET_ID:
+        WAITING_BAN_REASON.discard(user_id)
+        update.message.reply_text(
+            "حدث خطأ، يرجى المحاولة مرة أخرى.",
+            reply_markup=admin_panel_keyboard_for(user_id),
+        )
+        return
+
+    target_id = BAN_TARGET_ID[user_id]
+    target_record = data.get(str(target_id))
+    
+    if not target_record:
+        WAITING_BAN_REASON.discard(user_id)
+        BAN_TARGET_ID.pop(user_id, None)
+        update.message.reply_text(
+            "❌ المستخدم غير موجود!",
+            reply_markup=admin_panel_keyboard_for(user_id),
+        )
+        return
+
+    # تطبيق الحظر
+    target_record["is_banned"] = True
+    target_record["banned_by"] = user_id
+    target_record["banned_at"] = datetime.now(timezone.utc).isoformat()
+    target_record["ban_reason"] = text
+    save_data()
+
+    WAITING_BAN_REASON.discard(user_id)
+    BAN_TARGET_ID.pop(user_id, None)
+
+    target_name = target_record.get("first_name", "مستخدم") or "مستخدم"
+    
+    # إرسال رسالة للمستخدم المحظور
+    try:
+        context.bot.send_message(
+            chat_id=target_id,
+            text=f"⛔️ لقد تم حظرك من استخدام بوت سُقيا الكوثر!\n\n"
+                 f"السبب: {text}\n\n"
+                 f"للاستفسار يمكنك التواصل مع الدعم."
+        )
+    except Exception as e:
+        logger.error(f"Error notifying banned user {target_id}: {e}")
+
+    # إعلام الأدمن الآخر (إذا كان الحظر من المشرفة)
+    if is_supervisor(user_id) and ADMIN_ID is not None:
+        try:
+            admin_name = data.get(str(user_id), {}).get("first_name", "المشرفة") or "المشرفة"
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"⚠️ تم حظر مستخدم بواسطة المشرفة:\n\n"
+                     f"المستخدم: {target_name} (ID: {target_id})\n"
+                     f"السبب: {text}\n"
+                     f"بواسطة: {admin_name}"
+            )
+        except Exception as e:
+            logger.error(f"Error notifying admin about ban: {e}")
+
+    update.message.reply_text(
+        f"✅ تم حظر المستخدم: {target_name} (ID: {target_id}) بنجاح.\n"
+        f"السبب: {text}",
+        reply_markup=admin_panel_keyboard_for(user_id),
+    )
+
 # =================== نظام الدعم ولوحة التحكم ===================
 
 
 def handle_contact_support(update: Update, context: CallbackContext):
     user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
     record = get_user_record(user)
     user_id = user.id
 
@@ -2927,6 +3632,8 @@ def handle_admin_panel(update: Update, context: CallbackContext):
             "• عرض قائمة المستخدمين.\n"
             "• إرسال رسالة جماعية.\n"
             "• عرض ترتيب المنافسة تفصيليًا.\n"
+            "• حظر وفك حظر المستخدمين.\n"
+            "• عرض قائمة المحظورين.\n"
             "• إدارة رسائل وأوقات الجرعة التحفيزية 💡."
         )
     else:
@@ -2934,6 +3641,8 @@ def handle_admin_panel(update: Update, context: CallbackContext):
             "لوحة التحكم 🛠 (المشرفة):\n"
             "• إرسال رسالة جماعية لكل المستخدمين.\n"
             "• عرض عدد المستخدمين.\n"
+            "• حظر وفك حظر المستخدمين.\n"
+            "• عرض قائمة المحظورين.\n"
             "• إدارة رسائل وأوقات الجرعة التحفيزية 💡."
         )
 
@@ -2949,8 +3658,14 @@ def handle_admin_users_count(update: Update, context: CallbackContext):
         return
 
     total_users = len(get_all_user_ids())
+    active_users = len(get_active_user_ids())
+    banned_users = len(get_banned_user_ids())
+
     update.message.reply_text(
-        f"👥 عدد المستخدمين المسجلين في البوت: {total_users}",
+        f"📊 إحصائيات المستخدمين:\n\n"
+        f"👥 إجمالي المستخدمين: {total_users}\n"
+        f"✅ المستخدمين النشطين: {active_users}\n"
+        f"🚫 المستخدمين المحظورين: {banned_users}",
         reply_markup=admin_panel_keyboard_for(user.id),
     )
 
@@ -2964,17 +3679,25 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
     for uid_str, rec in data.items():
         if uid_str == GLOBAL_KEY:
             continue
+        
         name = rec.get("first_name") or "بدون اسم"
         username = rec.get("username")
-        line = f"- {name} | ID: {uid_str}"
+        is_banned = rec.get("is_banned", False)
+        status = "🚫" if is_banned else "✅"
+        
+        line = f"{status} {name} | ID: {uid_str}"
         if username:
             line += f" | @{username}"
+        
+        if is_banned:
+            line += " (محظور)"
+        
         lines.append(line)
 
     if not lines:
         text = "لا يوجد مستخدمون مسجّلون بعد."
     else:
-        text = "قائمة بعض المستخدمين:\n\n" + "\n".join(lines[:200])
+        text = "قائمة المستخدمين:\n\n" + "\n".join(lines[:200])
 
     update.message.reply_text(
         text,
@@ -3014,8 +3737,10 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
         )
         return
 
-    user_ids = get_all_user_ids()
+    user_ids = get_active_user_ids()  # إرسال فقط للمستخدمين النشطين (غير المحظورين)
     sent = 0
+    failed = 0
+    
     for uid in user_ids:
         try:
             update.effective_message.bot.send_message(
@@ -3025,11 +3750,13 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
             sent += 1
         except Exception as e:
             logger.error(f"Error sending broadcast to {uid}: {e}")
+            failed += 1
 
     WAITING_BROADCAST.discard(user_id)
 
     update.message.reply_text(
-        f"تم إرسال الرسالة إلى {sent} مستخدم.",
+        f"✅ تم إرسال الرسالة إلى {sent} مستخدم.\n"
+        f"❌ فشل إرسال الرسالة إلى {failed} مستخدم.",
         reply_markup=admin_panel_keyboard_for(user_id),
     )
 
@@ -3040,7 +3767,8 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         return
 
     sorted_users = get_users_sorted_by_points()
-    top = sorted_users[:200]
+    # استبعاد المستخدمين المحظورين
+    top = [user for user in sorted_users if not user.get("is_banned", False)][:200]
 
     if not top:
         update.message.reply_text(
@@ -3158,6 +3886,22 @@ def handle_text(update: Update, context: CallbackContext):
     text = (msg.text or "").strip()
 
     record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
+    if record.get("is_banned", False):
+        # السماح فقط بالرد على رسائل الدعم إذا كان محظوراً
+        if msg.reply_to_message and msg.reply_to_message.from_user.id == context.bot.id:
+            original = msg.reply_to_message.text or ""
+            if "لقد تم حظرك" in original or "رد من الدعم" in original or "رد من المشرفة" in original:
+                forward_support_to_admin(user, text, context)
+                msg.reply_text(
+                    "📨 رسالتك وصلت للدعم. سيتم الرد عليك قريبًا.",
+                )
+                return
+        
+        # منع أي استخدام آخر للبوت
+        return
+    
     main_kb = user_main_keyboard(user_id)
 
     # تحديد الجنس للدعم
@@ -3287,6 +4031,10 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_MOTIVATION_ADD.discard(user_id)
         WAITING_MOTIVATION_DELETE.discard(user_id)
         WAITING_MOTIVATION_TIMES.discard(user_id)
+        WAITING_BAN_USER.discard(user_id)
+        WAITING_UNBAN_USER.discard(user_id)
+        WAITING_BAN_REASON.discard(user_id)
+        BAN_TARGET_ID.pop(user_id, None)
 
         msg.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
@@ -3373,6 +4121,19 @@ def handle_text(update: Update, context: CallbackContext):
 
     if user_id in WAITING_MOTIVATION_TIMES:
         handle_admin_motivation_times_input(update, context)
+        return
+
+    # نظام الحظر
+    if user_id in WAITING_BAN_USER:
+        handle_ban_user_id_input(update, context)
+        return
+
+    if user_id in WAITING_UNBAN_USER:
+        handle_unban_user_id_input(update, context)
+        return
+
+    if user_id in WAITING_BAN_REASON:
+        handle_ban_reason_input(update, context)
         return
 
     # الدعم
@@ -3611,6 +4372,18 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_RANKINGS:
         handle_admin_rankings(update, context)
+        return
+
+    if text == BTN_ADMIN_BAN_USER:
+        handle_admin_ban_user(update, context)
+        return
+
+    if text == BTN_ADMIN_UNBAN_USER:
+        handle_admin_unban_user(update, context)
+        return
+
+    if text == BTN_ADMIN_BANNED_LIST:
+        handle_admin_banned_list(update, context)
         return
 
     if text == BTN_ADMIN_MOTIVATION_MENU:
