@@ -3,8 +3,9 @@ import json
 import logging
 import re
 import random
-from datetime import datetime, timezone, time
+from datetime import datetime, timezone, time, timedelta
 from threading import Thread
+from typing import List, Dict
 
 import pytz
 from flask import Flask
@@ -166,6 +167,8 @@ def get_user_record(user):
             "adhkar_count": 0,
             # مذكّرات قلبي
             "heart_memos": [],
+            # رسائل إلى نفسي
+            "letters_to_self": [],
             # نظام النقاط والمستويات والميداليات
             "points": 0,
             "level": 0,
@@ -198,6 +201,7 @@ def get_user_record(user):
         record.setdefault("tasbih_total", 0)
         record.setdefault("adhkar_count", 0)
         record.setdefault("heart_memos", [])
+        record.setdefault("letters_to_self", [])
         record.setdefault("points", 0)
         record.setdefault("level", 0)
         record.setdefault("medals", [])
@@ -262,6 +266,15 @@ WAITING_MEMO_EDIT_TEXT = set()
 WAITING_MEMO_DELETE_SELECT = set()
 MEMO_EDIT_INDEX = {}
 
+# رسائل إلى نفسي
+WAITING_LETTER_MENU = set()
+WAITING_LETTER_ADD = set()
+WAITING_LETTER_ADD_CONTENT = set()
+WAITING_LETTER_REMINDER_OPTION = set()
+WAITING_LETTER_CUSTOM_DATE = set()
+WAITING_LETTER_DELETE_SELECT = set()
+LETTER_CURRENT_DATA = {}  # user_id -> { "content": str, "reminder_date": str }
+
 # دعم / إدارة
 WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
@@ -281,6 +294,7 @@ BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
+BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
@@ -312,13 +326,26 @@ BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
 BTN_MOTIVATION_OFF = "إيقاف الجرعة التحفيزية 😴"
 
+# رسالة إلى نفسي
+BTN_LETTER_ADD = "✍️ كتابة رسالة جديدة"
+BTN_LETTER_VIEW = "📋 عرض الرسائل"
+BTN_LETTER_DELETE = "🗑 حذف رسالة"
+BTN_LETTER_BACK = "رجوع ⬅️"
+
+# خيارات التذكير لرسالة إلى نفسي
+BTN_REMINDER_WEEK = "بعد أسبوع 📅"
+BTN_REMINDER_MONTH = "بعد شهر 🌙"
+BTN_REMINDER_2MONTHS = "بعد شهرين 📆"
+BTN_REMINDER_CUSTOM = "تاريخ مخصص 🗓️"
+BTN_REMINDER_NONE = "بدون تذكير ❌"
+
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -328,8 +355,9 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -339,8 +367,9 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -516,6 +545,28 @@ def build_memos_menu_kb(is_admin_flag: bool):
         rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
+# ---- رسالة إلى نفسي ----
+def build_letters_menu_kb(is_admin_flag: bool):
+    rows = [
+        [KeyboardButton(BTN_LETTER_ADD)],
+        [KeyboardButton(BTN_LETTER_VIEW), KeyboardButton(BTN_LETTER_DELETE)],
+        [KeyboardButton(BTN_LETTER_BACK)],
+    ]
+    if is_admin_flag:
+        rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+REMINDER_OPTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_REMINDER_WEEK), KeyboardButton(BTN_REMINDER_MONTH)],
+        [KeyboardButton(BTN_REMINDER_2MONTHS), KeyboardButton(BTN_REMINDER_CUSTOM)],
+        [KeyboardButton(BTN_REMINDER_NONE)],
+        [KeyboardButton(BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
 # ---- لوحة التحكم ----
 ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
@@ -587,6 +638,7 @@ POINTS_WATER_DAILY_BONUS = 20
 
 POINTS_PER_QURAN_PAGE = 3
 POINTS_QURAN_DAILY_BONUS = 30
+POINTS_PER_LETTER = 5
 
 
 def tasbih_points_for_session(target_count: int) -> int:
@@ -1001,6 +1053,7 @@ def help_command(update: Update, context: CallbackContext):
         "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
         "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
         "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
+        "• رسالة إلى نفسي 💌 → كتابة رسائل مستقبلية مع تذكير بعد وقت معين.\n"
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
         "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
@@ -1008,6 +1061,456 @@ def help_command(update: Update, context: CallbackContext):
         "• الاشعارات 🔔 → تشغيل أو إيقاف الجرعة التحفيزية خلال اليوم.",
         reply_markup=kb,
     )
+
+# =================== قسم رسالة إلى نفسي ===================
+
+
+def open_letters_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    WAITING_LETTER_MENU.add(user_id)
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_ADD_CONTENT.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
+    LETTER_CURRENT_DATA.pop(user_id, None)
+
+    letters_text = format_letters_list(letters)
+    kb = build_letters_menu_kb(is_admin(user_id))
+
+    update.message.reply_text(
+        f"💌 رسالة إلى نفسي:\n\n{letters_text}\n\n"
+        "يمكنك كتابة رسالة إلى نفسك المستقبلية مع تذكير بعد أسبوع، شهر، أو تاريخ مخصص.\n"
+        "سأرسل لك الرسالة عندما يحين الموعد المحدد 🤍",
+        reply_markup=kb,
+    )
+
+
+def format_letters_list(letters: List[Dict]) -> str:
+    if not letters:
+        return "لا توجد رسائل بعد."
+    
+    lines = []
+    for idx, letter in enumerate(letters, start=1):
+        content_preview = letter.get("content", "")[:30]
+        reminder_date = letter.get("reminder_date")
+        
+        if reminder_date:
+            try:
+                reminder_dt = datetime.fromisoformat(reminder_date).astimezone(timezone.utc)
+                now = datetime.now(timezone.utc)
+                if reminder_dt <= now:
+                    status = "✅ تم إرسالها"
+                else:
+                    time_left = reminder_dt - now
+                    days = time_left.days
+                    hours = time_left.seconds // 3600
+                    status = f"⏳ بعد {days} يوم و {hours} ساعة"
+            except:
+                status = "📅 بتاريخ معين"
+        else:
+            status = "❌ بدون تذكير"
+        
+        lines.append(f"{idx}. {content_preview}... ({status})")
+    
+    return "\n".join(lines)
+
+
+def handle_letter_add_start(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_ADD.add(user_id)
+
+    update.message.reply_text(
+        "اكتب الآن نص الرسالة التي تريد إرسالها إلى نفسك في المستقبل 💌\n\n"
+        "يمكن أن تكون:\n"
+        "• تذكيرًا لهدف ما\n"
+        "• كلمات تشجيعية لنفسك المستقبلية\n"
+        "• دعاء تتمنى أن تتذكره\n"
+        "• أي شيء تريد أن تقرأه لاحقًا",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_letter_add_content(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_ADD.discard(user_id)
+        open_letters_menu(update, context)
+        return
+
+    if len(text) < 3:
+        update.message.reply_text(
+            "الرجاء كتابة رسالة أطول قليلًا (3 أحرف على الأقل).",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    LETTER_CURRENT_DATA[user_id] = {"content": text}
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.add(user_id)
+
+    update.message.reply_text(
+        f"📝 تم حفظ محتوى الرسالة.\n\n"
+        f"الآن اختر متى تريد أن أذكّرك بها:\n\n"
+        f"• {BTN_REMINDER_WEEK}: سأرسلها لك بعد أسبوع من الآن\n"
+        f"• {BTN_REMINDER_MONTH}: سأرسلها لك بعد شهر\n"
+        f"• {BTN_REMINDER_2MONTHS}: سأرسلها لك بعد شهرين\n"
+        f"• {BTN_REMINDER_CUSTOM}: حدد تاريخًا مخصصًا\n"
+        f"• {BTN_REMINDER_NONE}: بدون تذكير (ستبقى مخزنة فقط)",
+        reply_markup=REMINDER_OPTIONS_KB,
+    )
+
+
+def handle_reminder_option(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+        open_letters_menu(update, context)
+        return
+
+    if user_id not in LETTER_CURRENT_DATA:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        update.message.reply_text(
+            "حدث خطأ، يرجى المحاولة مرة أخرى.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    now = datetime.now(timezone.utc)
+    reminder_date = None
+
+    if text == BTN_REMINDER_WEEK:
+        reminder_date = now + timedelta(days=7)
+    elif text == BTN_REMINDER_MONTH:
+        reminder_date = now + timedelta(days=30)
+    elif text == BTN_REMINDER_2MONTHS:
+        reminder_date = now + timedelta(days=60)
+    elif text == BTN_REMINDER_CUSTOM:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        WAITING_LETTER_CUSTOM_DATE.add(user_id)
+        update.message.reply_text(
+            "أرسل التاريخ الذي تريد التذكير فيه بالصيغة:\n"
+            "`YYYY-MM-DD HH:MM`\n\n"
+            "مثال: `2024-12-25 15:30`\n\n"
+            "ملاحظة: التوقيت المستخدم هو UTC (التوقيت العالمي).",
+            reply_markup=CANCEL_KB,
+            parse_mode="Markdown",
+        )
+        return
+    elif text == BTN_REMINDER_NONE:
+        reminder_date = None
+    else:
+        update.message.reply_text(
+            "رجاءً اختر من الخيارات المتاحة.",
+            reply_markup=REMINDER_OPTIONS_KB,
+        )
+        return
+
+    # حفظ الرسالة
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+    
+    new_letter = {
+        "content": LETTER_CURRENT_DATA[user_id]["content"],
+        "created_at": now.isoformat(),
+        "reminder_date": reminder_date.isoformat() if reminder_date else None,
+        "sent": False
+    }
+    
+    letters.append(new_letter)
+    record["letters_to_self"] = letters
+    
+    # إضافة نقاط
+    add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
+    save_data()
+
+    # جدولة التذكير إذا كان هناك تاريخ
+    if reminder_date and context.job_queue:
+        try:
+            context.job_queue.run_once(
+                send_letter_reminder,
+                when=reminder_date,
+                context={
+                    "user_id": user_id,
+                    "letter_content": new_letter["content"],
+                    "letter_index": len(letters) - 1
+                },
+                name=f"letter_reminder_{user_id}_{len(letters)-1}"
+            )
+        except Exception as e:
+            logger.error(f"Error scheduling letter reminder: {e}")
+
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    LETTER_CURRENT_DATA.pop(user_id, None)
+
+    if reminder_date:
+        reminder_str = reminder_date.strftime("%Y-%m-%d %H:%M")
+        message = (
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📅 سأرسلها لك في:\n{reminder_str} (UTC)\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!"
+        )
+    else:
+        message = (
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📝 ستكون متاحة دائمًا في قسم «رسالة إلى نفسي 💌»\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!"
+        )
+
+    update.message.reply_text(
+        message,
+        reply_markup=build_letters_menu_kb(is_admin(user_id)),
+    )
+
+
+def handle_custom_date_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+        open_letters_menu(update, context)
+        return
+
+    if user_id not in LETTER_CURRENT_DATA:
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        update.message.reply_text(
+            "حدث خطأ، يرجى المحاولة مرة أخرى.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    try:
+        # تحليل التاريخ
+        if "T" in text:
+            reminder_date = datetime.fromisoformat(text).astimezone(timezone.utc)
+        else:
+            reminder_date = datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        
+        now = datetime.now(timezone.utc)
+        if reminder_date <= now:
+            update.message.reply_text(
+                "الرجاء إدخال تاريخ في المستقبل، وليس في الماضي أو الحاضر.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        # حفظ الرسالة
+        record = get_user_record(user)
+        letters = record.get("letters_to_self", [])
+        
+        new_letter = {
+            "content": LETTER_CURRENT_DATA[user_id]["content"],
+            "created_at": now.isoformat(),
+            "reminder_date": reminder_date.isoformat(),
+            "sent": False
+        }
+        
+        letters.append(new_letter)
+        record["letters_to_self"] = letters
+        
+        # إضافة نقاط
+        add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
+        save_data()
+
+        # جدولة التذكير
+        if context.job_queue:
+            try:
+                context.job_queue.run_once(
+                    send_letter_reminder,
+                    when=reminder_date,
+                    context={
+                        "user_id": user_id,
+                        "letter_content": new_letter["content"],
+                        "letter_index": len(letters) - 1
+                    },
+                    name=f"letter_reminder_{user_id}_{len(letters)-1}"
+                )
+            except Exception as e:
+                logger.error(f"Error scheduling letter reminder: {e}")
+
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+
+        reminder_str = reminder_date.strftime("%Y-%m-%d %H:%M")
+        update.message.reply_text(
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📅 سأرسلها لك في:\n{reminder_str} (UTC)\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+
+    except ValueError:
+        update.message.reply_text(
+            "صيغة التاريخ غير صحيحة. الرجاء استخدام الصيغة:\n"
+            "`YYYY-MM-DD HH:MM`\n"
+            "مثال: `2024-12-25 15:30`",
+            reply_markup=CANCEL_KB,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Error processing custom date: {e}")
+        update.message.reply_text(
+            "حدث خطأ في معالجة التاريخ. الرجاء المحاولة مرة أخرى.",
+            reply_markup=CANCEL_KB,
+        )
+
+
+def send_letter_reminder(context: CallbackContext):
+    job = context.job
+    user_id = job.context["user_id"]
+    letter_content = job.context["letter_content"]
+    letter_index = job.context["letter_index"]
+
+    try:
+        # تحديث حالة الرسالة في البيانات
+        uid = str(user_id)
+        if uid in data:
+            record = data[uid]
+            letters = record.get("letters_to_self", [])
+            if letter_index < len(letters):
+                letters[letter_index]["sent"] = True
+                save_data()
+
+        # إرسال الرسالة للمستخدم
+        context.bot.send_message(
+            chat_id=user_id,
+            text=f"💌 رسالة من نفسك السابقة:\n\n{letter_content}\n\n"
+                 f"⏰ هذا هو الموعد الذي طلبت التذكير فيه 🤍",
+        )
+    except Exception as e:
+        logger.error(f"Error sending letter reminder to {user_id}: {e}")
+
+
+def handle_letter_view(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    if not letters:
+        update.message.reply_text(
+            "لا توجد رسائل بعد.\n"
+            "يمكنك كتابة رسالة جديدة من زر «✍️ كتابة رسالة جديدة».",
+            reply_markup=build_letters_menu_kb(is_admin(user.id)),
+        )
+        return
+
+    letters_with_details = []
+    for idx, letter in enumerate(letters, start=1):
+        content = letter.get("content", "")
+        created_at = letter.get("created_at", "")
+        reminder_date = letter.get("reminder_date")
+        sent = letter.get("sent", False)
+
+        try:
+            created_dt = datetime.fromisoformat(created_at).astimezone(timezone.utc)
+            created_str = created_dt.strftime("%Y-%m-%d")
+        except:
+            created_str = "تاريخ غير معروف"
+
+        if reminder_date:
+            try:
+                reminder_dt = datetime.fromisoformat(reminder_date).astimezone(timezone.utc)
+                now = datetime.now(timezone.utc)
+                if reminder_dt <= now or sent:
+                    status = "✅ تم إرسالها"
+                else:
+                    time_left = reminder_dt - now
+                    days = time_left.days
+                    hours = time_left.seconds // 3600
+                    status = f"⏳ بعد {days} يوم و {hours} ساعة"
+            except:
+                status = "📅 بتاريخ معين"
+        else:
+            status = "📝 مخزنة"
+
+        letters_with_details.append(
+            f"{idx}. {content[:50]}...\n"
+            f"   📅 كتبت في: {created_str}\n"
+            f"   📌 الحالة: {status}"
+        )
+
+    text = "📋 رسائلك إلى نفسك:\n\n" + "\n\n".join(letters_with_details)
+    update.message.reply_text(
+        text,
+        reply_markup=build_letters_menu_kb(is_admin(user.id)),
+    )
+
+
+def handle_letter_delete_select(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    if not letters:
+        update.message.reply_text(
+            "لا توجد رسائل لحذفها حاليًا.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.add(user_id)
+
+    letters_text = format_letters_list(letters)
+    update.message.reply_text(
+        f"🗑 اختر رقم الرسالة التي تريد حذفها:\n\n{letters_text}\n\n"
+        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_letter_delete_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_DELETE_SELECT.discard(user_id)
+        open_letters_menu(update, context)
+        return
+
+    try:
+        idx = int(text) - 1
+        if idx < 0 or idx >= len(letters):
+            raise ValueError()
+    except ValueError:
+        update.message.reply_text(
+            "رجاءً أرسل رقم صحيح من القائمة، أو اضغط «إلغاء ❌».",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    deleted = letters.pop(idx)
+    record["letters_to_self"] = letters
+    save_data()
+
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
+
+    content_preview = deleted.get("content", "")[:50]
+    update.message.reply_text(
+        f"🗑 تم حذف الرسالة:\n\n{content_preview}...",
+        reply_markup=build_letters_menu_kb(is_admin(user_id)),
+    )
+    open_letters_menu(update, context)
 
 # =================== قسم منبّه الماء ===================
 
@@ -1849,6 +2352,7 @@ def handle_stats(update: Update, context: CallbackContext):
     adhkar_count = record.get("adhkar_count", 0)
 
     memos_count = len(record.get("heart_memos", []))
+    letters_count = len(record.get("letters_to_self", []))
 
     points = record.get("points", 0)
     level = record.get("level", 0)
@@ -1869,6 +2373,7 @@ def handle_stats(update: Update, context: CallbackContext):
     text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
     text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
+    text_lines.append(f"- عدد رسائلك إلى نفسك: {letters_count} رسالة.")
 
     text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
     if level <= 0:
@@ -2750,6 +3255,13 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_MEMO_EDIT_TEXT.discard(user_id)
         WAITING_MEMO_DELETE_SELECT.discard(user_id)
         MEMO_EDIT_INDEX.pop(user_id, None)
+        WAITING_LETTER_MENU.discard(user_id)
+        WAITING_LETTER_ADD.discard(user_id)
+        WAITING_LETTER_ADD_CONTENT.discard(user_id)
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        WAITING_LETTER_DELETE_SELECT.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
         WAITING_SUPPORT_GENDER.discard(user_id)
         WAITING_SUPPORT.discard(user_id)
         WAITING_BROADCAST.discard(user_id)
@@ -2812,6 +3324,23 @@ def handle_text(update: Update, context: CallbackContext):
 
     if user_id in WAITING_MEMO_DELETE_SELECT:
         handle_memo_delete_index_input(update, context)
+        return
+
+    # رسالة إلى نفسي
+    if user_id in WAITING_LETTER_ADD:
+        handle_letter_add_content(update, context)
+        return
+
+    if user_id in WAITING_LETTER_REMINDER_OPTION:
+        handle_reminder_option(update, context)
+        return
+
+    if user_id in WAITING_LETTER_CUSTOM_DATE:
+        handle_custom_date_input(update, context)
+        return
+
+    if user_id in WAITING_LETTER_DELETE_SELECT:
+        handle_letter_delete_input(update, context)
         return
 
     # إدارة الجرعة التحفيزية
@@ -2878,6 +3407,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_STATS:
         handle_stats(update, context)
+        return
+
+    if text == BTN_LETTER_MAIN:
+        open_letters_menu(update, context)
         return
 
     if text == BTN_SUPPORT:
@@ -2991,6 +3524,31 @@ def handle_text(update: Update, context: CallbackContext):
             "تم الرجوع للقائمة الرئيسية.",
             reply_markup=main_kb,
         )
+        return
+
+    # رسالة إلى نفسي
+    if text == BTN_LETTER_ADD:
+        handle_letter_add_start(update, context)
+        return
+
+    if text == BTN_LETTER_VIEW:
+        handle_letter_view(update, context)
+        return
+
+    if text == BTN_LETTER_DELETE:
+        handle_letter_delete_select(update, context)
+        return
+
+    if text == BTN_LETTER_BACK:
+        msg.reply_text(
+            "تم الرجوع للقائمة الرئيسية.",
+            reply_markup=main_kb,
+        )
+        return
+
+    # خيارات التذكير (لرسالة إلى نفسي)
+    if text in [BTN_REMINDER_WEEK, BTN_REMINDER_MONTH, BTN_REMINDER_2MONTHS, BTN_REMINDER_CUSTOM, BTN_REMINDER_NONE]:
+        handle_reminder_option(update, context)
         return
 
     # المنافسات
