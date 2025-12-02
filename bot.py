@@ -339,24 +339,37 @@ BTN_REMINDER_2MONTHS = "بعد شهرين 📆"
 BTN_REMINDER_CUSTOM = "تاريخ مخصص 🗓️"
 BTN_REMINDER_NONE = "بدون تذكير ❌"
 
+# ===== تعديل القوائم الرئيسية حسب طلبك =====
+
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
+        # السطر الأول: أذكاري بجانب وردي القرآني
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الثاني: السبحة بجانب منبه الماء
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
 )
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
+        # السطر الأول: أذكاري بجانب وردي القرآني
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الثاني: السبحة بجانب منبه الماء
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر السادس: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -364,11 +377,17 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
+        # السطر الأول: أذكاري بجانب وردي القرآني
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_SUPPORT)],
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الثاني: السبحة بجانب منبه الماء
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر السادس: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -2258,7 +2277,7 @@ def handle_memo_edit_text_input(update: Update, context: CallbackContext):
         )
         return
 
-    memos[idx] = text
+    mems[idx] = text
     record["heart_memos"] = memos
     save_data()
 
@@ -2379,7 +2398,7 @@ def handle_stats(update: Update, context: CallbackContext):
     if level <= 0:
         text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
     else:
-        text_lines.append(f"- مستواك الحالي: {level}.")
+        text_lines.append(f"- المستوى الحالي: {level}.")
     if medals:
         text_lines.append("- ميدالياتك: " + "، ".join(medals))
 
