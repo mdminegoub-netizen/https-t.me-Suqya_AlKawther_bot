@@ -1158,11 +1158,46 @@ ADHKAR_GENERAL_TEXT = (
 
 
 def start_command(update: Update, context: CallbackContext):
-    """معالج أمر /start مع دعم المستخدمين الجدد والقدماء والمحظورين."""
+    """معالج أمر /start مع ضمان الإرسال الفوري وتنظيف حالات الانتظار."""
     user = update.effective_user
+    user_id = user.id
+    
+    # الخطوة 1: تنظيف جميع حالات الانتظار للمستخدم الحالي
+    # هذا يضمن أن /start يقطع أي عملية جارية ويعيد المستخدم للقائمة الرئيسية
+    WAITING_GENDER.discard(user_id)
+    WAITING_AGE.discard(user_id)
+    WAITING_WEIGHT.discard(user_id)
+    WAITING_QURAN_GOAL.discard(user_id)
+    WAITING_QURAN_ADD_PAGES.discard(user_id)
+    WAITING_TASBIH.discard(user_id)
+    WAITING_MEMO_MENU.discard(user_id)
+    WAITING_MEMO_ADD.discard(user_id)
+    WAITING_MEMO_EDIT_SELECT.discard(user_id)
+    WAITING_MEMO_EDIT_TEXT.discard(user_id)
+    WAITING_MEMO_DELETE_SELECT.discard(user_id)
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_ADD_CONTENT.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
+    WAITING_SUPPORT.discard(user_id)
+    WAITING_BROADCAST.discard(user_id)
+    WAITING_BENEFIT_TEXT.discard(user_id)
+    WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
+    WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
+    WAITING_MOTIVATION_ADD.discard(user_id)
+    WAITING_MOTIVATION_DELETE.discard(user_id)
+    WAITING_MOTIVATION_TIMES.discard(user_id)
+    WAITING_BAN_USER.discard(user_id)
+    WAITING_UNBAN_USER.discard(user_id)
+    WAITING_BAN_REASON.discard(user_id)
+    
+    # الخطوة 2: قراءة أو إنشاء سجل المستخدم
     record = get_user_record(user)
     
-    # 1. التحقق إذا كان المستخدم محظورًا - إرسال رسالة الحظر فقط
+    # الخطوة 3: التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         ban_reason = record.get("ban_reason", "لم يتم تحديد السبب")
         banned_at = record.get("banned_at")
@@ -1187,24 +1222,24 @@ def start_command(update: Update, context: CallbackContext):
         )
         return
     
-    # 2. معالجة المستخدم الجديد
-    if record.get("is_new_user", False):
-        # إرسال رسالة ترحيب خاصة بالمستخدم الجديد
-        welcome_message = (
-            "🤍 أهلاً بك في سقيا الكوثر\n"
-            "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
-            "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
+    # الخطوة 4: إرسال رسالة الترحيب بالكيبورد الرئيسي
+    welcome_message = (
+        "🤍 أهلاً بك في سقيا الكوثر\n"
+        "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
+        "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
+    )
+    
+    try:
+        update.message.reply_text(
+            welcome_message,
+            reply_markup=user_main_keyboard(user_id),
         )
-        
-        try:
-            update.message.reply_text(
-                welcome_message,
-                reply_markup=user_main_keyboard(user.id),
-            )
-        except Exception as e:
-            logger.error(f"Error sending welcome message to new user {user.id}: {e}")
-        
-        # إرسال إشعار للأدمن عن المستخدم الجديد
+    except Exception as e:
+        logger.error(f"Error sending welcome message to user {user_id}: {e}")
+    
+    # الخطوة 5: إذا كان مستخدم جديد، إرسال إشعار للأدمن وتحديث العلامة
+    if record.get("is_new_user", False):
+        # إرسال إشعار للأدمن
         if ADMIN_ID is not None:
             username_text = f"@{user.username}" if user.username else "غير متوفر"
             
@@ -1236,8 +1271,7 @@ def start_command(update: Update, context: CallbackContext):
                 logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
         
         # تعديل سجل المستخدم لجعل is_new_user = False
-        update_user_record(user.id, is_new_user=False)
-        return
+        update_user_record(user_id, is_new_user=False)
 
 
 def help_command(update: Update, context: CallbackContext):
