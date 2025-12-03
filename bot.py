@@ -1179,7 +1179,7 @@ def start_command(update: Update, context: CallbackContext):
         )
         return
     
-    is_new =     # إرسال إشعار للمدير ورسالة ترحيب للمستخدم الجديد
+    # إرسال إشعار للمدير ورسالة ترحيب للمستخدم الجديد
     if record.get("is_new_user", False):
         send_new_user_notification(update, context)
         # إزالة علامة المستخدم الجديد بعد الإشعار
