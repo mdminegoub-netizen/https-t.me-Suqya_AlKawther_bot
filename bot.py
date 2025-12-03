@@ -1197,7 +1197,7 @@ def start_command(update: Update, context: CallbackContext):
         "اختر من القائمة أسفل الشاشة ما يناسبك:",
         reply_markup=kb,
         parse_mode="Markdown",
-    ) notifying admin about new user: {e}")
+    )
 
 
 def help_command(update: Update, context: CallbackContext):
