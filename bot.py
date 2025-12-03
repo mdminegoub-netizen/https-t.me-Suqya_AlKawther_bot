@@ -3130,7 +3130,7 @@ def handle_edit_benefit_text(update: Update, context: CallbackContext):
         WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
         BENEFIT_EDIT_ID.pop(user_id, None)
         update.message.reply_text(
-            "تم إلغاء التعديل. لم يتم تعديل الفائدة.",
+            "❌ تم إلغاء التعديل.\nعدنا لقسم مجتمع الفوائد و النصائح.",
             reply_markup=BENEFITS_MENU_KB,
         )
         return
@@ -4613,6 +4613,62 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         chunk,
         reply_markup=ADMIN_PANEL_KB,
     )
+
+
+def send_new_user_notification_to_admin(user: User, context: CallbackContext):
+    """
+    يرسل إشعارًا للأدمن عند انضمام مستخدم جديد.
+    """
+    if not ADMIN_ID:
+        return
+
+    username = f"@{user.username}" if user.username else "لا يوجد"
+    join_time = datetime.now(pytz.timezone('Asia/Riyadh')).strftime("%Y-%m-%d | %I:%M %p")
+
+    text = (
+        f"🔔 مستخدم جديد دخل البوت 🎉\n\n"
+        f"👤 الاسم: {user.first_name}\n"
+        f"🆔 User ID: `{user.id}`\n"
+        f"🧑‍💻 Username: {username}\n"
+        f"🕒 الانضمام: {join_time}"
+    )
+
+    try:
+        context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=text,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Error sending new user notification to admin: {e}")
+
+
+def send_new_user_notification_to_admin(user: User, context: CallbackContext):
+    """
+    يرسل إشعارًا للأدمن عند انضمام مستخدم جديد.
+    """
+    if not ADMIN_ID:
+        return
+
+    username = f"@{user.username}" if user.username else "لا يوجد"
+    join_time = datetime.now(pytz.timezone('Asia/Riyadh')).strftime("%Y-%m-%d | %I:%M %p")
+
+    text = (
+        f"🔔 مستخدم جديد دخل البوت 🎉\n\n"
+        f"👤 الاسم: {user.first_name}\n"
+        f"🆔 User ID: `{user.id}`\n"
+        f"🧑‍💻 Username: {username}\n"
+        f"🕒 الانضمام: {join_time}"
+    )
+
+    try:
+        context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=text,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Error sending new user notification to admin: {e}")
 
 
 def forward_support_to_admin(user, text: str, context: CallbackContext):
