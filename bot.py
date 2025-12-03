@@ -3054,6 +3054,41 @@ def handle_edit_benefit_callback(update: Update, context: CallbackContext):
         return
 
     benefits = get_benefits()
+    benefit = next((b for b in benefits if b.get("id") == benefit_id), None)
+    
+    if benefit is None:
+        query.answer("هذه الفائدة غير موجودة.")
+        return
+        
+    # يجب أن يكون المستخدم هو صاحب الفائدة لتعديلها
+    if benefit.get("user_id") != user_id:
+        query.answer("لا تملك صلاحية تعديل هذه الفائدة.")
+        return
+
+    # حفظ ID الفائدة وحالة الانتظار
+    BENEFIT_EDIT_ID[user_id] = benefit_id
+    WAITING_BENEFIT_EDIT_TEXT.add(user_id)
+    
+    query.answer("أرسل النص الجديد الآن.")
+    
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"✏️ أرسل النص الجديد للفائدة رقم {benefit_id} الآن.\n"
+             f"النص الحالي: *{benefit['text']}*",
+        reply_markup=CANCEL_KB,
+        parse_mode="Markdown",
+    )
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    
+    try:
+        benefit_id = int(query.data.split("_")[-1])
+    except ValueError:
+        query.answer("خطأ في تحديد الفائدة.")
+        return
+
+    benefits = get_benefits()
     
     # التحقق من الصلاحية: إما صاحب الفائدة أو مدير/مشرف
     is_owner = lambda b: b.get("id") == benefit_id and b.get("user_id") == user_id
@@ -3065,43 +3100,20 @@ def handle_edit_benefit_callback(update: Update, context: CallbackContext):
         query.answer("هذه الفائدة غير موجودة.")
         return
         
-    if not is_owner(benefit) and not is_privileged:
-        query.answer("لا تملك صلاحية حذف هذه الفائدة.")
+    # يجب أن يكون المستخدم هو صاحب الفائدة لتعديلها
+    if benefit.get("user_id") != user_id:
+        query.answer("لا تملك صلاحية تعديل هذه الفائدة.")
         return
-
-    # حفظ ID الفائدة وحالة الانتظار للتأكيد
-    # نستخدم BENEFIT_EDIT_ID لتخزين ID الفائدة المراد حذفها مؤقتًا
-    BENEFIT_EDIT_ID[user_id] = benefit_id
-    WAITING_BENEFIT_DELETE_CONFIRM.add(user_id)
-    
-    query.answer("تأكيد الحذف.")
-    
-    keyboard = [[
-        InlineKeyboardButton("✅ نعم، متأكد من الحذف", callback_data=f"confirm_delete_benefit_{benefit_id}"),
-        InlineKeyboardButton("❌ لا، إلغاء", callback_data="cancel_delete_benefit")
-    ]]
-    
-    context.bot.send_message(
-        chat_id=user_id,
-        text=f"⚠️ هل أنت متأكد من حذف الفائدة رقم {benefit_id}؟\n"
-             f"النص: *{benefit['text']}*",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="Markdown",
-    )
 
     # حفظ ID الفائدة وحالة الانتظار
     BENEFIT_EDIT_ID[user_id] = benefit_id
     WAITING_BENEFIT_EDIT_TEXT.add(user_id)
     
-    query.answer("أرسل النص الجديد الآن.") # إشعار صغير للمستخدم
+    query.answer("أرسل النص الجديد الآن.")
     
-    context.bot.send_message(
-        chat_id=user_id,
-        text=f"✏️ أرسل النص الجديد للفائدة رقم {benefit_id} الآن.\n"
-             f"النص الحالي: *{benefit['text']}*",
-        reply_markup=CANCEL_KB,
-        parse_mode="Markdown",
-    )
+
+    
+
 
 
 def handle_edit_benefit_text(update: Update, context: CallbackContext):
