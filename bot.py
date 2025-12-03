@@ -11,6 +11,7 @@ import pytz
 from flask import Flask
 from telegram import (
     Update,
+    User, # تم إضافة User هنا
     ReplyKeyboardMarkup,
     KeyboardButton,
     InlineKeyboardButton,
