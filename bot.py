@@ -5492,4 +5492,45 @@ def send_new_user_notification(update: Update, context: CallbackContext):
         context.bot.send_message(
             chat_id=user_id,
             text=welcome_message,
-            reply_markup=user_main_keyboard(us
+            reply_markup=user_main_keyboard(user_id),
+        )
+    except Exception as e:
+        logger.error(f"Error sending welcome message to new user {user_id}: {e}")
+        
+    # 2. إرسال الإشعار للمدير
+    if ADMIN_ID is not None:
+        # محاولة الحصول على معلومات إضافية (غير مضمونة)
+        username_text = f"@{user.username}" if user.username else "غير متوفر"
+        
+        # تنسيق وقت الانضمام
+        # نفترض أن datetime و timezone و pytz مستوردة
+        now_utc = datetime.now(timezone.utc)
+        # استخدام توقيت افتراضي (مثل توقيت مكة)
+        try:
+            local_tz = pytz.timezone("Africa/Cairo") 
+        except:
+            local_tz = timezone.utc 
+            
+        now_local = now_utc.astimezone(local_tz)
+        join_time_str = now_local.strftime("%d-%m-%Y | %I:%M %p")
+        
+        # لا يمكن الحصول على المنطقة الجغرافية أو نوع الجهاز أو مصدر الدخول من Telegram API مباشرة
+        notification_message = (
+            "🔔 مستخدم جديد دخل البوت 🎉\n"
+            f"👤 الاسم: {user.first_name}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"🧑‍💻 Username: {username_text}\n"
+            "\n"
+            "🌍 المنطقة: غير متوفر (Telegram لا يوفرها)\n"
+            "📱 الجهاز: غير متوفر (Telegram لا يوفرها)\n"
+            "🧭 المصدر: غير متوفر (Telegram لا يوفرها)\n"
+            f"🕒 الانضمام: {join_time_str} (توقيت محلي افتراضي)\n"
+        )
+        
+        try:
+            context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=notification_message,
+            )
+        except Exception as e:
+            logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
