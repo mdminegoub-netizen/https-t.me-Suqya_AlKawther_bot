@@ -254,10 +254,7 @@ def get_user_record(user):
         record.setdefault("daily_full_streak", 0)
         record.setdefault("last_full_day", None)
         record.setdefault("motivation_on", True)
-        record.setdefault("is_new_user", False) # ضمان وجود الحقل
-
-        record.setdefault("is_new_user", False) # ضمان وجود الحقل
-
+        record.setdefault("is_new_user", False) # ضمان وجود الحقل للمستخدمين القدماء
 
         medals = record.get("medals", [])
         if medals:
@@ -1161,10 +1158,11 @@ ADHKAR_GENERAL_TEXT = (
 
 
 def start_command(update: Update, context: CallbackContext):
+    """معالج أمر /start مع دعم المستخدمين الجدد والقدماء والمحظورين."""
     user = update.effective_user
     record = get_user_record(user)
     
-    # التحقق إذا كان المستخدم محظورًا
+    # 1. التحقق إذا كان المستخدم محظورًا - إرسال رسالة الحظر فقط
     if record.get("is_banned", False):
         ban_reason = record.get("ban_reason", "لم يتم تحديد السبب")
         banned_at = record.get("banned_at")
@@ -1189,16 +1187,60 @@ def start_command(update: Update, context: CallbackContext):
         )
         return
     
-    # إرسال إشعار للمدير ورسالة ترحيب للمستخدم الجديد
+    # 2. معالجة المستخدم الجديد
     if record.get("is_new_user", False):
-        send_new_user_notification(update, context)
-        # إزالة علامة المستخدم الجديد بعد الإشعار
+        # إرسال رسالة ترحيب خاصة بالمستخدم الجديد
+        welcome_message = (
+            "🤍 أهلاً بك في سقيا الكوثر\n"
+            "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
+            "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
+        )
+        
+        try:
+            update.message.reply_text(
+                welcome_message,
+                reply_markup=user_main_keyboard(user.id),
+            )
+        except Exception as e:
+            logger.error(f"Error sending welcome message to new user {user.id}: {e}")
+        
+        # إرسال إشعار للأدمن عن المستخدم الجديد
+        if ADMIN_ID is not None:
+            username_text = f"@{user.username}" if user.username else "غير متوفر"
+            
+            # تنسيق وقت الانضمام بالتوقيت المحلي
+            now_utc = datetime.now(timezone.utc)
+            try:
+                local_tz = pytz.timezone("Africa/Cairo")
+            except:
+                local_tz = timezone.utc
+            
+            now_local = now_utc.astimezone(local_tz)
+            join_time_str = now_local.strftime("%d-%m-%Y | %I:%M %p")
+            
+            notification_message = (
+                "🔔 مستخدم جديد دخل البوت 🎉\n\n"
+                f"👤 الاسم: {user.first_name}\n"
+                f"🆔 User ID: {user.id}\n"
+                f"🧑‍💻 Username: {username_text}\n"
+                f"🕒 الانضمام: {join_time_str} (توقيت محلي)\n\n"
+                "📝 ملاحظة: معلومات الجهاز والموقع الجغرافي غير متوفرة من Telegram API"
+            )
+            
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=notification_message,
+                )
+            except Exception as e:
+                logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
+        
+        # تعديل سجل المستخدم لجعل is_new_user = False
         update_user_record(user.id, is_new_user=False)
-        return # الخروج بعد إرسال رسالة الترحيب من الدالة send_new_user_notification
+        return
     
-    # رسالة ترحيب للمستخدم العائد
+    # 3. رسالة ترحيب للمستخدم العائد (القديم)
     kb = user_main_keyboard(user.id)
-
     update.message.reply_text(
         f"مرحبًا {user.first_name} 👋\n\n"
         "أهلًا بك في بوت *سُقيا الكوثر*.\n"
@@ -4655,32 +4697,6 @@ def send_new_user_notification_to_admin(user: User, context: CallbackContext):
         logger.error(f"Error sending new user notification to admin: {e}")
 
 
-def send_new_user_notification_to_admin(user: User, context: CallbackContext):
-    """
-    يرسل إشعارًا للأدمن عند انضمام مستخدم جديد.
-    """
-    if not ADMIN_ID:
-        return
-
-    username = f"@{user.username}" if user.username else "لا يوجد"
-    join_time = datetime.now(pytz.timezone('Asia/Riyadh')).strftime("%Y-%m-%d | %I:%M %p")
-
-    text = (
-        f"🔔 مستخدم جديد دخل البوت 🎉\n\n"
-        f"👤 الاسم: {user.first_name}\n"
-        f"🆔 User ID: `{user.id}`\n"
-        f"🧑‍💻 Username: {username}\n"
-        f"🕒 الانضمام: {join_time}"
-    )
-
-    try:
-        context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=text,
-            parse_mode="Markdown",
-        )
-    except Exception as e:
-        logger.error(f"Error sending new user notification to admin: {e}")
 
 
 def forward_support_to_admin(user, text: str, context: CallbackContext):
@@ -5481,66 +5497,6 @@ def send_new_user_notification(update: Update, context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
 
-# =================== وظائف إضافية ===================
 
-def send_new_user_notification(update: Update, context: CallbackContext):
-    """
-    يرسل إشعارًا للمدير عند انضمام مستخدم جديد، ورسالة ترحيب للمستخدم.
-    """
-    user = update.effective_user
-    user_id = user.id
-    
-    # 1. إرسال رسالة الترحيب للمستخدم الجديد
-    welcome_message = (
-        "🤍 أهلاً بك في سقيا الكوثر\n"
-        "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
-        "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
-    )
-    
-    try:
-        # نفترض أن user_main_keyboard معرفة في مكان آخر
-        context.bot.send_message(
-            chat_id=user_id,
-            text=welcome_message,
-            reply_markup=user_main_keyboard(user_id),
-        )
-    except Exception as e:
-        logger.error(f"Error sending welcome message to new user {user_id}: {e}")
-        
-    # 2. إرسال الإشعار للمدير
-    if ADMIN_ID is not None:
-        # محاولة الحصول على معلومات إضافية (غير مضمونة)
-        username_text = f"@{user.username}" if user.username else "غير متوفر"
-        
-        # تنسيق وقت الانضمام
-        # نفترض أن datetime و timezone و pytz مستوردة
-        now_utc = datetime.now(timezone.utc)
-        # استخدام توقيت افتراضي (مثل توقيت مكة)
-        try:
-            local_tz = pytz.timezone("Africa/Cairo") 
-        except:
-            local_tz = timezone.utc 
-            
-        now_local = now_utc.astimezone(local_tz)
-        join_time_str = now_local.strftime("%d-%m-%Y | %I:%M %p")
-        
-        # لا يمكن الحصول على المنطقة الجغرافية أو نوع الجهاز أو مصدر الدخول من Telegram API مباشرة
-        notification_message = (
-            "🔔 مستخدم جديد دخل البوت 🎉\n"
-            f"👤 الاسم: {user.first_name}\n"
-            f"🆔 User ID: {user.id}\n"
-            f"🧑‍💻 Username: {username_text}\n"
-            "\n"
-            "🌍 المنطقة: غير متوفر (Telegram لا يوفرها)\n"
-            "📱 الجهاز: غير متوفر (Telegram لا يوفرها)\n"
-            "🧭 المصدر: غير متوفر (Telegram لا يوفرها)\n"
-            f"🕒 الانضمام: {join_time_str} (توقيت محلي افتراضي)\n"
-        )
-        
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=notification_message,
-            )
-        except Exception as e:
-            logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
+if __name__ == "__main__":
+    main()
