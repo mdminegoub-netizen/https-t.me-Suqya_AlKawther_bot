@@ -35,7 +35,7 @@ DATA_FILE = "suqya_users.json"
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -1157,17 +1157,6 @@ ADHKAR_GENERAL_TEXT = (
 # =================== أوامر البوت ===================
 
 
-def send_new_user_notification(context: CallbackContext, user: User, notification_message: str, recipient_id: int, recipient_name: str):
-    """يرسل إشعار المستخدم الجديد إلى معرف محدد."""
-    if recipient_id is not None:
-        try:
-            context.bot.send_message(
-                chat_id=recipient_id,
-                text=notification_message,
-            )
-        except Exception as e:
-            logger.error(f"Error sending new user notification to {recipient_name} {recipient_id}: {e}")
-
 def start_command(update: Update, context: CallbackContext):
     """معالج أمر /start مع ضمان الإرسال الفوري وتنظيف حالات الانتظار."""
     user = update.effective_user
@@ -1250,8 +1239,8 @@ def start_command(update: Update, context: CallbackContext):
     
     # الخطوة 5: إذا كان مستخدم جديد، إرسال إشعار للأدمن وتحديث العلامة
     if record.get("is_new_user", False):
-        # إرسال إشعار للأدمن والمشرفة
-        if ADMIN_ID is not None or SUPERVISOR_ID is not None:
+        # إرسال إشعار للأدمن
+        if ADMIN_ID is not None:
             username_text = f"@{user.username}" if user.username else "غير متوفر"
             
             # تنسيق وقت الانضمام بالتوقيت المحلي
@@ -1273,11 +1262,13 @@ def start_command(update: Update, context: CallbackContext):
                 "📝 ملاحظة: معلومات الجهاز والموقع الجغرافي غير متوفرة من Telegram API"
             )
             
-            # إرسال إلى الأدمن
-            send_new_user_notification(context, user, notification_message, ADMIN_ID, "admin")
-            
-            # إرسال إلى المشرفة (التعديل المطلوب)
-            send_new_user_notification(context, user, notification_message, SUPERVISOR_ID, "supervisor")
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=notification_message,
+                )
+            except Exception as e:
+                logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
         
         # تعديل سجل المستخدم لجعل is_new_user = False
         update_user_record(user_id, is_new_user=False)
