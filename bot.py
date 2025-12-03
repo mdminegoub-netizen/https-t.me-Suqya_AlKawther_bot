@@ -13,6 +13,8 @@ from telegram import (
     Update,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
 from telegram.ext import (
     Updater,
@@ -20,6 +22,7 @@ from telegram.ext import (
     Filters,
     CallbackContext,
     CommandHandler,
+    CallbackQueryHandler,
 )
 
 # =================== إعدادات أساسية ===================
@@ -120,6 +123,10 @@ def get_global_config():
         cfg["motivation_messages"] = DEFAULT_MOTIVATION_MESSAGES.copy()
         changed = True
 
+    if "benefits" not in cfg or not isinstance(cfg.get("benefits"), list):
+        cfg["benefits"] = []
+        changed = True
+
     data[GLOBAL_KEY] = cfg
     if changed:
         save_data()
@@ -131,6 +138,31 @@ MOTIVATION_HOURS_UTC = _global_cfg["motivation_hours"]
 MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
 
 # =================== سجلات المستخدمين ===================
+
+
+def get_next_benefit_id():
+    """يرجع المعرف الفريد التالي للفائدة."""
+    cfg = get_global_config()
+    benefits = cfg.get("benefits", [])
+    if not benefits:
+        return 1
+    # البحث عن أكبر ID موجود
+    max_id = max(b.get("id", 0) for b in benefits)
+    return max_id + 1
+
+
+def get_benefits():
+    """يرجع قائمة الفوائد من الإعدادات العامة."""
+    cfg = get_global_config()
+    return cfg.get("benefits", [])
+
+
+def save_benefits(benefits_list):
+    """يحفظ قائمة الفوائد المحدثة في الإعدادات العامة."""
+    cfg = get_global_config()
+    cfg["benefits"] = benefits_list
+    data[GLOBAL_KEY] = cfg
+    save_data()
 
 
 def get_user_record(user):
@@ -244,6 +276,18 @@ def update_user_record(user_id: int, **kwargs):
     save_data()
 
 
+def add_points(user_id: int, points: int):
+    """يضيف نقاطًا للمستخدم ويحفظ البيانات."""
+    uid = str(user_id)
+    if uid not in data or uid == GLOBAL_KEY:
+        return
+    
+    record = data[uid]
+    current_points = record.get("points", 0)
+    record["points"] = current_points + points
+    save_data()
+
+
 def get_all_user_ids():
     return [int(uid) for uid in data.keys() if uid != GLOBAL_KEY]
 
@@ -301,6 +345,9 @@ WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
 
+# فوائد ونصائح
+WAITING_BENEFIT_TEXT = set()
+
 # إدارة الجرعة التحفيزية (من لوحة التحكم)
 WAITING_MOTIVATION_ADD = set()
 WAITING_MOTIVATION_DELETE = set()
@@ -334,6 +381,12 @@ BTN_COMP_MAIN = "المنافسات و المجتمع 🏅"
 BTN_MY_PROFILE = "ملفي التنافسي 🎯"
 BTN_TOP10 = "أفضل 10 🏅"
 BTN_TOP100 = "أفضل 100 🏆"
+
+# فوائد و نصائح
+BTN_BENEFITS_MAIN = "فوائد و نصائح 💡"
+BTN_BENEFIT_ADD = "✍️ أضف فائدة / نصيحة"
+BTN_BENEFIT_VIEW = "📖 استعراض الفوائد"
+BTN_BENEFIT_TOP10 = "🏆 أفضل 10 فوائد"
 
 # لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
@@ -381,7 +434,9 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
         [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر الخامس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -397,9 +452,11 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
         [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر الخامس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السادس: لوحة التحكم (فقط للمدير)
+        # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -415,9 +472,11 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
         [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر الخامس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السادس: لوحة التحكم (للمشرفة)
+        # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -499,6 +558,17 @@ QURAN_MENU_KB_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_QURAN_SET_GOAL)],
         [KeyboardButton(BTN_QURAN_ADD_PAGES), KeyboardButton(BTN_QURAN_STATUS)],
         [KeyboardButton(BTN_QURAN_RESET_DAY)],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+# ---- فوائد و نصائح ----
+BENEFITS_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_BENEFIT_ADD)],
+        [KeyboardButton(BTN_BENEFIT_VIEW)],
+        [KeyboardButton(BTN_BENEFIT_TOP10)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2739,6 +2809,306 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
+# =================== قسم الفوائد والنصائح ===================
+
+def open_benefits_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    update.message.reply_text(
+        "💡 قسم الفوائد والنصائح المجتمعية:\n"
+        "شارك فائدة، استعرض فوائد الآخرين، وشارك في التقييم لتحفيز المشاركة.",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+
+
+def handle_add_benefit_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    WAITING_BENEFIT_TEXT.add(user.id)
+    update.message.reply_text(
+        "✍️ أرسل الفائدة أو النصيحة القصيرة التي تود مشاركتها الآن.\n"
+        "ملاحظة: يجب أن تكون 5 أحرف على الأقل.",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_add_benefit_text(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    
+    if user_id not in WAITING_BENEFIT_TEXT:
+        return
+
+    text = update.message.text.strip()
+    
+    if text == BTN_CANCEL:
+        WAITING_BENEFIT_TEXT.discard(user_id)
+        update.message.reply_text(
+            "تم إلغاء إضافة الفائدة.",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+    
+    if len(text) < 5:
+        update.message.reply_text(
+            "⚠️ يجب أن تكون الفائدة 5 أحرف على الأقل. حاول مرة أخرى:",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    # 1. تخزين الفائدة
+    benefit_id = get_next_benefit_id()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    # التأكد من وجود اسم للمستخدم، وإلا استخدام "مستخدم مجهول"
+    first_name = user.first_name if user.first_name else "مستخدم مجهول"
+    
+    new_benefit = {
+        "id": benefit_id,
+        "text": text,
+        "user_id": user_id,
+        "first_name": first_name,
+        "date": now_iso,
+        "likes_count": 0,
+        "liked_by": [],
+    }
+
+    benefits = get_benefits()
+    benefits.append(new_benefit)
+    save_benefits(benefits)
+
+    # 2. منح النقاط
+    add_points(user_id, 2)
+
+    # 3. إرسال رسالة تأكيد
+    WAITING_BENEFIT_TEXT.discard(user_id)
+    update.message.reply_text(
+        "✅ تم إضافة فائدتك بنجاح! شكرًا لمشاركتك.\n"
+        f"لقد حصلت على 2 نقطة مكافأة.",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+
+
+def handle_view_benefits(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    benefits = get_benefits()
+    
+    if not benefits:
+        update.message.reply_text(
+            "لا توجد فوائد أو نصائح مضافة حتى الآن. كن أول من يشارك! 💡",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+
+    # عرض آخر 5 فوائد
+    latest_benefits = sorted(benefits, key=lambda b: b.get("date", ""), reverse=True)[:5]
+    
+    
+    update.message.reply_text(
+        "📖 آخر 5 فوائد ونصائح مضافة:",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+    
+    for benefit in latest_benefits:
+        # تنسيق التاريخ
+        try:
+            dt = datetime.fromisoformat(benefit["date"].replace('Z', '+00:00'))
+            date_str = dt.strftime("%Y-%m-%d")
+        except:
+            date_str = "تاريخ غير معروف"
+            
+        text_benefit = (
+            f"• *{benefit['text']}*\n"
+            f"  - من: {benefit['first_name']} | الإعجابات: {benefit['likes_count']} 👍\n"
+            f"  - تاريخ الإضافة: {date_str}\n"
+        )
+        
+        # إضافة زر الإعجاب
+        like_button_text = f"👍 أعجبني ({benefit['likes_count']})"
+        
+        # التحقق مما إذا كان المستخدم قد أعجب بالفعل
+        if user.id in benefit.get("liked_by", []):
+            like_button_text = f"✅ أعجبتني ({benefit['likes_count']})"
+        
+        # استخدام InlineKeyboardCallbackData للإعجاب
+        keyboard = [[
+            InlineKeyboardButton(
+                like_button_text, 
+                callback_data=f"like_benefit_{benefit['id']}"
+            )
+        ]]
+        
+        update.message.reply_text(
+            text=text_benefit,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+        
+    # إرسال رسالة ختامية ولوحة المفاتيح الرئيسية للقسم
+    update.message.reply_text(
+        "انتهى عرض آخر الفوائد.",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+
+
+def handle_top10_benefits(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    benefits = get_benefits()
+    
+    if not benefits:
+        update.message.reply_text(
+            "لا توجد فوائد مضافة بعد لتصنيفها. 💡",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+
+    # ترتيب الفوائد حسب عدد الإعجابات تنازليًا
+    sorted_benefits = sorted(benefits, key=lambda b: b.get("likes_count", 0), reverse=True)
+    
+    text = "🏆 أفضل 10 فوائد ونصائح (حسب الإعجابات):\n\n"
+    
+    for i, benefit in enumerate(sorted_benefits[:10], start=1):
+        text += f"{i}. *{benefit['text']}*\n"
+        text += f"   - من: {benefit['first_name']} | الإعجابات: {benefit['likes_count']} 👍\n\n"
+        
+    update.message.reply_text(
+        text=text,
+        reply_markup=BENEFITS_MENU_KB,
+        parse_mode="Markdown",
+    )
+
+
+def check_and_award_medal(context: CallbackContext):
+    """
+    دالة تفحص أفضل 10 فوائد وتمنح الوسام لصاحبها إذا لم يكن لديه.
+    """
+    benefits = get_benefits()
+    if not benefits:
+        return
+
+    # ترتيب الفوائد حسب عدد الإعجابات تنازليًا
+    sorted_benefits = sorted(benefits, key=lambda b: b.get("likes_count", 0), reverse=True)
+    
+    top_10_user_ids = set()
+    for benefit in sorted_benefits[:10]:
+        top_10_user_ids.add(benefit["user_id"])
+        
+    MEDAL_TEXT = "وسام صاحب فائدة من العشرة الأوائل 💡🏅"
+    
+    for user_id in top_10_user_ids:
+        uid_str = str(user_id)
+        if uid_str in data:
+            record = data[uid_str]
+            medals = record.get("medals", [])
+            
+            if MEDAL_TEXT not in medals:
+                medals.append(MEDAL_TEXT)
+                record["medals"] = medals
+                save_data()
+                
+                # إرسال رسالة تهنئة
+                try:
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"تهانينا! 🎉\n"
+                             f"لقد حصلت على وسام جديد: *{MEDAL_TEXT}*\n"
+                             f"أحد فوائدك وصل إلى قائمة أفضل 10 فوائد. استمر في المشاركة! 🤍",
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending medal message to {user_id}: {e}")
+
+
+def handle_like_benefit_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    
+    if query.data.startswith("like_benefit_"):
+        try:
+            benefit_id = int(query.data.split("_")[-1])
+        except ValueError:
+            query.answer("خطأ في تحديد الفائدة.")
+            return
+
+        benefits = get_benefits()
+        benefit_index = -1
+        benefit = None
+        
+        for i, b in enumerate(benefits):
+            if b.get("id") == benefit_id:
+                benefit_index = i
+                benefit = b
+                break
+        
+        if benefit is None:
+            query.answer("هذه الفائدة لم تعد موجودة.")
+            return
+
+        liked_by = benefit.get("liked_by", [])
+        
+        if user_id in liked_by:
+            query.answer("لقد أعجبت بهذه الفائدة مسبقًا.")
+            return
+            
+        # لا يمكن الإعجاب بفائدة كتبها المستخدم نفسه
+        if user_id == benefit["user_id"]:
+            query.answer("لا يمكنك الإعجاب بفائدتك الخاصة.")
+            return
+        
+        # 1. إضافة الإعجاب
+        liked_by.append(user_id)
+        benefit["likes_count"] = benefit.get("likes_count", 0) + 1
+        benefit["liked_by"] = liked_by
+        
+        # 2. منح نقطة لصاحب الفائدة
+        owner_id = benefit["user_id"]
+        add_points(owner_id, 1)
+        
+        # 3. حفظ التغييرات
+        benefits[benefit_index] = benefit
+        save_benefits(benefits)
+        
+        # 4. تحديث زر الإعجاب
+        new_likes_count = benefit["likes_count"]
+        new_button_text = f"✅ أعجبتني ({new_likes_count})"
+        
+        keyboard = [[
+            InlineKeyboardButton(
+                new_button_text, 
+                callback_data=f"like_benefit_{benefit_id}"
+            )
+        ]]
+        
+        try:
+            query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception as e:
+            logger.error(f"Error editing message reply markup: {e}")
+            
+        query.answer(f"تم الإعجاب! الفائدة لديها الآن {new_likes_count} إعجاب.")
+        
+        # 5. فحص ومنح الوسام
+        check_and_award_medal(context)
+
+
 # =================== الاشعارات / الجرعة التحفيزية للمستخدم ===================
 
 
@@ -4164,6 +4534,11 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_broadcast_input(update, context)
         return
 
+    # فوائد ونصائح
+    if user_id in WAITING_BENEFIT_TEXT:
+        handle_add_benefit_text(update, context)
+        return
+
     # الأزرار الرئيسية
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
@@ -4199,6 +4574,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_COMP_MAIN:
         open_comp_menu(update, context)
+        return
+
+    if text == BTN_BENEFITS_MAIN:
+        open_benefits_menu(update, context)
         return
 
     if text == BTN_NOTIFICATIONS_MAIN:
@@ -4304,6 +4683,19 @@ def handle_text(update: Update, context: CallbackContext):
             "تم الرجوع للقائمة الرئيسية.",
             reply_markup=main_kb,
         )
+        return
+
+    # فوائد ونصائح
+    if text == BTN_BENEFIT_ADD:
+        handle_add_benefit_start(update, context)
+        return
+
+    if text == BTN_BENEFIT_VIEW:
+        handle_view_benefits(update, context)
+        return
+
+    if text == BTN_BENEFIT_TOP10:
+        handle_top10_benefits(update, context)
         return
 
     # رسالة إلى نفسي
@@ -4428,6 +4820,9 @@ def main():
 
     dp.add_handler(CommandHandler("start", start_command))
     dp.add_handler(CommandHandler("help", help_command))
+    
+    # Callbacks
+    dp.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
 
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
