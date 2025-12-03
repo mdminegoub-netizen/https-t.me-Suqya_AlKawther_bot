@@ -184,9 +184,6 @@ def get_user_record(user):
             # إشعار المستخدم الجديد
             "is_new_user": True, # علامة مؤقتة للإشعار
 
-            # إشعار المستخدم الجديد
-            "is_new_user": True, # علامة مؤقتة للإشعار
-
             # حالة الحظر
             "is_banned": False,
             "banned_by": None,
@@ -1182,9 +1179,14 @@ def start_command(update: Update, context: CallbackContext):
         )
         return
     
-    is_new = str(user.id) not in data
-    get_user_record(user)
-
+    is_new =     # إرسال إشعار للمدير ورسالة ترحيب للمستخدم الجديد
+    if record.get("is_new_user", False):
+        send_new_user_notification(update, context)
+        # إزالة علامة المستخدم الجديد بعد الإشعار
+        update_user_record(user.id, is_new_user=False)
+        return # الخروج بعد إرسال رسالة الترحيب من الدالة send_new_user_notification
+    
+    # رسالة ترحيب للمستخدم العائد
     kb = user_main_keyboard(user.id)
 
     update.message.reply_text(
@@ -1195,22 +1197,7 @@ def start_command(update: Update, context: CallbackContext):
         "اختر من القائمة أسفل الشاشة ما يناسبك:",
         reply_markup=kb,
         parse_mode="Markdown",
-    )
-
-    if is_new and ADMIN_ID is not None:
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=(
-                    "👤 مستخدم جديد دخل البوت:\n\n"
-                    f"الاسم: {user.full_name}\n"
-                    f"اليوزر: @{user.username if user.username else 'لا يوجد'}\n"
-                    f"ID: `{user.id}`"
-                ),
-                parse_mode="Markdown",
-            )
-        except Exception as e:
-            logger.error(f"Error notifying admin about new user: {e}")
+    ) notifying admin about new user: {e}")
 
 
 def help_command(update: Update, context: CallbackContext):
@@ -5483,3 +5470,26 @@ def send_new_user_notification(update: Update, context: CallbackContext):
             )
         except Exception as e:
             logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
+
+# =================== وظائف إضافية ===================
+
+def send_new_user_notification(update: Update, context: CallbackContext):
+    """
+    يرسل إشعارًا للمدير عند انضمام مستخدم جديد، ورسالة ترحيب للمستخدم.
+    """
+    user = update.effective_user
+    user_id = user.id
+    
+    # 1. إرسال رسالة الترحيب للمستخدم الجديد
+    welcome_message = (
+        "🤍 أهلاً بك في سقيا الكوثر\n"
+        "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
+        "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
+    )
+    
+    try:
+        # نفترض أن user_main_keyboard معرفة في مكان آخر
+        context.bot.send_message(
+            chat_id=user_id,
+            text=welcome_message,
+            reply_markup=user_main_keyboard(us
