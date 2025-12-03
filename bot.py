@@ -3080,7 +3080,7 @@ def handle_edit_benefit_callback(update: Update, context: CallbackContext):
     BENEFIT_EDIT_ID[user_id] = benefit_id
     WAITING_BENEFIT_EDIT_TEXT.add(user_id)
     
-    query.answer("أرسل النص الجديد الآن.")
+    query.answer("أرسل النص الجديد الآن.") # إشعار صغير للمستخدم
     
     context.bot.send_message(
         chat_id=user_id,
@@ -3105,7 +3105,7 @@ def handle_edit_benefit_text(update: Update, context: CallbackContext):
         WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
         BENEFIT_EDIT_ID.pop(user_id, None)
         update.message.reply_text(
-            "تم إلغاء التعديل.",
+            "تم إلغاء التعديل. لم يتم تعديل الفائدة.",
             reply_markup=BENEFITS_MENU_KB,
         )
         return
