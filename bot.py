@@ -181,6 +181,9 @@ def get_user_record(user):
             "username": user.username,
             "created_at": now_iso,
             "last_active": now_iso,
+            # إشعار المستخدم الجديد
+            "is_new_user": True, # علامة مؤقتة للإشعار
+
             # حالة الحظر
             "is_banned": False,
             "banned_by": None,
@@ -251,6 +254,8 @@ def get_user_record(user):
         record.setdefault("daily_full_streak", 0)
         record.setdefault("last_full_day", None)
         record.setdefault("motivation_on", True)
+        record.setdefault("is_new_user", False) # ضمان وجود الحقل
+
 
         medals = record.get("medals", [])
         if medals:
