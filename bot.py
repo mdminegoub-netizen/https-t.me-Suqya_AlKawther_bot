@@ -347,6 +347,9 @@ WAITING_BROADCAST = set()
 
 # فوائد ونصائح
 WAITING_BENEFIT_TEXT = set()
+WAITING_BENEFIT_EDIT_TEXT = set()
+WAITING_BENEFIT_DELETE_CONFIRM = set()
+BENEFIT_EDIT_ID = {} # user_id -> benefit_id
 
 # إدارة الجرعة التحفيزية (من لوحة التحكم)
 WAITING_MOTIVATION_ADD = set()
@@ -383,10 +386,13 @@ BTN_TOP10 = "أفضل 10 🏅"
 BTN_TOP100 = "أفضل 100 🏆"
 
 # فوائد و نصائح
-BTN_BENEFITS_MAIN = "فوائد و نصائح 💡"
+BTN_BENEFITS_MAIN = "مجتمع الفوائد و النصائح 💡"
 BTN_BENEFIT_ADD = "✍️ أضف فائدة / نصيحة"
 BTN_BENEFIT_VIEW = "📖 استعراض الفوائد"
 BTN_BENEFIT_TOP10 = "🏆 أفضل 10 فوائد"
+BTN_MY_BENEFITS = "فوائدي (تعديل/حذف) 📝"
+BTN_BENEFIT_EDIT = "تعديل الفائدة ✏️"
+BTN_BENEFIT_DELETE = "حذف الفائدة 🗑️"
 
 # لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
@@ -569,6 +575,7 @@ BENEFITS_MENU_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_BENEFIT_ADD)],
         [KeyboardButton(BTN_BENEFIT_VIEW)],
         [KeyboardButton(BTN_BENEFIT_TOP10)],
+        [KeyboardButton(BTN_MY_BENEFITS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2819,7 +2826,7 @@ def open_benefits_menu(update: Update, context: CallbackContext):
         return
 
     update.message.reply_text(
-        "💡 قسم الفوائد والنصائح المجتمعية:\n"
+        "💡 مجتمع الفوائد و النصائح:\n"
         "شارك فائدة، استعرض فوائد الآخرين، وشارك في التقييم لتحفيز المشاركة.",
         reply_markup=BENEFITS_MENU_KB,
     )
@@ -2864,6 +2871,9 @@ def handle_add_benefit_text(update: Update, context: CallbackContext):
         )
         return
 
+    # إزالة المستخدم من حالة الانتظار قبل إكمال العملية
+    WAITING_BENEFIT_TEXT.discard(user_id)
+
     # 1. تخزين الفائدة
     benefit_id = get_next_benefit_id()
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -2889,7 +2899,6 @@ def handle_add_benefit_text(update: Update, context: CallbackContext):
     add_points(user_id, 2)
 
     # 3. إرسال رسالة تأكيد
-    WAITING_BENEFIT_TEXT.discard(user_id)
     update.message.reply_text(
         "✅ تم إضافة فائدتك بنجاح! شكرًا لمشاركتك.\n"
         f"لقد حصلت على 2 نقطة مكافأة.",
@@ -2962,6 +2971,287 @@ def handle_view_benefits(update: Update, context: CallbackContext):
         "انتهى عرض آخر الفوائد.",
         reply_markup=BENEFITS_MENU_KB,
     )
+
+
+def handle_my_benefits(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    benefits = get_benefits()
+    user_benefits = [b for b in benefits if b.get("user_id") == user_id]
+    
+    if not user_benefits:
+        update.message.reply_text(
+            "📝 لم تقم بإضافة أي فوائد بعد.",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+
+    update.message.reply_text(
+        f"📝 فوائدك ({len(user_benefits)} فائدة):",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+    
+    for benefit in user_benefits:
+        # تنسيق التاريخ
+        try:
+            dt = datetime.fromisoformat(benefit["date"].replace('Z', '+00:00'))
+            date_str = dt.strftime("%Y-%m-%d")
+        except:
+            date_str = "تاريخ غير معروف"
+            
+        text_benefit = (
+            f"• *{benefit['text']}*\n"
+            f"  - الإعجابات: {benefit['likes_count']} 👍\n"
+            f"  - تاريخ الإضافة: {date_str}\n"
+        )
+        
+        # أزرار التعديل والحذف
+        keyboard = [[
+            InlineKeyboardButton(
+                BTN_BENEFIT_EDIT, 
+                callback_data=f"edit_benefit_{benefit['id']}"
+            ),
+            InlineKeyboardButton(
+                BTN_BENEFIT_DELETE, 
+                callback_data=f"delete_benefit_{benefit['id']}"
+            )
+        ]]
+        
+        update.message.reply_text(
+            text=text_benefit,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+
+
+def handle_edit_benefit_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    
+    try:
+        benefit_id = int(query.data.split("_")[-1])
+    except ValueError:
+        query.answer("خطأ في تحديد الفائدة.")
+        return
+
+    benefits = get_benefits()
+    
+    # التحقق من الصلاحية: إما صاحب الفائدة أو مدير/مشرف
+    is_owner = lambda b: b.get("id") == benefit_id and b.get("user_id") == user_id
+    is_privileged = is_admin(user_id) or is_supervisor(user_id)
+    
+    benefit = next((b for b in benefits if b.get("id") == benefit_id), None)
+    
+    if benefit is None:
+        query.answer("هذه الفائدة غير موجودة.")
+        return
+        
+    if not is_owner(benefit) and not is_privileged:
+        query.answer("لا تملك صلاحية حذف هذه الفائدة.")
+        return
+
+    # حفظ ID الفائدة وحالة الانتظار للتأكيد
+    # نستخدم BENEFIT_EDIT_ID لتخزين ID الفائدة المراد حذفها مؤقتًا
+    BENEFIT_EDIT_ID[user_id] = benefit_id
+    WAITING_BENEFIT_DELETE_CONFIRM.add(user_id)
+    
+    query.answer("تأكيد الحذف.")
+    
+    keyboard = [[
+        InlineKeyboardButton("✅ نعم، متأكد من الحذف", callback_data=f"confirm_delete_benefit_{benefit_id}"),
+        InlineKeyboardButton("❌ لا، إلغاء", callback_data="cancel_delete_benefit")
+    ]]
+    
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"⚠️ هل أنت متأكد من حذف الفائدة رقم {benefit_id}؟\n"
+             f"النص: *{benefit['text']}*",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
+    )
+
+    # حفظ ID الفائدة وحالة الانتظار
+    BENEFIT_EDIT_ID[user_id] = benefit_id
+    WAITING_BENEFIT_EDIT_TEXT.add(user_id)
+    
+    query.answer("أرسل النص الجديد الآن.")
+    
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"✏️ أرسل النص الجديد للفائدة رقم {benefit_id} الآن.\n"
+             f"النص الحالي: *{benefit['text']}*",
+        reply_markup=CANCEL_KB,
+        parse_mode="Markdown",
+    )
+
+
+def handle_edit_benefit_text(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    
+    if user_id not in WAITING_BENEFIT_EDIT_TEXT:
+        return
+
+    text = update.message.text.strip()
+    
+    # الإلغاء
+    if text == BTN_CANCEL:
+        WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
+        BENEFIT_EDIT_ID.pop(user_id, None)
+        update.message.reply_text(
+            "تم إلغاء التعديل.",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+    
+    if len(text) < 5:
+        update.message.reply_text(
+            "⚠️ يجب أن تكون الفائدة 5 أحرف على الأقل. حاول مرة أخرى:",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    benefit_id = BENEFIT_EDIT_ID.get(user_id)
+    
+    benefits = get_benefits()
+    
+    for i, b in enumerate(benefits):
+        if b.get("id") == benefit_id and b.get("user_id") == user_id:
+            benefits[i]["text"] = text
+            save_benefits(benefits)
+            
+            WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
+            BENEFIT_EDIT_ID.pop(user_id, None)
+            
+            update.message.reply_text(
+                "✅ تم تعديل الفائدة بنجاح.",
+                reply_markup=BENEFITS_MENU_KB,
+            )
+            return
+
+    WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
+    BENEFIT_EDIT_ID.pop(user_id, None)
+    update.message.reply_text(
+        "⚠️ حدث خطأ: لم يتم العثور على الفائدة أو لا تملك صلاحية تعديلها.",
+        reply_markup=BENEFITS_MENU_KB,
+    )
+
+
+def handle_delete_benefit_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    
+    try:
+        benefit_id = int(query.data.split("_")[-1])
+    except ValueError:
+        query.answer("خطأ في تحديد الفائدة.")
+        return
+
+    benefits = get_benefits()
+    benefit = next((b for b in benefits if b.get("id") == benefit_id and b.get("user_id") == user_id), None)
+    
+    if benefit is None:
+        query.answer("لا تملك صلاحية حذف هذه الفائدة أو أنها غير موجودة.")
+        return
+
+    # حفظ ID الفائدة وحالة الانتظار للتأكيد
+    BENEFIT_EDIT_ID[user_id] = benefit_id
+    WAITING_BENEFIT_DELETE_CONFIRM.add(user_id)
+    
+    query.answer("تأكيد الحذف.")
+    
+    keyboard = [[
+        InlineKeyboardButton("✅ نعم، متأكد من الحذف", callback_data=f"confirm_delete_benefit_{benefit_id}"),
+        InlineKeyboardButton("❌ لا، إلغاء", callback_data="cancel_delete_benefit")
+    ]]
+    
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"⚠️ هل أنت متأكد من حذف الفائدة رقم {benefit_id}؟\n"
+             f"النص: *{benefit['text']}*",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
+    )
+
+
+def handle_delete_benefit_confirm_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+    
+    if query.data == "cancel_delete_benefit":
+        WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
+        BENEFIT_EDIT_ID.pop(user_id, None)
+        query.answer("تم إلغاء الحذف.")
+        query.edit_message_text(
+            text="تم إلغاء عملية الحذف.",
+            reply_markup=None,
+        )
+        return
+
+    try:
+        benefit_id = int(query.data.split("_")[-1])
+    except ValueError:
+        query.answer("خطأ في تحديد الفائدة.")
+        return
+
+    benefits = get_benefits()
+    
+    # التحقق من الصلاحية: إما صاحب الفائدة أو مدير/مشرف
+    is_privileged = is_admin(user_id) or is_supervisor(user_id)
+    
+    # البحث عن الفائدة
+    benefit_to_delete = next((b for b in benefits if b.get("id") == benefit_id), None)
+    
+    if benefit_to_delete is None:
+        query.answer("هذه الفائدة غير موجودة.")
+        query.edit_message_text(
+            text="⚠️ حدث خطأ: هذه الفائدة غير موجودة.",
+            reply_markup=None,
+        )
+        WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
+        BENEFIT_EDIT_ID.pop(user_id, None)
+        return
+
+    is_owner = benefit_to_delete.get("user_id") == user_id
+    
+    if not is_owner and not is_privileged:
+        query.answer("لا تملك صلاحية حذف هذه الفائدة.")
+        query.edit_message_text(
+            text="⚠️ حدث خطأ: لا تملك صلاحية حذف هذه الفائدة.",
+            reply_markup=None,
+        )
+        WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
+        BENEFIT_EDIT_ID.pop(user_id, None)
+        return
+
+    # حذف الفائدة
+    initial_count = len(benefits)
+    benefits[:] = [b for b in benefits if b.get("id") != benefit_id]
+    
+    if len(benefits) < initial_count:
+        save_benefits(benefits)
+        query.answer("✅ تم حذف الفائدة بنجاح.")
+        query.edit_message_text(
+            text=f"✅ تم حذف الفائدة رقم {benefit_id} بنجاح.",
+            reply_markup=None,
+        )
+    else:
+        query.answer("⚠️ حدث خطأ: لم يتم العثور على الفائدة.")
+        query.edit_message_text(
+            text="⚠️ حدث خطأ: لم يتم العثور على الفائدة.",
+            reply_markup=None,
+        )
+
+    WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
+    BENEFIT_EDIT_ID.pop(user_id, None)
 
 
 def handle_top10_benefits(update: Update, context: CallbackContext):
@@ -4539,6 +4829,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_add_benefit_text(update, context)
         return
 
+    if user_id in WAITING_BENEFIT_EDIT_TEXT:
+        handle_edit_benefit_text(update, context)
+        return
+
     # الأزرار الرئيسية
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
@@ -4698,6 +4992,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_top10_benefits(update, context)
         return
 
+    if text == BTN_MY_BENEFITS:
+        handle_my_benefits(update, context)
+        return
+
     # رسالة إلى نفسي
     if text == BTN_LETTER_ADD:
         handle_letter_add_start(update, context)
@@ -4823,6 +5121,9 @@ def main():
     
     # Callbacks
     dp.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$"))
 
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
