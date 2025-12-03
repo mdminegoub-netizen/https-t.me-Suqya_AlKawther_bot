@@ -1238,18 +1238,6 @@ def start_command(update: Update, context: CallbackContext):
         # تعديل سجل المستخدم لجعل is_new_user = False
         update_user_record(user.id, is_new_user=False)
         return
-    
-    # 3. رسالة ترحيب للمستخدم العائد (القديم)
-    kb = user_main_keyboard(user.id)
-    update.message.reply_text(
-        f"مرحبًا {user.first_name} 👋\n\n"
-        "أهلًا بك في بوت *سُقيا الكوثر*.\n"
-        "يساعدك على تنظيم شرب الماء، وضبط وردك القرآني، والمحافظة على الأذكار والتسبيح، "
-        "وتسجيل مذكّرات قلبك، مع نظام نقاط ومنافسات وميداليات تحفيزية 🎖\n\n"
-        "اختر من القائمة أسفل الشاشة ما يناسبك:",
-        reply_markup=kb,
-        parse_mode="Markdown",
-    )
 
 
 def help_command(update: Update, context: CallbackContext):
@@ -5431,71 +5419,6 @@ def main():
     logger.info("Suqya Al-Kawther bot is starting...")
     updater.start_polling()
     updater.idle()
-
-
-if __name__ == "__main__":
-    main()
-# =================== وظائف إضافية ===================
-
-def send_new_user_notification(update: Update, context: CallbackContext):
-    """
-    يرسل إشعارًا للمدير عند انضمام مستخدم جديد، ورسالة ترحيب للمستخدم.
-    """
-    user = update.effective_user
-    user_id = user.id
-    
-    # 1. إرسال رسالة الترحيب للمستخدم الجديد
-    welcome_message = (
-        "🤍 أهلاً بك في سقيا الكوثر\n"
-        "هنا تُسقى أرواحنا بالذكر والطمأنينة…\n"
-        "ونتشارك نُصحًا ينفع القلب ويُرضي الله 🌿"
-    )
-    
-    try:
-        context.bot.send_message(
-            chat_id=user_id,
-            text=welcome_message,
-            reply_markup=user_main_keyboard(user_id),
-        )
-    except Exception as e:
-        logger.error(f"Error sending welcome message to new user {user_id}: {e}")
-        
-    # 2. إرسال الإشعار للمدير
-    if ADMIN_ID is not None:
-        # محاولة الحصول على معلومات إضافية (غير مضمونة)
-        username_text = f"@{user.username}" if user.username else "غير متوفر"
-        
-        # تنسيق وقت الانضمام
-        # نفترض أن datetime و timezone و pytz مستوردة
-        now_utc = datetime.now(timezone.utc)
-        # استخدام توقيت افتراضي (مثل توقيت مكة)
-        try:
-            local_tz = pytz.timezone("Africa/Cairo") 
-        except:
-            local_tz = timezone.utc 
-            
-        now_local = now_utc.astimezone(local_tz)
-        join_time_str = now_local.strftime("%d-%m-%Y | %I:%M %p")
-        
-        notification_message = (
-            "🔔 مستخدم جديد دخل البوت 🎉\n"
-            f"👤 الاسم: {user.first_name}\n"
-            f"🆔 User ID: {user.id}\n"
-            f"🧑‍💻 Username: {username_text}\n"
-            "\n"
-            "🌍 المنطقة: غير متوفر (Telegram لا يوفرها)\n"
-            "📱 الجهاز: غير متوفر (Telegram لا يوفرها)\n"
-            "🧭 المصدر: غير متوفر (Telegram لا يوفرها)\n"
-            f"🕒 الانضمام: {join_time_str} (توقيت محلي افتراضي)\n"
-        )
-        
-        try:
-            context.bot.send_message(
-                chat_id=ADMIN_ID,
-                text=notification_message,
-            )
-        except Exception as e:
-            logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
 
 
 if __name__ == "__main__":
