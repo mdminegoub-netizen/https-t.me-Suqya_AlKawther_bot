@@ -319,6 +319,16 @@ def is_admin(user_id: int) -> bool:
 def is_supervisor(user_id: int) -> bool:
     return SUPERVISOR_ID is not None and user_id == SUPERVISOR_ID
 
+
+def user_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """يرجع لوحة المفاتيح الرئيسية المناسبة للمستخدم (مدير، مشرف، مستخدم عادي)."""
+    if is_admin(user_id):
+        return MAIN_KEYBOARD_ADMIN
+    elif is_supervisor(user_id):
+        return MAIN_KEYBOARD_SUPERVISOR
+    else:
+        return MAIN_KEYBOARD_USER
+
 # =================== حالات الإدخال ===================
 
 WAITING_GENDER = set()
