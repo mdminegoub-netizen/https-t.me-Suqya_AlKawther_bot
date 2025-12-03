@@ -35,7 +35,7 @@ DATA_FILE = "suqya_users.json"
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -1871,10 +1871,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
 
     if text == BTN_CANCEL:
         WAITING_GENDER.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
-        )
+        open_water_menu(update, context)
         return
 
     if text not in [BTN_GENDER_MALE, BTN_GENDER_FEMALE]:
@@ -1911,10 +1908,7 @@ def handle_age_input(update: Update, context: CallbackContext):
 
     if text == BTN_CANCEL:
         WAITING_AGE.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
-        )
+        open_water_menu(update, context)
         return
 
     try:
@@ -1954,10 +1948,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
 
     if text == BTN_CANCEL:
         WAITING_WEIGHT.discard(user_id)
-        update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
-        )
+        open_water_menu(update, context)
         return
 
     try:
@@ -2218,8 +2209,8 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_QURAN_GOAL.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
+            "تم الإلغاء، عدنا إلى قائمة وردي القرآني.",
+            reply_markup=quran_menu_keyboard(user_id),
         )
         return
 
@@ -2287,8 +2278,8 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         update.message.reply_text(
-            "تم الإلغاء. عدنا للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
+            "تم الإلغاء، عدنا إلى قائمة وردي القرآني.",
+            reply_markup=quran_menu_keyboard(user_id),
         )
         return
 
