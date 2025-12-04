@@ -2028,6 +2028,31 @@ def main():
     updater.start_polling()
     updater.idle()
 
+def start_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    get_user_record(user)
+
+    update.message.reply_text(
+        "مرحبًا بك في بوت سُقيا الكوثر 🤍\n"
+        "أنا هنا لأرافقك في رحلة الإهتمام بالماء والقرآن والقلب.\n"
+        "اختر ما يناسبك من القائمة 👇",
+        reply_markup=user_main_keyboard(user.id),
+    )
+
+
+def help_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    update.message.reply_text(
+        "💡 مساعدة البوت:\n"
+        "• راقب استهلاك الماء\n"
+        "• سجل ورد القرآن\n"
+        "• استخدم السبحة\n"
+        "• اكتب مذكراتك\n"
+        "• شارك نصائحك\n\n"
+        "ابدأ الآن من القائمة الرئيسية 👇",
+        reply_markup=user_main_keyboard(user.id),
+    )
+
 
 if __name__ == "__main__":
     main()
