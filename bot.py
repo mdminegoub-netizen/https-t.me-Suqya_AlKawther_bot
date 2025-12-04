@@ -2027,7 +2027,10 @@ def main():
     logger.info("Suqya Al-Kawther bot is starting...")
     updater.start_polling()
     updater.idle()
-
+    
+# دالة وسيطة لأمر /start
+def start_command(update, context):
+    return start(update, context)
 
 if __name__ == "__main__":
     main()
