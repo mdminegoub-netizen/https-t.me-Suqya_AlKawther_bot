@@ -2144,10 +2144,9 @@ def main():
         time=time(hour=0, minute=0, tzinfo=pytz.UTC),
         name="check_and_award_medal",
     )
-    # أوقات تذكير الماء بتوقيت UTC
-REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
+        # أوقات تذكير الماء بتوقيت UTC
+    REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
 
-    
     for h in REMINDER_HOURS_UTC:
         job_queue.run_daily(
             water_reminder_job,
