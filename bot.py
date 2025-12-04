@@ -1677,6 +1677,35 @@ def handle_edit_benefit_text(update: Update, context: CallbackContext):
         "⚠️ حدث خطأ: لم يتم العثور على الفائدة أو لا تملك صلاحية تعديلها.",
         reply_markup=BENEFITS_MENU_KB,
     )
+def water_reminder_job(context: CallbackContext):
+    """
+    وظيفة مجدولة لتذكير المستخدمين بشرب الماء.
+    """
+    try:
+        # نستخدم نفس data المستعملة في باقي الكود
+        global data
+
+        for uid_str, record in data.items():
+            # تخطي المحظورين
+            if record.get("is_banned", False):
+                continue
+
+            # إذا حاب لاحقاً تضيف خيار تعطيل تذكير الماء، خله هنا
+            # مثلاً: if not record.get("water_reminders_enabled", True): continue
+
+            try:
+                chat_id = int(uid_str)
+            except (TypeError, ValueError):
+                continue
+
+            # إرسال رسالة التذكير 💧
+            context.bot.send_message(
+                chat_id=chat_id,
+                text="🚰 تذكير لطيف: اشرب قليلاً من الماء الآن 🌿",
+            )
+
+    except Exception as e:
+        logger.error(f"خطأ في مهمة تذكير الماء: {e}")    
 
 def check_and_award_medal(context: CallbackContext):
     """
