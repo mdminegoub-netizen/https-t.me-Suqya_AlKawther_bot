@@ -4070,7 +4070,73 @@ def main():
     logger.info(f"Firebase Status: {'✅ Connected' if USE_FIREBASE else '❌ Not Connected'}")
     updater.start_polling()
     updater.idle()
+# ================ كود الترحيل المدمج ================
 
+def simple_migrate():
+    """يرحّل البيانات ببساطة"""
+    print("🔍 فحص البيانات للترحيل...")
+    
+    # 1. فحص اتصال Firebase
+    if not USE_FIREBASE:
+        print("❌ Firebase غير متصل، لا يمكن الترحيل")
+        return
+    
+    # 2. فحص وجود بيانات قديمة
+    if not os.path.exists("suqya_users.json"):
+        print("✅ لا توجد بيانات قديمة")
+        return
+    
+    # 3. ترحيل البيانات
+    try:
+        import json
+        from datetime import datetime
+        
+        print("📖 قراءة البيانات القديمة...")
+        with open("suqya_users.json", "r", encoding="utf-8") as f:
+            old_data = json.load(f)
+        
+        migrated = 0
+        for user_id_str, user_data in old_data.items():
+            if user_id_str == "_global_config":
+                continue
+            
+            try:
+                user_id = int(user_id_str)
+                
+                # تحويل التواريخ
+                for date_field in ["created_at", "last_active", "banned_at"]:
+                    if user_data.get(date_field):
+                        try:
+                            dt = datetime.fromisoformat(user_data[date_field].replace('Z', '+00:00'))
+                            user_data[date_field] = dt
+                        except:
+                            pass
+                
+                # إضافة user_id
+                user_data["user_id"] = user_id
+                
+                # الحفظ في Firebase
+                save_user_record(user_id, user_data)
+                migrated += 1
+                
+                if migrated % 10 == 0:
+                    print(f"✅ تم ترحيل {migrated} مستخدم...")
+                    
+            except Exception as e:
+                print(f"⚠️ خطأ في ترحيل المستخدم {user_id_str}: {e}")
+        
+        print(f"🎉 تم الانتهاء! تم ترحيل {migrated} مستخدم")
+        
+        # نسخة احتياطية
+        import shutil
+        shutil.copy("suqya_users.json", "suqya_users.json.backup")
+        print("📦 تم عمل نسخة احتياطية")
+        
+    except Exception as e:
+        print(f"❌ خطأ عام في الترحيل: {e}")
+
+# تشغيل الترحيل
+simple_migrate()
 
 if __name__ == "__main__":
     main()
