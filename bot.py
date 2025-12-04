@@ -1990,11 +1990,17 @@ def main():
     dp.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
     dp.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
     dp.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
-    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
     dp.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
 
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
 
+    # تشغيل مهمة التحقق من الميداليات يوميًا في منتصف الليل بتوقيت UTC
+    job_queue.run_daily(
+        check_and_award_medal,
+        time=time(hour=0, minute=0, tzinfo=pytz.UTC),
+        name="check_and_award_medal",
+    )
 
     for h in REMINDER_HOURS_UTC:
         job_queue.run_daily(
@@ -2021,24 +2027,7 @@ def main():
     logger.info("Suqya Al-Kawther bot is starting...")
     updater.start_polling()
     updater.idle()
-    
-# دالة أمر /start
-def start_command(update, context):
-    return start(update, context)
 
-# دالة أمر /help
-def help_command(update, context):
-    return help_message(update, context)
 
-# دالة استقبال جميع الرسائل النصية
-def handle_message(update, context):
-    user_message = update.message.text
-
-    if user_message == "الصفحة الرئيسية":
-        return start(update, context)
-
-    return update.message.reply_text(
-        "🤖 لم أفهم رسالتك، يرجى استخدام الأزرار المتاحة!",
-    )
 if __name__ == "__main__":
     main()
