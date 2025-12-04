@@ -2031,6 +2031,8 @@ def main():
 # دالة وسيطة لأمر /start
 def start_command(update, context):
     return start(update, context)
-
+# دالة بسيطة لأمر /help
+def help_command(update, context):
+    return help_message(update, context)
 if __name__ == "__main__":
     main()
