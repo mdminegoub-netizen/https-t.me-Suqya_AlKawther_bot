@@ -2028,11 +2028,23 @@ def main():
     updater.start_polling()
     updater.idle()
     
-# دالة وسيطة لأمر /start
+# دالة أمر /start
 def start_command(update, context):
     return start(update, context)
-# دالة بسيطة لأمر /help
+
+# دالة أمر /help
 def help_command(update, context):
     return help_message(update, context)
+
+# دالة استقبال جميع الرسائل النصية
+def handle_message(update, context):
+    user_message = update.message.text
+
+    if user_message == "الصفحة الرئيسية":
+        return start(update, context)
+
+    return update.message.reply_text(
+        "🤖 لم أفهم رسالتك، يرجى استخدام الأزرار المتاحة!",
+    )
 if __name__ == "__main__":
     main()
