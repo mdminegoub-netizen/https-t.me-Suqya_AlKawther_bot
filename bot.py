@@ -1678,6 +1678,48 @@ def handle_edit_benefit_text(update: Update, context: CallbackContext):
         reply_markup=BENEFITS_MENU_KB,
     )
 
+def handle_admin_delete_benefit_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user = query.from_user
+    user_id = user.id
+
+    # التحقق من الصلاحية
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.answer("لا تملك صلاحية حذف فوائد الآخرين.")
+        return
+
+    try:
+        benefit_id = int(query.data.split("_")[-1])
+    except ValueError:
+        query.answer("خطأ في تحديد الفائدة.")
+        return
+
+    benefits = get_benefits()
+    benefit = next((b for b in benefits if b.get("id") == benefit_id), None)
+    
+    if benefit is None:
+        query.answer("هذه الفائدة غير موجودة.")
+        return
+
+    # حفظ ID الفائدة وحالة الانتظار للتأكيد
+    BENEFIT_EDIT_ID[user_id] = benefit_id
+    WAITING_BENEFIT_DELETE_CONFIRM.add(user_id)
+    
+    query.answer("تأكيد الحذف.")
+    
+    keyboard = [[
+        InlineKeyboardButton("✅ نعم، متأكد من الحذف", callback_data=f"confirm_admin_delete_benefit_{benefit_id}"),
+        InlineKeyboardButton("❌ لا، إلغاء", callback_data="cancel_admin_delete_benefit")
+    ]]
+    
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"⚠️ هل أنت متأكد من حذف الفائدة رقم {benefit_id} للمستخدم {benefit['first_name']}؟\n"
+             f"النص: *{benefit['text']}*",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown",
+    )
+
 def handle_delete_benefit_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
