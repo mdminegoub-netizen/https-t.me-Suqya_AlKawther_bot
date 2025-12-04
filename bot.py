@@ -1995,12 +1995,6 @@ def main():
 
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
-    # تشغيل مهمة التحقق من الميداليات يوميًا في منتصف الليل بتوقيت UTC
-    job_queue.run_daily(
-        check_and_award_medal,
-        time=time(hour=0, minute=0, tzinfo=pytz.UTC),
-        name="check_and_award_medal",
-    )
 
     for h in REMINDER_HOURS_UTC:
         job_queue.run_daily(
