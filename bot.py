@@ -1678,6 +1678,48 @@ def handle_edit_benefit_text(update: Update, context: CallbackContext):
         reply_markup=BENEFITS_MENU_KB,
     )
 
+def check_and_award_medal(context: CallbackContext):
+    """
+    دالة تفحص أفضل 10 فوائد وتمنح الوسام لصاحبها إذا لم يكن لديه.
+    """
+    benefits = get_benefits()
+    if not benefits:
+        return
+
+    # ترتيب الفوائد حسب عدد الإعجابات تنازليًا
+    sorted_benefits = sorted(benefits, key=lambda b: b.get("likes_count", 0), reverse=True)
+    
+    top_10_user_ids = set()
+    for benefit in sorted_benefits[:10]:
+        top_10_user_ids.add(benefit["user_id"])
+        
+    MEDAL_TEXT = "وسام صاحب فائدة من العشرة الأوائل 💡🏅"
+    
+    for user_id in top_10_user_ids:
+        uid_str = str(user_id)
+        if uid_str in data:
+            record = data[uid_str]
+            medals = record.get("medals", [])
+            
+            if MEDAL_TEXT not in medals:
+                medals.append(MEDAL_TEXT)
+                record["medals"] = medals
+                save_data()
+                
+                # إرسال رسالة تهنئة
+                try:
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=(
+                            "تهانينا! 🎉\n"
+                            f"لقد حصلت على وسام جديد: *{MEDAL_TEXT}*\n"
+                            "أحد فوائدك وصل إلى قائمة أفضل 10 فوائد. استمر في المشاركة! 🤍"
+                        ),
+                        parse_mode="Markdown",
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending medal message to {user_id}: {e}")
+
 def handle_admin_delete_benefit_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     user = query.from_user
