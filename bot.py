@@ -2011,6 +2011,65 @@ def migrate_data_to_firestore():
     except Exception as e:
         logger.error(f"خطأ في إنشاء النسخة الاحتياطية: {e}")
 
+def handle_text(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    msg = update.message
+    text = (msg.text or "").strip()
+
+    record = get_user_record(user)
+
+    # منع المحظور من استخدام البوت
+    if record.get("is_banned", False):
+        return
+
+    # الوضع الافتراضي: القائمة الرئيسية
+    main_kb = user_main_keyboard(user_id)
+
+    # التعامل مع كل حالات الانتظار
+    if user_id in WAITING_QURAN_GOAL:
+        return handle_quran_goal_input(update, context)
+
+    if user_id in WAITING_QURAN_ADD_PAGES:
+        return handle_quran_add_pages_input(update, context)
+
+    if user_id in WAITING_TASBIH:
+        update.message.reply_text("استخدم زر «تسبيحة ✅» في الأسفل.")
+        return
+
+    if user_id in WAITING_MEMO_ADD:
+        return handle_memo_add_input(update, context)
+
+    if user_id in WAITING_MEMO_EDIT_SELECT:
+        return handle_memo_edit_index_input(update, context)
+
+    if user_id in WAITING_MEMO_EDIT_TEXT:
+        return handle_memo_edit_text_input(update, context)
+
+    if user_id in WAITING_MEMO_DELETE_SELECT:
+        return handle_memo_delete_index_input(update, context)
+
+    if user_id in WAITING_SUPPORT:
+        forward_support_to_admin(user, text, context)
+        WAITING_SUPPORT.discard(user_id)
+        update.message.reply_text("📨 تم إرسال رسالتك للدعم.")
+        return
+
+    if user_id in WAITING_BENEFIT_ADD_TEXT:
+        return handle_add_benefit_text(update, context)
+
+    if user_id in WAITING_BENEFIT_EDIT_TEXT:
+        return handle_edit_benefit_text(update, context)
+
+    if user_id in WAITING_BENEFIT_DELETE_CONFIRM:
+        return handle_delete_benefit_callback(update, context)
+
+    # آخر خيار: رد قياسي
+    update.message.reply_text(
+        "👇 اختر من القائمة الرئيسية:",
+        reply_markup=main_kb,
+    )
+
 # =================== تشغيل البوت ===================
 
 def main():
