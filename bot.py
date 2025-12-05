@@ -2291,7 +2291,112 @@ def main():
 
 
 
-# =================== معالج الأخطاء ===================
+# =================== معالجات الأزرار الرئيسية المحسّنة ===================
+
+def handle_main_button(update: Update, context: CallbackContext, button_text: str):
+    """معالج عام للأزرار الرئيسية"""
+    user = update.effective_user
+    user_id = user.id
+    main_kb = user_main_keyboard(user_id)
+    
+    try:
+        if button_text == "📖 وردي القرآني":
+            update.message.reply_text(
+                "📖 *قسم وردي القرآني*\n\n"
+                "اختر ما تريد:\n"
+                "• اضبط هدفك اليومي\n"
+                "• أضف صفحات اليوم\n"
+                "• اعرض إحصائياتك",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "✋ أذكاري":
+            update.message.reply_text(
+                "✋ *قسم الأذكار*\n\n"
+                "اضغط على الزر لزيادة عداد الأذكار",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "💧 منبه الماء":
+            update.message.reply_text(
+                "💧 *منبه الماء*\n\n"
+                "اضبط تذكيراتك اليومية للماء",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "🌙 السبحة":
+            update.message.reply_text(
+                "🌙 *السبحة*\n\n"
+                "استخدم السبحة الرقمية",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "💙 مذكّرات قلبي":
+            update.message.reply_text(
+                "💙 *مذكّرات قلبي*\n\n"
+                "اكتب مذكراتك وأفكارك",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "📩 رسالة إلى نفسي":
+            update.message.reply_text(
+                "📩 *رسالة إلى نفسي*\n\n"
+                "اكتب رسائل لنفسك",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "📊 إحصائياتي":
+            update.message.reply_text(
+                "📊 *إحصائياتي*\n\n"
+                "اعرض إحصائياتك وتقدمك",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "🏅 المنافسات و المجتمع":
+            update.message.reply_text(
+                "🏅 *المنافسات و المجتمع*\n\n"
+                "شارك مع المجتمع",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "💡 مجتمع الفوائد و النصائح":
+            update.message.reply_text(
+                "💡 *مجتمع الفوائد و النصائح*\n\n"
+                "اعرض الفوائد الأخيرة",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "🔔 الاشعارات":
+            update.message.reply_text(
+                "🔔 *الاشعارات*\n\n"
+                "اضبط إعدادات التنبيهات",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "✉️ تواصل مع الدعم":
+            update.message.reply_text(
+                "✉️ *تواصل مع الدعم*\n\n"
+                "أرسل رسالتك للدعم الفني",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        elif button_text == "⚙️ لوحة التحكم":
+            update.message.reply_text(
+                "⚙️ *لوحة التحكم*\n\n"
+                "اضبط إعدادات البوت",
+                reply_markup=main_kb,
+                parse_mode="Markdown"
+            )
+        else:
+            update.message.reply_text(
+                "👇 اختر من القائمة الرئيسية:",
+                reply_markup=main_kb
+            )
+    except Exception as e:
+        logger.error(f"خطأ في معالجة الزر: {e}")
+        update.message.reply_text(
+            "حدث خطأ ما. يرجى محاولة مرة أخرى لاحقاً."
+        )
 
 def error_handler(update: Update, context: CallbackContext):
     """معالج الأخطاء العام"""
