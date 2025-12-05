@@ -2245,14 +2245,13 @@ def help_command(update: Update, context: CallbackContext):
     )
 def main():
     if not BOT_TOKEN:
-        raise RuntimeError("❌ BOT_TOKEN غير موجود!")
-
-    from telegram.ext import Updater
-
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+        raise RuntimeError("❌ BOT_TOKEN غير مهيأ في المتغيرات البيئية")
 
     logger.info("🚀 البوت بدأ العمل!")
+
+    from telegram.ext import Updater
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
     # نحذف أي Webhook قديم قبل ما نبدأ polling
     try:
