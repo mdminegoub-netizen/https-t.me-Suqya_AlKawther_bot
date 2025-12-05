@@ -233,7 +233,8 @@ def migrate_data_to_firestore():
     
     # ترحيل المستخدمين
     for user_id_str, user_data in data.items():
-        if user_id_str == "GLOBAL_KEY":
+        # تجاهل المفاتيح غير الرقمية (مثل GLOBAL_KEY أو _global_config)
+        if user_id_str == "GLOBAL_KEY" or user_id_str == GLOBAL_KEY or user_id_str.startswith("_"):
             continue
             
         try:
@@ -634,7 +635,8 @@ def migrate_data_to_firestore():
     
     # ترحيل المستخدمين
     for user_id_str, user_data in data.items():
-        if user_id_str == "GLOBAL_KEY":
+        # تجاهل المفاتيح غير الرقمية (مثل GLOBAL_KEY أو _global_config)
+        if user_id_str == "GLOBAL_KEY" or user_id_str == GLOBAL_KEY or user_id_str.startswith("_"):
             continue
             
         try:
