@@ -87,7 +87,13 @@ LETTER_TEMP_CONTENT = {}
 CURRENT_MOTIVATION_JOBS = []
 MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
 
-# =================== الثوابت المفقودة ===================
+# # =================== الثوابت العامة ===================
+
+# ثوابت Webhook (يجب تعيينها في متغيرات البيئة)
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL") # مثال: https://your-app-name.onrender.com/
+if not WEBHOOK_URL:
+    logger.warning("⚠️ WEBHOOK_URL غير معرّف. سيتم استخدام Polling (غير مستحسن لـ Render).")
+    WEBHOOK_URL = "" # سيتم استخدامه لاحقاً لتحديد وضع التشغيل
 
 # ثوابت النقاط
 POINTS_PER_CUP = 1
@@ -2503,10 +2509,23 @@ def error_handler(update: Update, context: CallbackContext):
             logger.error(f"خطأ في إرسال رسالة الخطأ: {e}")
 
 def run_flask():
-    """تشغيل Flask"""
+    """تشغيل Flask لمعالجة Webhook"""
+    global DISPATCHER
+    
+    @app.route(f"/{BOT_TOKEN}", methods=["POST"])
+    def webhook_handler():
+        if request.method == "POST":
+            update = Update.de_json(request.get_json(force=True), DISPATCHER.bot)
+            DISPATCHER.process_update(update)
+        return "ok"
+
     logger.info(f"🌐 تشغيل Flask على المنفذ {PORT}...")
     try:
-        app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False, threaded=True)
+        # استخدام gunicorn أو waitress في بيئة الإنتاج
+        # هنا نستخدم app.run للتبسيط، لكن يجب استخدام gunicorn في Render
+        # سنعتمد على الأمر الذي يحدده المستخدم في Render لتشغيل Flask (عادة gunicorn)
+        # app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False, threaded=True)
+        pass # نترك التشغيل لـ gunicorn أو الأمر الخارجي
     except Exception as e:
         logger.error(f"❌ خطأ في Flask: {e}")
 
@@ -2532,7 +2551,8 @@ def start_bot():
         job_queue = UPDATER.job_queue
         
         try:
-            UPDATER.bot.delete_webhook(drop_pending_updates=True)
+            # حذف الويب هوك القديم لضمان عدم وجود تضارب
+        UPDATER.bot.delete_webhook(drop_pending_updates=True)
             logger.info("✅ تم حذف الويب هوك القديم")
         except Exception as e:
             logger.warning(f"⚠️ خطأ في حذف الويب هوك: {e}")
@@ -2576,10 +2596,18 @@ def start_bot():
         
         logger.info("✅ تم تشغيل المهام اليومية")
         
-        logger.info("🚀 البوت بدأ العمل! استقبال الرسائل...")
-        UPDATER.start_polling(timeout=10, read_latency=4)
-        UPDATER.idle()
-        
+        if WEBHOOK_URL:
+            # إعداد Webhook
+            UPDATER.start_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=BOT_TOKEN,
+                webhook_url=WEBHOOK_URL + BOT_TOKEN,
+            )
+            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
+        else:
+            # إعداد Polling (سيتم تشغيله في __main__ إذا لم يكن Webhook مفعلاً)
+            pass
     except Conflict as e:
         logger.error(f"❌ تضارب في getUpdates: {e}")
         IS_RUNNING = False
@@ -2591,17 +2619,18 @@ def start_bot():
 if __name__ == "__main__":
     logger.info("=" * 50)
     logger.info("🚀 بدء سُقيا الكوثر")
-    logger.info("=" * 50)
-    
-    flask_thread = Thread(target=run_flask, daemon=False)
-    flask_thread.start()
-    logger.info("✅ تم بدء Flask")
-    
-    import time as time_module
-    time_module.sleep(2)
-    
-    try:
+    logger.info("=" * 50)    # إذا كان Webhook مفعلاً، يتم تشغيل Flask أولاً
+    if WEBHOOK_URL:
+        logger.info("🌐 تشغيل Flask (Webhook Mode)...")
+        run_flask() # يتم تشغيلها بواسطة gunicorn في Render
+        start_bot() # يتم تهيئة البوت والـ Webhook
+    else:
+        # إذا لم يكن Webhook مفعلاً، يتم تشغيل البوت في وضع Polling
+        logger.info("🌐 تشغيل البوت (Polling Mode)...")
         start_bot()
+        UPDATER.start_polling(timeout=10, read_latency=4)
+        UPDATER.idle()
+        
     except KeyboardInterrupt:
         logger.info("⏹️ إيقاف البوت...")
         if UPDATER:
