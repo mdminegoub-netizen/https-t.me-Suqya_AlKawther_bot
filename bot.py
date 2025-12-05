@@ -3,9 +3,13 @@ import json
 import logging
 import re
 import random
-from datetime import datetime, timezone, time, timedelta
+from datetime import datetime, timezone
 from threading import Thread
 from typing import List, Dict, Any, Optional
+
+from flask import Flask   # ⬅️ أضيفي هذا السطر
+
+app = Flask(__name__)    # ⬅️ وهذا السطر بعده مباشرة
 
 import pytz
 from flask import Flask
@@ -2259,10 +2263,32 @@ def main():
     except Exception as e:
         logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
 
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("❌ BOT_TOKEN غير مضبوط!")
+
+    from telegram.ext import Updater
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    logger.info("🚀 البوت بدأ العمل!")
+
+    # نحذف الويب هوك القديم إن وُجد
+    try:
+        updater.bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
+
     # نبدأ استقبال الرسائل
     updater.start_polling()
     updater.idle()
 
 
 if __name__ == "__main__":
-    main()
+    from threading import Thread
+
+    bot_thread = Thread(target=main)
+    bot_thread.start()
+
+    # تشغيل Flask حتى يبقى السيرفر على Render شغال
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
