@@ -2202,6 +2202,23 @@ def main():
     updater.start_polling()
     updater.idle()
 
+from telegram import ReplyKeyboardMarkup  # تأكدي إنها موجودة فوق في الاستيراد مرة وحدة فقط
+
+def user_main_keyboard(user_id: int):
+    """
+    كيبورد القائمة الرئيسية للمستخدم
+    """
+    keyboard = [
+        ["✋ أذكاري", "📖 وردي القرآني"],
+        ["💧 منبه الماء", "🌙 السبحة"],
+        ["💙 مذكّرات قلبي", "📩 رسالة إلى نفسي"],
+        ["📊 إحصائياتي", "🏅 المنافسات و المجتمع"],
+        ["💡 مجتمع الفوائد و النصائح"],
+        ["🔔 الاشعارات", "✉️ تواصل مع الدعم"],
+        ["⚙️ لوحة التحكم"],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 def start_command(update: Update, context: CallbackContext):
     user = update.effective_user
     get_user_record(user)
