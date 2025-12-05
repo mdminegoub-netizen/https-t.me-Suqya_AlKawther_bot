@@ -270,8 +270,12 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
 def health_check():
     return {'status': 'ok', 'message': 'Bot is running'}, 200
 
-@app.route('/webhook', methods=['POST'])
+@app.route('/' + BOT_TOKEN, methods=['POST'])
 def webhook():
+    # معالجة تحديث الويب هوك
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), updater.bot)
+        dispatcher.process_update(update)
     return {'status': 'ok'}, 200
 
 # =================== Firebase ===================
@@ -2623,13 +2627,8 @@ if __name__ == "__main__":
         # تشغيل البوت في وضع Webhook فقط
         logger.info("🌐 تشغيل Flask (Webhook Mode)...")
         
-        # إعداد Webhook
-        updater.start_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=BOT_TOKEN,
-            webhook_url=WEBHOOK_URL + BOT_TOKEN,
-        )
+        # إعداد Webhook (فقط لتعيين الرابط في تيليجرام)
+        updater.bot.set_webhook(WEBHOOK_URL + BOT_TOKEN)
         logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
         
         # يجب أن يتم تشغيل Flask أولاً في Webhook Mode
