@@ -57,6 +57,208 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =================== متغيرات الحالة العامة ===================
+
+# متغيرات لتتبع حالات المستخدمين
+WAITING_QURAN_GOAL = set()
+WAITING_QURAN_ADD_PAGES = set()
+WAITING_TASBIH = set()
+WAITING_MEMO_ADD = set()
+WAITING_MEMO_MENU = set()
+WAITING_MEMO_EDIT_SELECT = set()
+WAITING_MEMO_EDIT_TEXT = set()
+WAITING_MEMO_DELETE_SELECT = set()
+WAITING_LETTER_ADD = set()
+WAITING_LETTER_ADD_CONTENT = set()
+WAITING_LETTER_MENU = set()
+WAITING_LETTER_REMINDER_OPTION = set()
+WAITING_LETTER_CUSTOM_DATE = set()
+WAITING_LETTER_DELETE_SELECT = set()
+WAITING_SUPPORT = set()
+WAITING_BENEFIT_ADD_TEXT = set()
+WAITING_BENEFIT_EDIT_TEXT = set()
+WAITING_BENEFIT_DELETE_CONFIRM = set()
+WAITING_BENEFIT_TEXT = set()
+
+# متغيرات مساعدة
+BENEFIT_EDIT_ID = {}
+MEMO_EDIT_INDEX = {}
+LETTER_TEMP_CONTENT = {}
+CURRENT_MOTIVATION_JOBS = []
+MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
+
+# =================== الثوابت المفقودة ===================
+
+# ثوابت النقاط
+POINTS_PER_CUP = 1
+POINTS_PER_PAGE = 2
+POINTS_PER_TASBIH = 1
+POINTS_PER_MEMO = 5
+POINTS_PER_LETTER = 10
+POINTS_PER_BENEFIT = 15
+
+# ثوابت الأزرار
+BTN_CANCEL = "❌ إلغاء"
+BTN_BACK = "🔙 رجوع"
+
+# =================== الدوال المفقودة ===================
+
+def add_points(user_id: int, points: int, context=None, reason: str = ""):
+    """إضافة نقاط للمستخدم"""
+    try:
+        record = get_user_record_local_by_id(user_id)
+        current_points = record.get("points", 0)
+        new_points = current_points + points
+        
+        update_user_record(user_id, points=new_points)
+        
+        # حساب المستوى الجديد
+        new_level = new_points // 100
+        old_level = record.get("level", 0)
+        
+        if new_level > old_level:
+            update_user_record(user_id, level=new_level)
+            
+        logger.info(f"تمت إضافة {points} نقطة للمستخدم {user_id}. السبب: {reason}")
+        
+    except Exception as e:
+        logger.error(f"خطأ في add_points: {e}")
+
+def forward_support_to_admin(user, text: str, context):
+    """إرسال رسالة الدعم للمشرف والمدير"""
+    try:
+        message = (
+            f"📩 رسالة دعم جديدة\n\n"
+            f"من: {user.first_name} (@{user.username or 'بدون'})\n"
+            f"ID: {user.id}\n\n"
+            f"الرسالة:\n{text}"
+        )
+        
+        # إرسال للمدير
+        try:
+            context.bot.send_message(chat_id=ADMIN_ID, text=message)
+        except Exception as e:
+            logger.error(f"خطأ في إرسال رسالة للمدير: {e}")
+        
+        # إرسال للمشرف
+        try:
+            context.bot.send_message(chat_id=SUPERVISOR_ID, text=message)
+        except Exception as e:
+            logger.error(f"خطأ في إرسال رسالة للمشرف: {e}")
+            
+    except Exception as e:
+        logger.error(f"خطأ في forward_support_to_admin: {e}")
+
+def send_letter_reminder(context):
+    """إرسال تذكير برسالة للنفس"""
+    try:
+        job_context = context.job.context
+        user_id = job_context.get("user_id")
+        letter_content = job_context.get("letter_content")
+        letter_id = job_context.get("letter_id")
+        
+        message = (
+            f"📩 رسالة من نفسك في الماضي:\n\n"
+            f"{letter_content}\n\n"
+            f"🤍 نتمنى أن تكون هذه الرسالة قد أضاءت يومك!"
+        )
+        
+        context.bot.send_message(chat_id=user_id, text=message)
+        
+        # تحديث حالة الرسالة
+        update_letter(letter_id, {"sent": True})
+        
+    except Exception as e:
+        logger.error(f"خطأ في send_letter_reminder: {e}")
+
+def handle_quran_goal_input(update: Update, context: CallbackContext):
+    """معالجة إدخال هدف القرآن"""
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+    
+    if text == BTN_CANCEL:
+        WAITING_QURAN_GOAL.discard(user_id)
+        update.message.reply_text(
+            "تم الإلغاء.",
+            reply_markup=user_main_keyboard(user_id)
+        )
+        return
+    
+    try:
+        pages = int(text)
+        if pages <= 0 or pages > 604:
+            update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح بين 1 و 604.")
+            return
+        
+        update_user_record(user_id, quran_pages_goal=pages)
+        WAITING_QURAN_GOAL.discard(user_id)
+        
+        update.message.reply_text(
+            f"✅ تم تحديد هدفك: {pages} صفحة يومياً!\n"
+            f"بارك الله فيك 🤍",
+            reply_markup=user_main_keyboard(user_id)
+        )
+        
+    except ValueError:
+        update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح.")
+
+def handle_quran_add_pages_input(update: Update, context: CallbackContext):
+    """معالجة إضافة صفحات القرآن"""
+    user = update.effective_user
+    user_id = user.id
+    text = (update.message.text or "").strip()
+    
+    if text == BTN_CANCEL:
+        WAITING_QURAN_ADD_PAGES.discard(user_id)
+        update.message.reply_text(
+            "تم الإلغاء.",
+            reply_markup=user_main_keyboard(user_id)
+        )
+        return
+    
+    try:
+        pages = int(text)
+        if pages <= 0:
+            update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح أكبر من 0.")
+            return
+        
+        record = get_user_record(user)
+        today = datetime.now(timezone.utc).date().isoformat()
+        
+        if record.get("quran_today_date") == today:
+            current_pages = record.get("quran_pages_today", 0)
+            new_pages = current_pages + pages
+        else:
+            new_pages = pages
+        
+        update_user_record(
+            user_id,
+            quran_pages_today=new_pages,
+            quran_today_date=today
+        )
+        
+        # إضافة نقاط
+        add_points(user_id, pages * POINTS_PER_PAGE, context, f"قراءة {pages} صفحة من القرآن")
+        
+        WAITING_QURAN_ADD_PAGES.discard(user_id)
+        
+        goal = record.get("quran_pages_goal", 0)
+        progress_msg = ""
+        if goal > 0:
+            progress = (new_pages / goal) * 100
+            progress_msg = f"\n📊 التقدم: {new_pages}/{goal} ({progress:.0f}%)"
+        
+        update.message.reply_text(
+            f"✅ تمت إضافة {pages} صفحة!\n"
+            f"📖 إجمالي اليوم: {new_pages} صفحة"
+            f"{progress_msg}\n"
+            f"🎯 حصلت على {pages * POINTS_PER_PAGE} نقطة!",
+            reply_markup=user_main_keyboard(user_id)
+        )
+        
+    except ValueError:
+        update.message.reply_text("⚠️ الرجاء إدخال رقم صحيح.")
 # =================== Flask Routes ===================
 
 @app.route('/', methods=['GET', 'HEAD'])
@@ -1985,23 +2187,7 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
         
         check_and_award_medal(context)
 
-# =================== خادم ويب بسيط لـ Render ===================
-
-app = Flask(__name__)
-
-@app.route("/")
-def index():
-    return "Suqya Al-Kawther bot is running ✅"
-
-def run_flask():
-    port = int(os.environ.get("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port)
-
-# =================== بقية الكود بدون تغيير ===================
-
-# [أدخل هنا بقية الكود كما هو بدون تغيير من السطر 111 إلى نهاية الملف]
-# بما في ذلك جميع تعريفات المتغيرات، الأزرار، الدوال، والأوامر
-# يجب أن تبقى كما هي تماماً لأننا غيرنا فقط دوال التخزين
+# =================== تم حذف التكرار ===================
 
 # =================== سكربت ترحيل البيانات ===================
 
@@ -2151,66 +2337,7 @@ def handle_text(update: Update, context: CallbackContext):
         reply_markup=main_kb,
     )
 
-# =================== تشغيل البوت ===================
-
-def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN غير موجود في متغيرات البيئة!")
-
-    # تشغيل ترحيل البيانات مرة واحدة عند البدء
-    if firestore_available():
-        migrate_data_to_firestore()
-    
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    job_queue = updater.job_queue
-
-    dp.add_handler(CommandHandler("start", start_command))
-    dp.add_handler(CommandHandler("help", help_command))
-    
-    # Callbacks
-    dp.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
-    dp.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
-    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
-    dp.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
-    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
-
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-
-    # تشغيل مهمة التحقق من الميداليات يوميًا في منتصف الليل بتوقيت UTC
-    job_queue.run_daily(
-        check_and_award_medal,
-        time=time(hour=0, minute=0, tzinfo=pytz.UTC),
-        name="check_and_award_medal",
-    )
-        # أوقات تذكير الماء بتوقيت UTC
-    REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-
-    for h in REMINDER_HOURS_UTC:
-        job_queue.run_daily(
-            water_reminder_job,
-            time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-            name=f"water_reminder_{h}",
-        )
-
-    global CURRENT_MOTIVATION_JOBS
-    CURRENT_MOTIVATION_JOBS = []
-    for h in MOTIVATION_HOURS_UTC:
-        try:
-            job = job_queue.run_daily(
-                motivation_job,
-                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-                name=f"motivation_job_{h}",
-            )
-            CURRENT_MOTIVATION_JOBS.append(job)
-        except Exception as e:
-            logger.error(f"Error scheduling motivation job at hour {h}: {e}")
-
-    Thread(target=run_flask, daemon=True).start()
-
-    logger.info("Suqya Al-Kawther bot is starting...")
-    updater.start_polling()
-    updater.idle()
+# =================== تم حذف main() المكررة - سيتم استخدام start_bot() في النهاية ===================
 
 from telegram import ReplyKeyboardMarkup  # تأكدي إنها موجودة فوق في الاستيراد مرة وحدة فقط
 
@@ -2253,41 +2380,7 @@ def help_command(update: Update, context: CallbackContext):
         "ابدأ الآن من القائمة الرئيسية 👇",
         reply_markup=user_main_keyboard(user.id),
     )
-def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("❌ BOT_TOKEN غير مهيأ في المتغيرات البيئية")
-
-    logger.info("🚀 البوت بدأ العمل!")
-
-    from telegram.ext import Updater
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    # نحذف أي Webhook قديم قبل ما نبدأ polling
-    try:
-        updater.bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
-
-def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("❌ BOT_TOKEN غير مضبوط!")
-
-    from telegram.ext import Updater
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    logger.info("🚀 البوت بدأ العمل!")
-
-    # نحذف الويب هوك القديم إن وُجد
-    try:
-        updater.bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
-
-    # نبدأ استقبال الرسائل
-    updater.start_polling()
-    updater.idle()
+# تم حذف دوال main() المكررة
 
 
 
@@ -2514,4 +2607,4 @@ if __name__ == "__main__":
         if UPDATER:
             UPDATER.stop()
     except Exception as e:
-        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
+        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True
