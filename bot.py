@@ -9,7 +9,7 @@ from threading import Thread
 from typing import List, Dict
 
 import pytz
-from flask import Flask
+from flask import Flask, request
 from telegram import (
     Update,
     User, # تم إضافة User هنا
@@ -65,6 +65,18 @@ IS_RUNNING = True
 def index():
     return "Suqya Al-Kawther bot is running ✅"
 
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook_handler():
+    """معالجة تحديثات الـ Webhook من Telegram"""
+    if request.method == "POST":
+        try:
+            update = Update.de_json(request.get_json(force=True), dispatcher.bot)
+            dispatcher.process_update(update)
+            return "ok", 200
+        except Exception as e:
+            logger.error(f"خطأ في معالجة webhook: {e}")
+            return "error", 500
+    return "ok", 200
 
 def run_flask():
     """تشغيل Flask لمعالجة Webhook (Blocking)"""
