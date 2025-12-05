@@ -29,31 +29,24 @@ from telegram.ext import (
 )
 from telegram.error import Conflict
 
-# =================== إضافة مكتبة Firebase ===================
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 # =================== إعدادات أساسية ===================
 
-# تهيئة Flask
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 
-# معرف الأدمن (أنت)
-ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
+ADMIN_ID = 931350292
+SUPERVISOR_ID = 1745150161
 
-# معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 1745150161  # المشرفة
-
-# متغيرات عامة للـ updater
 UPDATER = None
 DISPATCHER = None
 IS_RUNNING = True
 
-# ملف اللوج
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -64,24 +57,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# =================== مسارات Flask ===================
+# =================== Flask Routes ===================
 
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET', 'HEAD'])
 def health_check():
-    """فحص صحة السيرفر"""
     return {'status': 'ok', 'message': 'Bot is running'}, 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """معالج الويب هوك (للمستقبل)"""
     return {'status': 'ok'}, 200
 
-# =================== تهيئة Firebase ===================
+# =================== Firebase ===================
 
 def initialize_firebase():
-    """تهيئة اتصال Firebase من ملف الخدمة في Render"""
     try:
-        # البحث عن ملف خدمة Firebase في المسار المحدد
         secrets_path = "/etc/secrets"
         firebase_files = []
         
@@ -91,11 +80,9 @@ def initialize_firebase():
                     firebase_files.append(os.path.join(secrets_path, file))
         
         if firebase_files:
-            # استخدام أول ملف يطابق النمط
             cred_path = firebase_files[0]
             logger.info(f"تم العثور على ملف Firebase: {cred_path}")
             
-            # التحقق من أن التطبيق لم يتم تهيئته مسبقاً
             if not firebase_admin._apps:
                 cred = credentials.Certificate(cred_path)
                 firebase_admin.initialize_app(cred)
@@ -103,23 +90,19 @@ def initialize_firebase():
             else:
                 logger.info("✅ Firebase مفعل بالفعل")
         else:
-            logger.warning("❌ لم يتم العثور على ملف Firebase. سيتم استخدام التخزين المحلي")
+            logger.warning("❌ لم يتم العثور على ملف Firebase")
             
     except Exception as e:
         logger.error(f"❌ خطأ في تهيئة Firebase: {e}")
-        logger.warning("سيتم استخدام التخزين المحلي كبديل")
 
-# استدعاء التهيئة
 initialize_firebase()
 
-# إنشاء عميل Firestore
 try:
     db = firestore.client()
     logger.info("✅ تم الاتصال بـ Firestore بنجاح")
 except Exception as e:
     logger.error(f"❌ خطأ في الاتصال بـ Firestore: {e}")
     db = None
-
 
 def firestore_available():
     """التحقق مما إذا كان Firestore متاحاً"""
@@ -2168,8 +2151,147 @@ def handle_text(update: Update, context: CallbackContext):
         reply_markup=main_kb,
     )
 
-
 # =================== تشغيل البوت ===================
+
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN غير موجود في متغيرات البيئة!")
+
+    # تشغيل ترحيل البيانات مرة واحدة عند البدء
+    if firestore_available():
+        migrate_data_to_firestore()
+    
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    job_queue = updater.job_queue
+
+    dp.add_handler(CommandHandler("start", start_command))
+    dp.add_handler(CommandHandler("help", help_command))
+    
+    # Callbacks
+    dp.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
+    dp.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
+
+    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+
+    # تشغيل مهمة التحقق من الميداليات يوميًا في منتصف الليل بتوقيت UTC
+    job_queue.run_daily(
+        check_and_award_medal,
+        time=time(hour=0, minute=0, tzinfo=pytz.UTC),
+        name="check_and_award_medal",
+    )
+        # أوقات تذكير الماء بتوقيت UTC
+    REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
+
+    for h in REMINDER_HOURS_UTC:
+        job_queue.run_daily(
+            water_reminder_job,
+            time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+            name=f"water_reminder_{h}",
+        )
+
+    global CURRENT_MOTIVATION_JOBS
+    CURRENT_MOTIVATION_JOBS = []
+    for h in MOTIVATION_HOURS_UTC:
+        try:
+            job = job_queue.run_daily(
+                motivation_job,
+                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+                name=f"motivation_job_{h}",
+            )
+            CURRENT_MOTIVATION_JOBS.append(job)
+        except Exception as e:
+            logger.error(f"Error scheduling motivation job at hour {h}: {e}")
+
+    Thread(target=run_flask, daemon=True).start()
+
+    logger.info("Suqya Al-Kawther bot is starting...")
+    updater.start_polling()
+    updater.idle()
+
+from telegram import ReplyKeyboardMarkup  # تأكدي إنها موجودة فوق في الاستيراد مرة وحدة فقط
+
+def user_main_keyboard(user_id: int):
+    """
+    كيبورد القائمة الرئيسية للمستخدم
+    """
+    keyboard = [
+        ["✋ أذكاري", "📖 وردي القرآني"],
+        ["💧 منبه الماء", "🌙 السبحة"],
+        ["💙 مذكّرات قلبي", "📩 رسالة إلى نفسي"],
+        ["📊 إحصائياتي", "🏅 المنافسات و المجتمع"],
+        ["💡 مجتمع الفوائد و النصائح"],
+        ["🔔 الاشعارات", "✉️ تواصل مع الدعم"],
+        ["⚙️ لوحة التحكم"],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def start_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    get_user_record(user)
+
+    update.message.reply_text(
+        "مرحبًا بك في بوت سُقيا الكوثر 🤍\n"
+        "أنا هنا لأرافقك في رحلة الإهتمام بالماء والقرآن والقلب.\n"
+        "اختر ما يناسبك من القائمة 👇",
+        reply_markup=user_main_keyboard(user.id),
+    )
+
+
+def help_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    update.message.reply_text(
+        "💡 مساعدة البوت:\n"
+        "• راقب استهلاك الماء\n"
+        "• سجل ورد القرآن\n"
+        "• استخدم السبحة\n"
+        "• اكتب مذكراتك\n"
+        "• شارك نصائحك\n\n"
+        "ابدأ الآن من القائمة الرئيسية 👇",
+        reply_markup=user_main_keyboard(user.id),
+    )
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("❌ BOT_TOKEN غير مهيأ في المتغيرات البيئية")
+
+    logger.info("🚀 البوت بدأ العمل!")
+
+    from telegram.ext import Updater
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    # نحذف أي Webhook قديم قبل ما نبدأ polling
+    try:
+        updater.bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
+
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("❌ BOT_TOKEN غير مضبوط!")
+
+    from telegram.ext import Updater
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    logger.info("🚀 البوت بدأ العمل!")
+
+    # نحذف الويب هوك القديم إن وُجد
+    try:
+        updater.bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
+
+    # نبدأ استقبال الرسائل
+    updater.start_polling()
+    updater.idle()
+
+
+
+# =================== معالج الأخطاء ===================
 
 def error_handler(update: Update, context: CallbackContext):
     """معالج الأخطاء العام"""
@@ -2182,119 +2304,104 @@ def error_handler(update: Update, context: CallbackContext):
         except Exception as e:
             logger.error(f"خطأ في إرسال رسالة الخطأ: {e}")
 
+def run_flask():
+    """تشغيل Flask"""
+    logger.info(f"🌐 تشغيل Flask على المنفذ {PORT}...")
+    try:
+        app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False, threaded=True)
+    except Exception as e:
+        logger.error(f"❌ خطأ في Flask: {e}")
+
 def start_bot():
-    """بدء البوت بشكل صحيح"""
+    """بدء البوت"""
     global UPDATER, DISPATCHER, IS_RUNNING
     
     if not BOT_TOKEN:
-        raise RuntimeError("❌ BOT_TOKEN غير موجود في متغيرات البيئة!")
+        raise RuntimeError("❌ BOT_TOKEN غير موجود!")
     
     logger.info("🚀 بدء تهيئة البوت...")
     
     try:
-        # تشغيل ترحيل البيانات مرة واحدة عند البدء
-        if firestore_available():
-            logger.info("جاري ترحيل البيانات إلى Firestore...")
-            migrate_data_to_firestore()
+        if db is not None:
+            logger.info("جاري ترحيل البيانات...")
+            try:
+                migrate_data_to_firestore()
+            except Exception as e:
+                logger.warning(f"⚠️ خطأ في الترحيل: {e}")
         
-        # إنشاء Updater واحد فقط
         UPDATER = Updater(BOT_TOKEN, use_context=True)
         DISPATCHER = UPDATER.dispatcher
         job_queue = UPDATER.job_queue
         
-        # حذف أي Webhook قديم
         try:
             UPDATER.bot.delete_webhook(drop_pending_updates=True)
             logger.info("✅ تم حذف الويب هوك القديم")
         except Exception as e:
-            logger.warning(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
+            logger.warning(f"⚠️ خطأ في حذف الويب هوك: {e}")
         
-        # تسجيل معالجات الأوامر
+        logger.info("جاري تسجيل المعالجات...")
         DISPATCHER.add_handler(CommandHandler("start", start_command))
         DISPATCHER.add_handler(CommandHandler("help", help_command))
         
-        # تسجيل معالجات Callback
         DISPATCHER.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
         DISPATCHER.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
         DISPATCHER.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         DISPATCHER.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         DISPATCHER.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         
-        # تسجيل معالج الرسائل النصية
         DISPATCHER.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-        
-        # تسجيل معالج الأخطاء
         DISPATCHER.add_error_handler(error_handler)
         
-        # تشغيل المهام اليومية
+        logger.info("✅ تم تسجيل جميع المعالجات")
+        
         logger.info("جاري تشغيل المهام اليومية...")
         
-        job_queue.run_daily(
-            check_and_award_medal,
-            time=time(hour=0, minute=0, tzinfo=pytz.UTC),
-            name="check_and_award_medal",
-        )
+        try:
+            job_queue.run_daily(
+                check_and_award_medal,
+                time=time(hour=0, minute=0, tzinfo=pytz.UTC),
+                name="check_and_award_medal",
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ خطأ في جدولة الميدالية: {e}")
         
-        # أوقات تذكير الماء بتوقيت UTC
         REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
         for h in REMINDER_HOURS_UTC:
-            job_queue.run_daily(
-                water_reminder_job,
-                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-                name=f"water_reminder_{h}",
-            )
-        
-        # أوقات الدافع
-        MOTIVATION_HOURS_UTC = [6, 12, 18]
-        for h in MOTIVATION_HOURS_UTC:
             try:
                 job_queue.run_daily(
-                    motivation_job,
+                    water_reminder_job,
                     time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-                    name=f"motivation_job_{h}",
+                    name=f"water_reminder_{h}",
                 )
             except Exception as e:
-                logger.error(f"خطأ في جدولة مهمة الدافع في الساعة {h}: {e}")
+                logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
         
-        logger.info("✅ تم تشغيل جميع المهام اليومية")
+        logger.info("✅ تم تشغيل المهام اليومية")
         
-        # بدء استقبال الرسائل
         logger.info("🚀 البوت بدأ العمل! استقبال الرسائل...")
         UPDATER.start_polling(timeout=10, read_latency=4)
         UPDATER.idle()
         
     except Conflict as e:
         logger.error(f"❌ تضارب في getUpdates: {e}")
-        logger.info("يبدو أن نسخة أخرى من البوت تعمل. إيقاف البوت الحالي...")
         IS_RUNNING = False
     except Exception as e:
-        logger.error(f"❌ خطأ في بدء البوت: {e}", exc_info=True)
+        logger.error(f"❌ خطأ في البوت: {e}", exc_info=True)
         IS_RUNNING = False
         raise
 
-def run_flask():
-    """تشغيل Flask في thread منفصل"""
-    logger.info(f"🌐 تشغيل Flask على المنفذ {PORT}...")
-    try:
-        app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
-    except Exception as e:
-        logger.error(f"❌ خطأ في Flask: {e}")
-
 if __name__ == "__main__":
     logger.info("=" * 50)
-    logger.info("🚀 بدء تطبيق سُقيا الكوثر")
+    logger.info("🚀 بدء سُقيا الكوثر")
     logger.info("=" * 50)
     
-    # تشغيل Flask في thread منفصل
     flask_thread = Thread(target=run_flask, daemon=False)
     flask_thread.start()
     logger.info("✅ تم بدء Flask")
     
-    # إعطاء Flask وقتاً للبدء
-    import time
-    time.sleep(2)
+    import time as time_module
+    time_module.sleep(2)
     
-    # تشغيل البوت في thread رئيسي
     try:
         start_bot()
     except KeyboardInterrupt:
