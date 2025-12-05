@@ -2607,4 +2607,4 @@ if __name__ == "__main__":
         if UPDATER:
             UPDATER.stop()
     except Exception as e:
-        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True
+        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
