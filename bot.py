@@ -2247,14 +2247,17 @@ if __name__ == "__main__":
     if not BOT_TOKEN:
         raise RuntimeError("❌ BOT_TOKEN غير موجود في المتغيرات البيئية!")
 
+    from telegram.ext import Updater
+
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
     logger.info("🚀 البوت بدأ العمل!")
 
-    # إلغاء أي Webhook قديم (لو موجود)
     try:
         updater.bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
-        logger.error(f"خطأ أثناء حذف الويب هوك: {e}")
+        logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
 
-    # نبدأ الـ polling مرة واحدة فقط
     updater.start_polling()
     updater.idle()
