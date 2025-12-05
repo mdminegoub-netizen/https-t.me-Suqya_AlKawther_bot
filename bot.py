@@ -2531,7 +2531,7 @@ def run_flask():
 
 def start_bot():
     """بدء البوت"""
-    global updater, dispatcher, IS_RUNNING
+    global IS_RUNNING
     
     if not BOT_TOKEN:
         raise RuntimeError("❌ BOT_TOKEN غير موجود!")
@@ -2546,12 +2546,9 @@ def start_bot():
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في الترحيل: {e}")
         
-        # يتم تعريف updater و dispatcher كمتغيرات عامة في بداية الملف
-        # يتم تعيينها هنا لضمان عدم التكرار
-        global updater, dispatcher
-        updater = Updater(BOT_TOKEN, use_context=True)
-        dispatcher = updater.dispatcher
-        job_queue = updater.job_queue
+        # يتم تعريف updater و dispatcher في نقطة التشغيل النهائية
+        # job_queue يتم تعريفه في نقطة التشغيل النهائية أيضاً
+        pass
         
         try:
             # حذف الويب هوك القديم لضمان عدم وجود تضارب
@@ -2599,18 +2596,8 @@ def start_bot():
         
         logger.info("✅ تم تشغيل المهام اليومية")
         
-        if WEBHOOK_URL:
-            # إعداد Webhook
-            updater.start_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                url_path=BOT_TOKEN,
-                webhook_url=WEBHOOK_URL + BOT_TOKEN,
-            )
-            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
-        else:
-            # إعداد Polling (سيتم تشغيله في __main__ إذا لم يكن Webhook مفعلاً)
-            pass
+        # تم نقل تهيئة Webhook/Polling إلى if __name__ == "__main__":
+        pass
     except Conflict as e:
         logger.error(f"❌ تضارب في getUpdates: {e}")
         IS_RUNNING = False
@@ -2624,12 +2611,31 @@ if __name__ == "__main__":
     logger.info("🚀 بدء سُقيا الكوثر")
     logger.info("=" * 50)
     
+    # تهيئة Updater و Dispatcher مرة واحدة
+    try:
+        updater = Updater(BOT_TOKEN, use_context=True)
+        dispatcher = updater.dispatcher
+    except Exception as e:
+        logger.error(f"❌ خطأ في تهيئة Updater: {e}", exc_info=True)
+        exit(1)
+        
     try:
         if WEBHOOK_URL:
             # تشغيل البوت في وضع Webhook
             logger.info("🌐 تشغيل Flask (Webhook Mode)...")
+            
+            # إعداد Webhook
+            updater.start_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=BOT_TOKEN,
+                webhook_url=WEBHOOK_URL + BOT_TOKEN,
+            )
+            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
+            
+            # يجب أن يتم تشغيل Flask أولاً في Webhook Mode
             run_flask() # يتم تشغيلها بواسطة gunicorn في Render
-            start_bot() # يتم تهيئة البوت والـ Webhook
+            start_bot() # يتم تهيئة الـ handlers والمهام اليومية
         else:
             # تشغيل البوت في وضع Polling
             logger.info("🌐 تشغيل البوت (Polling Mode)...")
