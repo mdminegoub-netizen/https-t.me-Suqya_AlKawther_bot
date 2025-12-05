@@ -43,8 +43,8 @@ PORT = int(os.getenv("PORT", 10000))
 ADMIN_ID = 931350292
 SUPERVISOR_ID = 1745150161
 
-UPDATER = None
-DISPATCHER = None
+updater = None
+dispatcher = None
 IS_RUNNING = True
 
 logging.basicConfig(
@@ -2510,13 +2510,13 @@ def error_handler(update: Update, context: CallbackContext):
 
 def run_flask():
     """تشغيل Flask لمعالجة Webhook"""
-    global DISPATCHER
+    global dispatcher
     
     @app.route(f"/{BOT_TOKEN}", methods=["POST"])
     def webhook_handler():
         if request.method == "POST":
-            update = Update.de_json(request.get_json(force=True), DISPATCHER.bot)
-            DISPATCHER.process_update(update)
+            update = Update.de_json(request.get_json(force=True), dispatcher.bot)
+            dispatcher.process_update(update)
         return "ok"
 
     logger.info(f"🌐 تشغيل Flask على المنفذ {PORT}...")
@@ -2531,7 +2531,7 @@ def run_flask():
 
 def start_bot():
     """بدء البوت"""
-    global UPDATER, DISPATCHER, IS_RUNNING
+    global updater, dispatcher, IS_RUNNING
     
     if not BOT_TOKEN:
         raise RuntimeError("❌ BOT_TOKEN غير موجود!")
@@ -2546,29 +2546,32 @@ def start_bot():
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في الترحيل: {e}")
         
-        UPDATER = Updater(BOT_TOKEN, use_context=True)
-        DISPATCHER = UPDATER.dispatcher
-        job_queue = UPDATER.job_queue
+        # يتم تعريف updater و dispatcher كمتغيرات عامة في بداية الملف
+        # يتم تعيينها هنا لضمان عدم التكرار
+        global updater, dispatcher
+        updater = Updater(BOT_TOKEN, use_context=True)
+        dispatcher = updater.dispatcher
+        job_queue = updater.job_queue
         
         try:
             # حذف الويب هوك القديم لضمان عدم وجود تضارب
-        UPDATER.bot.delete_webhook(drop_pending_updates=True)
+            updater.bot.delete_webhook(drop_pending_updates=True)
             logger.info("✅ تم حذف الويب هوك القديم")
         except Exception as e:
             logger.warning(f"⚠️ خطأ في حذف الويب هوك: {e}")
         
         logger.info("جاري تسجيل المعالجات...")
-        DISPATCHER.add_handler(CommandHandler("start", start_command))
-        DISPATCHER.add_handler(CommandHandler("help", help_command))
+        dispatcher.add_handler(CommandHandler("start", start_command))
+        dispatcher.add_handler(CommandHandler("help", help_command))
         
-        DISPATCHER.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
-        DISPATCHER.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
-        DISPATCHER.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
-        DISPATCHER.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
-        DISPATCHER.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         
-        DISPATCHER.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
-        DISPATCHER.add_error_handler(error_handler)
+        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+        dispatcher.add_error_handler(error_handler)
         
         logger.info("✅ تم تسجيل جميع المعالجات")
         
@@ -2598,7 +2601,7 @@ def start_bot():
         
         if WEBHOOK_URL:
             # إعداد Webhook
-            UPDATER.start_webhook(
+            updater.start_webhook(
                 listen="0.0.0.0",
                 port=PORT,
                 url_path=BOT_TOKEN,
@@ -2619,21 +2622,24 @@ def start_bot():
 if __name__ == "__main__":
     logger.info("=" * 50)
     logger.info("🚀 بدء سُقيا الكوثر")
-    logger.info("=" * 50)    # إذا كان Webhook مفعلاً، يتم تشغيل Flask أولاً
-    if WEBHOOK_URL:
-        logger.info("🌐 تشغيل Flask (Webhook Mode)...")
-        run_flask() # يتم تشغيلها بواسطة gunicorn في Render
-        start_bot() # يتم تهيئة البوت والـ Webhook
-    else:
-        # إذا لم يكن Webhook مفعلاً، يتم تشغيل البوت في وضع Polling
-        logger.info("🌐 تشغيل البوت (Polling Mode)...")
-        start_bot()
-        UPDATER.start_polling(timeout=10, read_latency=4)
-        UPDATER.idle()
-        
+    logger.info("=" * 50)
+    
+    try:
+        if WEBHOOK_URL:
+            # تشغيل البوت في وضع Webhook
+            logger.info("🌐 تشغيل Flask (Webhook Mode)...")
+            run_flask() # يتم تشغيلها بواسطة gunicorn في Render
+            start_bot() # يتم تهيئة البوت والـ Webhook
+        else:
+            # تشغيل البوت في وضع Polling
+            logger.info("🌐 تشغيل البوت (Polling Mode)...")
+            start_bot()
+            updater.start_polling(timeout=10, read_latency=4)
+            updater.idle()
+            
     except KeyboardInterrupt:
         logger.info("⏹️ إيقاف البوت...")
-        if UPDATER:
-            UPDATER.stop()
+        if updater:
+            updater.stop()
     except Exception as e:
         logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
