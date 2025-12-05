@@ -2243,9 +2243,9 @@ def help_command(update: Update, context: CallbackContext):
         "ابدأ الآن من القائمة الرئيسية 👇",
         reply_markup=user_main_keyboard(user.id),
     )
-if __name__ == "__main__":
+def main():
     if not BOT_TOKEN:
-        raise RuntimeError("❌ BOT_TOKEN غير موجود في المتغيرات البيئية!")
+        raise RuntimeError("❌ BOT_TOKEN غير موجود!")
 
     from telegram.ext import Updater
 
@@ -2254,10 +2254,16 @@ if __name__ == "__main__":
 
     logger.info("🚀 البوت بدأ العمل!")
 
+    # نحذف أي Webhook قديم قبل ما نبدأ polling
     try:
         updater.bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
         logger.error(f"⚠️ خطأ أثناء حذف الويب هوك: {e}")
 
+    # نبدأ استقبال الرسائل
     updater.start_polling()
     updater.idle()
+
+
+if __name__ == "__main__":
+    main()
