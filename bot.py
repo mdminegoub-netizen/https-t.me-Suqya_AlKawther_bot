@@ -42,7 +42,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 1745150161  # المشرفة
+SUPERVISOR_ID = 8395818573  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
