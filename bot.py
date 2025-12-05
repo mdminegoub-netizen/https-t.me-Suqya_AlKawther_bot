@@ -45,6 +45,7 @@ SUPERVISOR_ID = 1745150161
 
 updater = None
 dispatcher = None
+job_queue = None # متغير عام لـ job_queue
 IS_RUNNING = True
 
 logging.basicConfig(
@@ -91,9 +92,7 @@ MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
 
 # ثوابت Webhook (يجب تعيينها في متغيرات البيئة)
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL") # مثال: https://your-app-name.onrender.com/
-if not WEBHOOK_URL:
-    logger.warning("⚠️ WEBHOOK_URL غير معرّف. سيتم استخدام Polling (غير مستحسن لـ Render).")
-    WEBHOOK_URL = "" # سيتم استخدامه لاحقاً لتحديد وضع التشغيل
+# في هذا الإصدار، يجب أن يكون WEBHOOK_URL معرّفاً للتشغيل على Render
 
 # ثوابت النقاط
 POINTS_PER_CUP = 1
@@ -449,13 +448,12 @@ def update_user_record(user_id: int, **kwargs):
     if firestore_available():
         try:
             doc_ref = db.collection(USERS_COLLECTION).document(uid)
-            kwargs["last_active"] = datetime.now(timezone.utc).isoformat()
             doc_ref.update(kwargs)
         except Exception as e:
-            logger.error(f"خطأ في update_user_record من Firestore: {e}")
-    else:
-        # استخدام التخزين المحلي
-        update_user_record_local(user_id, **kwargs)
+            logger.error(f"❌ خطأ في Firestore أثناء تحديث سجل المستخدم {user_id}: {e}", exc_info=True)
+    
+    # تحديث التخزين المحلي
+    update_user_record_local(user_id, **kwargs)
 
 def get_all_user_ids() -> List[int]:
     """الحصول على جميع معرفات المستخدمين"""
@@ -2531,7 +2529,7 @@ def run_flask():
 
 def start_bot():
     """بدء البوت"""
-    global IS_RUNNING
+    global IS_RUNNING, job_queue
     
     if not BOT_TOKEN:
         raise RuntimeError("❌ BOT_TOKEN غير موجود!")
@@ -2545,10 +2543,6 @@ def start_bot():
                 migrate_data_to_firestore()
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في الترحيل: {e}")
-        
-        # يتم تعريف updater و dispatcher في نقطة التشغيل النهائية
-        # job_queue يتم تعريفه في نقطة التشغيل النهائية أيضاً
-        pass
         
         try:
             # حذف الويب هوك القديم لضمان عدم وجود تضارب
@@ -2596,8 +2590,6 @@ def start_bot():
         
         logger.info("✅ تم تشغيل المهام اليومية")
         
-        # تم نقل تهيئة Webhook/Polling إلى if __name__ == "__main__":
-        pass
     except Conflict as e:
         logger.error(f"❌ تضارب في getUpdates: {e}")
         IS_RUNNING = False
@@ -2611,37 +2603,39 @@ if __name__ == "__main__":
     logger.info("🚀 بدء سُقيا الكوثر")
     logger.info("=" * 50)
     
-    # تهيئة Updater و Dispatcher مرة واحدة
+    # تهيئة Firebase/Firestore مرة واحدة
+    initialize_firebase()
+    
+    # تهيئة Updater و Dispatcher و job_queue مرة واحدة
     try:
+        global job_queue
         updater = Updater(BOT_TOKEN, use_context=True)
         dispatcher = updater.dispatcher
+        job_queue = updater.job_queue
     except Exception as e:
         logger.error(f"❌ خطأ في تهيئة Updater: {e}", exc_info=True)
         exit(1)
         
     try:
-        if WEBHOOK_URL:
-            # تشغيل البوت في وضع Webhook
-            logger.info("🌐 تشغيل Flask (Webhook Mode)...")
+        if not WEBHOOK_URL:
+            logger.error("❌ WEBHOOK_URL غير معرّف. لا يمكن تشغيل البوت في وضع Webhook. يرجى تعيين المتغير.")
+            exit(1)
             
-            # إعداد Webhook
-            updater.start_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                url_path=BOT_TOKEN,
-                webhook_url=WEBHOOK_URL + BOT_TOKEN,
-            )
-            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
-            
-            # يجب أن يتم تشغيل Flask أولاً في Webhook Mode
-            run_flask() # يتم تشغيلها بواسطة gunicorn في Render
-            start_bot() # يتم تهيئة الـ handlers والمهام اليومية
-        else:
-            # تشغيل البوت في وضع Polling
-            logger.info("🌐 تشغيل البوت (Polling Mode)...")
-            start_bot()
-            updater.start_polling(timeout=10, read_latency=4)
-            updater.idle()
+        # تشغيل البوت في وضع Webhook فقط
+        logger.info("🌐 تشغيل Flask (Webhook Mode)...")
+        
+        # إعداد Webhook
+        updater.start_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=WEBHOOK_URL + BOT_TOKEN,
+        )
+        logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
+        
+        # يجب أن يتم تشغيل Flask أولاً في Webhook Mode
+        run_flask() # يتم تشغيلها بواسطة gunicorn في Render
+        start_bot() # يتم تهيئة الـ handlers والمهام اليومية
             
     except KeyboardInterrupt:
         logger.info("⏹️ إيقاف البوت...")
