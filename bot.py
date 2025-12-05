@@ -2608,7 +2608,6 @@ if __name__ == "__main__":
     
     # تهيئة Updater و Dispatcher و job_queue مرة واحدة
     try:
-        global job_queue
         updater = Updater(BOT_TOKEN, use_context=True)
         dispatcher = updater.dispatcher
         job_queue = updater.job_queue
