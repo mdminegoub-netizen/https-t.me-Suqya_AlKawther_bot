@@ -2243,7 +2243,19 @@ def help_command(update: Update, context: CallbackContext):
         "ابدأ الآن من القائمة الرئيسية 👇",
         reply_markup=user_main_keyboard(user.id),
     )
+def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("❌ BOT_TOKEN غير موجود!")
 
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+
+    # ... باقي الأكواد
+
+    logger.info("🚀 البوت بدأ العمل!")
+
+    updater.bot.delete_webhook(drop_pending_updates=True)
+    updater.start_polling()
 
 if __name__ == "__main__":
     main()
