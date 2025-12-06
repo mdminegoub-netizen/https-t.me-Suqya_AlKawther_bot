@@ -7063,6 +7063,7 @@ def reset_competition_points():
                 "daily_competition_points": 0,
                 "community_rank": 0,
                 "points": 0,  # تصفير النقاط الإجمالية المستخدمة في التصنيف
+                "total_points": 0, # تصفير النقاط الكلية (إذا كانت تستخدم في التصنيف)
             })
             count += 1
         
@@ -7100,7 +7101,8 @@ def reset_competition_medals():
             # تصفير فقط ميداليات المنافسات والمجتمع
             # الميداليات الأخرى (الإنجازات الدائمة) تبقى كما هي
             doc.reference.update({
-                "community_medals": []
+                "community_medals": [],
+                "medals": [] # تصفير الميداليات الإجمالية المستخدمة في التصنيف
             })
             count += 1
         
