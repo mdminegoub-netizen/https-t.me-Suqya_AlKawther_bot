@@ -1391,9 +1391,9 @@ WAITING_UNBAN_USER = set()
 WAITING_BAN_REASON = set()
 BAN_TARGET_ID = {}  # user_id -> target_user_id
 
-# إدارة المنافسات والمجتمع
-WAITING_DELETE_USER_POINTS = set()
-WAITING_DELETE_USER_MEDALS = set()
+# إدارة المنافسات والمجتمع (متغيرات التأكيد)
+WAITING_CONFIRM_RESET_POINTS = set()
+WAITING_CONFIRM_RESET_MEDALS = set()
 
 # =================== الأزرار ===================
 
@@ -1446,10 +1446,10 @@ BTN_ADMIN_MOTIVATION_DELETE = "حذف رسالة تحفيزية 🗑"
 BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
 # أزرار إدارة المنافسات والمجتمع
 BTN_ADMIN_MANAGE_COMPETITION = "🔹 التحكم في المنافسات والمجتمع"
-BTN_ADMIN_DELETE_USER_POINTS = "حذف نقاط مستخدم 🔴"
-BTN_ADMIN_DELETE_ALL_POINTS = "تصفير كل النقاط ماشا الله 🔴"
-BTN_ADMIN_DELETE_USER_MEDALS = "حذف ميداليات مستخدم 🎆"
-BTN_ADMIN_DELETE_ALL_MEDALS = "تصفير كل الميداليات 🎆"
+BTN_ADMIN_RESET_POINTS = "تصفير نقاط المنافسات والمجتمع 🔴"
+
+BTN_ADMIN_RESET_MEDALS = "تصفير ميداليات المنافسات والمجتمع 🎆"
+
 
 # جرعة تحفيزية للمستخدم
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
@@ -1764,10 +1764,8 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
 
 ADMIN_COMPETITION_KB = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_ADMIN_DELETE_USER_POINTS)],
-        [KeyboardButton(BTN_ADMIN_DELETE_ALL_POINTS)],
-        [KeyboardButton(BTN_ADMIN_DELETE_USER_MEDALS)],
-        [KeyboardButton(BTN_ADMIN_DELETE_ALL_MEDALS)],
+        [KeyboardButton(BTN_ADMIN_RESET_POINTS)],
+        [KeyboardButton(BTN_ADMIN_RESET_MEDALS)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -6986,20 +6984,12 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
-    if text == BTN_ADMIN_DELETE_USER_POINTS:
-        handle_admin_delete_user_points(update, context)
+    if text == BTN_ADMIN_RESET_POINTS:
+        handle_admin_confirm_reset_points(update, context)
         return
 
-    if text == BTN_ADMIN_DELETE_ALL_POINTS:
-        handle_admin_delete_all_points(update, context)
-        return
-
-    if text == BTN_ADMIN_DELETE_USER_MEDALS:
-        handle_admin_delete_user_medals(update, context)
-        return
-
-    if text == BTN_ADMIN_DELETE_ALL_MEDALS:
-        handle_admin_delete_all_medals(update, context)
+    if text == BTN_ADMIN_RESET_MEDALS:
+        handle_admin_confirm_reset_medals(update, context)
         return
 
 
@@ -7017,37 +7007,24 @@ def handle_text(update: Update, context: CallbackContext):
 def delete_user_competition_points(user_id: int):
     """حذف نقاط المنافسة لمستخدم معين"""
     if not firestore_available():
-        logger.warning(f"Firestore غير متوفر لحذف نقاط المستخدم {user_id}")
-        return False
+        return
     
     try:
         user_id_str = str(user_id)
         doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
-        
-        # التحقق من وجود المستخدم أولاً
-        doc = doc_ref.get()
-        if not doc.exists:
-            logger.warning(f"⚠️ المستخدم {user_id} غير موجود في Firestore")
-            return False
-        
-        # حذف جميع حقول النقاط المتعلقة بالمنافسات والمجتمع
         doc_ref.update({
             "daily_competition_points": 0,
-            "community_rank": 0,
-            "points": 0,  # حذف النقاط المستخدمة في الترتيب
-            "community_medals": [],  # حذف الميداليات المجتمع
+            "community_rank": 0
         })
-        logger.info(f"✅ تم حذف نقاط المنافسة والميداليات للمستخدم {user_id}")
-        return True
+        logger.info(f"✅ تم حذف نقاط المنافسة للمستخدم {user_id}")
     except Exception as e:
         logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
-        return False
 
 def delete_all_competition_points():
     """تصفير جميع نقاط المنافسات والمجتمع من جميع المستخدمين"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
-        return False
+        return
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
@@ -7055,51 +7032,38 @@ def delete_all_competition_points():
         
         count = 0
         for doc in docs:
-            # تصفير فقط نقاط المنافسات والمجتمع
+            # تصفير جميع النقاط والترتيب المتعلقة بالمنافسات والمجتمع
             doc.reference.update({
                 "daily_competition_points": 0,
                 "community_rank": 0,
-                "points": 0,  # تصفير نقاط المنافسات
-                "community_medals": [],  # تصفير ميداليات المجتمع
+                "points": 0,  # تصفير النقاط الإجمالية المستخدمة في التصنيف
             })
             count += 1
         
         logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع لـ {count} مستخدم")
-        return True
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير نقاط المنافسات والمجتمع: {e}", exc_info=True)
-        return False
 
 def delete_user_medals(user_id: int):
     """حذف ميداليات مستخدم معين من المجتمع فقط"""
     if not firestore_available():
-        logger.warning(f"Firestore غير متوفر لحذف ميداليات المستخدم {user_id}")
-        return False
+        return
     
     try:
         user_id_str = str(user_id)
         doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
-        
-        # التحقق من وجود المستخدم
-        doc = doc_ref.get()
-        if not doc.exists:
-            logger.warning(f"⚠️ المستخدم {user_id} غير موجود في Firestore")
-            return False
-        
         doc_ref.update({
             "community_medals": []
         })
         logger.info(f"✅ تم حذف ميداليات المجتمع للمستخدم {user_id}")
-        return True
     except Exception as e:
         logger.error(f"❌ خطأ في حذف الميداليات: {e}")
-        return False
 
 def delete_all_medals():
     """تصفير جميع ميداليات المنافسات والمجتمع فقط (الميداليات الأخرى تبقى)"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
-        return False
+        return
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
@@ -7115,143 +7079,102 @@ def delete_all_medals():
             count += 1
         
         logger.info(f"✅ تم تصفير ميداليات المنافسات والمجتمع لـ {count} مستخدم")
-        return True
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير ميداليات المنافسات والمجتمع: {e}", exc_info=True)
-        return False
 
-def handle_admin_delete_user_points(update: Update, context: CallbackContext):
-    """حذف نقاط مستخدم معين"""
+def handle_admin_confirm_reset_points(update: Update, context: CallbackContext):
+    """طلب تأكيد تصفير نقاط المنافسات والمجتمع"""
     user = update.effective_user
     if not is_admin(user.id):
         return
+    
     user_id = user.id
-    WAITING_DELETE_USER_POINTS.add(user_id)
+    WAITING_CONFIRM_RESET_POINTS.add(user_id)
+    
+    # إنشاء لوحة مفاتيح للتأكيد
+    confirm_kb = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("✅ نعم، تصفير الآن"), KeyboardButton("❌ إلغاء")],
+        ],
+        resize_keyboard=True,
+    )
+    
     update.message.reply_text(
-        "🌟 حذف نقاط المنافسة\n\n"
-        "أرسل معرف المستخدم (user_id):\n"
-        "مثال: 123456789\n\n"
-        "أو اضغط إلغاء ❌",
-        reply_markup=CANCEL_KB,
+        "⚠️ تحذير مهم!\n\n"
+        "هل أنت متأكد من تصفير كل نقاط المنافسات والمجتمع لجميع المستخدمين؟\n\n"
+        "هذه العملية لا يمكن التراجع عنها!",
+        reply_markup=confirm_kb,
     )
 
-def handle_delete_user_points_input(update: Update, context: CallbackContext):
-    """معالجة إدخال معرف المستخدم لحذف نقاطه"""
-    user = update.effective_user
-    user_id = user.id
-    if user_id not in WAITING_DELETE_USER_POINTS:
-        return
-    text = (update.message.text or "").strip()
-    if text == BTN_CANCEL:
-        WAITING_DELETE_USER_POINTS.discard(user_id)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
-        return
-    try:
-        target_user_id = int(text)
-    except ValueError:
-        update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
-        return
-    
-    # حذف النقاط والتحقق من النجاح
-    success = delete_user_competition_points(target_user_id)
-    WAITING_DELETE_USER_POINTS.discard(user_id)
-    
-    if success:
-        update.message.reply_text(
-            f"✅ تم حذف نقاط المنافسة والميداليات للمستخدم {target_user_id}",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-    else:
-        update.message.reply_text(
-            f"❌ فشل حذف النقاط. تحقق من أن المستخدم {target_user_id} موجود.",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-
-def handle_admin_delete_all_points(update: Update, context: CallbackContext):
-    """تأكيد حذف جميع نقاط المنافسة"""
+def handle_admin_confirm_reset_medals(update: Update, context: CallbackContext):
+    """طلب تأكيد تصفير ميداليات المنافسات والمجتمع"""
     user = update.effective_user
     if not is_admin(user.id):
         return
     
-    success = delete_all_competition_points()
-    if success:
-        update.message.reply_text(
-            "✅ تم حذف جميع نقاط المنافسة والميداليات",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-    else:
-        update.message.reply_text(
-            "❌ حدث خطأ في حذف النقاط",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-
-def handle_admin_delete_user_medals(update: Update, context: CallbackContext):
-    """حذف ميداليات مستخدم معين"""
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
     user_id = user.id
-    WAITING_DELETE_USER_MEDALS.add(user_id)
+    WAITING_CONFIRM_RESET_MEDALS.add(user_id)
+    
+    # إنشاء لوحة مفاتيح للتأكيد
+    confirm_kb = ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("✅ نعم، تصفير الآن"), KeyboardButton("❌ إلغاء")],
+        ],
+        resize_keyboard=True,
+    )
+    
     update.message.reply_text(
-        "🎆 حذف ميداليات المجتمع\n\n"
-        "أرسل معرف المستخدم (user_id):\n"
-        "مثال: 123456789\n\n"
-        "أو اضغط إلغاء ❌",
-        reply_markup=CANCEL_KB,
+        "⚠️ تحذير مهم!\n\n"
+        "هل أنت متأكد من تصفير كل ميداليات المنافسات والمجتمع لجميع المستخدمين؟\n\n"
+        "هذه العملية لا يمكن التراجع عنها!",
+        reply_markup=confirm_kb,
     )
 
-def handle_delete_user_medals_input(update: Update, context: CallbackContext):
-    """معالجة إدخال معرف المستخدم لحذف ميدالياته"""
+def handle_confirm_reset_points_input(update: Update, context: CallbackContext):
+    """معالجة تأكيد تصفير النقاط"""
     user = update.effective_user
     user_id = user.id
-    if user_id not in WAITING_DELETE_USER_MEDALS:
+    
+    if user_id not in WAITING_CONFIRM_RESET_POINTS:
         return
+    
     text = (update.message.text or "").strip()
-    if text == BTN_CANCEL:
-        WAITING_DELETE_USER_MEDALS.discard(user_id)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
-        return
-    try:
-        target_user_id = int(text)
-    except ValueError:
-        update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
-        return
+    WAITING_CONFIRM_RESET_POINTS.discard(user_id)
     
-    # حذف الميداليات والتحقق من النجاح
-    success = delete_user_medals(target_user_id)
-    WAITING_DELETE_USER_MEDALS.discard(user_id)
-    
-    if success:
+    if text == "✅ نعم، تصفير الآن":
+        delete_all_competition_points()
         update.message.reply_text(
-            f"✅ تم حذف ميداليات المجتمع للمستخدم {target_user_id}",
+            "✅ تم تصفير كل نقاط المنافسات والمجتمع بنجاح.",
             reply_markup=ADMIN_PANEL_KB,
         )
-    else:
+    elif text == "❌ إلغاء":
         update.message.reply_text(
-            f"❌ فشل حذف الميداليات. تحقق من أن المستخدم {target_user_id} موجود.",
+            "تم الإلغاء.",
             reply_markup=ADMIN_PANEL_KB,
         )
 
-def handle_admin_delete_all_medals(update: Update, context: CallbackContext):
-    """تأكيد حذف جميع ميداليات المجتمع"""
+def handle_confirm_reset_medals_input(update: Update, context: CallbackContext):
+    """معالجة تأكيد تصفير الميداليات"""
     user = update.effective_user
-    if not is_admin(user.id):
+    user_id = user.id
+    
+    if user_id not in WAITING_CONFIRM_RESET_MEDALS:
         return
     
-    success = delete_all_medals()
-    if success:
+    text = (update.message.text or "").strip()
+    WAITING_CONFIRM_RESET_MEDALS.discard(user_id)
+    
+    if text == "✅ نعم، تصفير الآن":
+        delete_all_medals()
         update.message.reply_text(
-            "✅ تم حذف جميع ميداليات المجتمع",
+            "✅ تم تصفير كل ميداليات المنافسات والمجتمع بنجاح.",
             reply_markup=ADMIN_PANEL_KB,
         )
-    else:
+    elif text == "❌ إلغاء":
         update.message.reply_text(
-            "❌ حدث خطأ في حذف الميداليات",
+            "تم الإلغاء.",
             reply_markup=ADMIN_PANEL_KB,
         )
-
-# =================== تشغيل البوت ===================
-
 
 def start_bot():
     """بدء البوت"""
