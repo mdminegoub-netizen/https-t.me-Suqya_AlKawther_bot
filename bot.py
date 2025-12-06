@@ -10,6 +10,7 @@ from typing import List, Dict
 
 import pytz
 from flask import Flask, request
+from apscheduler.schedulers.background import BackgroundScheduler
 from telegram import (
     Update,
     User, # تم إضافة User هنا
@@ -1473,9 +1474,10 @@ BTN_WATER_ADD_CUPS = "إضافة عدد أكواب 🧮🥤"
 BTN_WATER_STATUS = "مستواي اليوم 📊"
 BTN_WATER_SETTINGS = "إعدادات الماء ⚙️"
 
-BTN_WATER_NEED = "حساب احتياج الماء 🧮"
+BTN_WATER_NEED = "حساب احتياج الماء 🧘"
 BTN_WATER_REM_ON = "تشغيل التذكير ⏰"
 BTN_WATER_REM_OFF = "إيقاف التذكير 📴"
+BTN_WATER_RESET = "تصفير عداد الماء 🔄"
 
 BTN_WATER_BACK_MENU = "رجوع إلى منبّه الماء ⬅️"
 
@@ -1506,6 +1508,7 @@ WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_WATER_RESET)],
         [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -1516,6 +1519,7 @@ WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
         [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
+        [KeyboardButton(BTN_WATER_RESET)],
         [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -3335,6 +3339,39 @@ def handle_reminders_off(update: Update, context: CallbackContext):
         reply_markup=water_settings_keyboard(user.id),
     )
 
+
+def handle_water_reset(update: Update, context: CallbackContext):
+    """تصفير عداد الماء يدوياً"""
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    
+    # حفظ الاستهلاك اليومي قبل التصفير
+    today_cups = record.get("today_cups", 0)
+    
+    # تصفير العداد
+    record["today_cups"] = 0
+    
+    # حفظ في Firestore
+    update_user_record(user_id, today_cups=0)
+    save_data()
+    
+    logger.info(f"✅ تم تصفير عداد الماء للمستخدم {user_id} (كان: {today_cups} كوب)")
+    
+    update.message.reply_text(
+        f"تم تصفير عداد الماء 🔄\n"
+        f"كان عدد الأكواب: {today_cups} كوب\n"
+        f"الآن: 0 كوب\n\n"
+        "يمكنك البدء من جديد!",
+        reply_markup=water_settings_keyboard(user_id),
+    )
+
+
 # =================== قسم ورد القرآن ===================
 
 
@@ -4924,6 +4961,128 @@ def water_reminder_job(context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending water reminder to {uid}: {e}")
 
+
+# =================== التصفير اليومي ===================
+
+def daily_reset_water():
+    """تصفير عداد الماء يومياً عند منتصف الليل"""
+    logger.info("🔄 بدء تصفير عداد الماء اليومي...")
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر للتصفير اليومي")
+        return
+    
+    try:
+        # قراءة جميع المستخدمين من Firestore
+        users_ref = db.collection(USERS_COLLECTION)
+        docs = users_ref.stream()
+        
+        reset_count = 0
+        for doc in docs:
+            user_data = doc.to_dict()
+            today_cups = user_data.get("today_cups", 0)
+            
+            if today_cups > 0:
+                # تصفير العداد
+                doc.reference.update({"today_cups": 0})
+                
+                # تحديث data المحلي
+                if doc.id in data:
+                    data[doc.id]["today_cups"] = 0
+                
+                reset_count += 1
+        
+        logger.info(f"✅ تم تصفير عداد الماء لـ {reset_count} مستخدم")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في تصفير عداد الماء: {e}", exc_info=True)
+
+
+def daily_reset_quran():
+    """تصفير ورد القرآن يومياً عند منتصف الليل"""
+    logger.info("🔄 بدء تصفير ورد القرآن اليومي...")
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر للتصفير اليومي")
+        return
+    
+    try:
+        # قراءة جميع المستخدمين من Firestore
+        users_ref = db.collection(USERS_COLLECTION)
+        docs = users_ref.stream()
+        
+        reset_count = 0
+        for doc in docs:
+            user_data = doc.to_dict()
+            quran_today = user_data.get("quran_pages_today", 0)
+            
+            if quran_today > 0:
+                # تصفير ورد اليوم
+                doc.reference.update({"quran_pages_today": 0})
+                
+                # تحديث data المحلي
+                if doc.id in data:
+                    data[doc.id]["quran_pages_today"] = 0
+                
+                reset_count += 1
+        
+        logger.info(f"✅ تم تصفير ورد القرآن لـ {reset_count} مستخدم")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في تصفير ورد القرآن: {e}", exc_info=True)
+
+
+def daily_reset_competition():
+    """تصفير نقاط المنافسة اليومية (دون التأثير على النقاط الإجمالية)"""
+    logger.info("🔄 بدء تصفير نقاط المنافسة اليومية...")
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر للتصفير اليومي")
+        return
+    
+    try:
+        # قراءة جميع المستخدمين من Firestore
+        users_ref = db.collection(USERS_COLLECTION)
+        docs = users_ref.stream()
+        
+        reset_count = 0
+        for doc in docs:
+            user_data = doc.to_dict()
+            daily_points = user_data.get("daily_competition_points", 0)
+            
+            if daily_points > 0:
+                # تصفير نقاط المنافسة اليومية فقط
+                doc.reference.update({"daily_competition_points": 0})
+                
+                # تحديث data المحلي
+                if doc.id in data:
+                    data[doc.id]["daily_competition_points"] = 0
+                
+                reset_count += 1
+        
+        logger.info(f"✅ تم تصفير نقاط المنافسة اليومية لـ {reset_count} مستخدم")
+        logger.info("ℹ️ النقاط الإجمالية والميداليات لم تتأثر")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في تصفير نقاط المنافسة: {e}", exc_info=True)
+
+
+def daily_reset_all(context: CallbackContext = None):
+    """تصفير جميع البيانات اليومية عند منتصف الليل"""
+    logger.info("🌙 بدء التصفير اليومي الشامل (00:00 توقيت الجزائر)...")
+    
+    # تصفير عداد الماء
+    daily_reset_water()
+    
+    # تصفير ورد القرآن
+    daily_reset_quran()
+    
+    # تصفير نقاط المنافسة اليومية
+    daily_reset_competition()
+    
+    logger.info("✅ اكتمل التصفير اليومي الشامل")
+
+
 # =================== الجرعة التحفيزية (JobQueue + إدارة) ===================
 
 
@@ -6414,6 +6573,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_reminders_off(update, context)
         return
 
+    if text == BTN_WATER_RESET:
+        handle_water_reset(update, context)
+        return
+
     if text == BTN_WATER_ADD_CUPS:
         handle_add_cups(update, context)
         return
@@ -6664,6 +6827,18 @@ def start_bot():
                 CURRENT_MOTIVATION_JOBS.append(job)
             except Exception as e:
                 logger.error(f"Error scheduling motivation job at hour {h}: {e}")
+        
+        # جدولة التصفير اليومي عند 00:00 بتوقيت الجزائر
+        algeria_tz = pytz.timezone('Africa/Algiers')
+        try:
+            job_queue.run_daily(
+                daily_reset_all,
+                time=time(hour=0, minute=0, tzinfo=algeria_tz),
+                name="daily_reset_all",
+            )
+            logger.info("✅ تم جدولة التصفير اليومي عند 00:00 بتوقيت الجزائر")
+        except Exception as e:
+            logger.warning(f"⚠️ خطأ في جدولة التصفير اليومي: {e}")
         
         logger.info("✅ تم تشغيل المهام اليومية")
         
