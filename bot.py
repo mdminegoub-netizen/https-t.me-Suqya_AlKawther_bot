@@ -7014,21 +7014,48 @@ def handle_text(update: Update, context: CallbackContext):
 
 # =================== دوال إدارة المنافسات والمجتمع ===================
 
-def delete_user_competition_points(user_id: int):
-    """حذف نقاط المنافسة لمستخدم معين"""
+def delete_user_competition_points(user_id: int) -> bool:
+    """تصفير جميع نقاط المنافسات والمجتمع لمستخدم معين مع التحقق من وجوده
+    
+    Args:
+        user_id: معرف المستخدم الرقمي
+    
+    Returns:
+        True إذا نجحت العملية، False إذا لم يوجد المستخدم
+    """
     if not firestore_available():
-        return
+        logger.warning("Firestore غير متوفر")
+        return False
     
     try:
         user_id_str = str(user_id)
         doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        doc = doc_ref.get()
+        
+        # التحقق من وجود المستخدم بتطابق دقيق
+        if not doc.exists:
+            logger.warning(f"⚠️ المستخدم {user_id} غير موجود في Firestore")
+            return False
+        
+        user_data = doc.to_dict()
+        
+        # التحقق من مطابقة user_id بالضبط
+        if user_data.get("user_id") != user_id:
+            logger.warning(f"⚠️ عدم تطابق user_id: المطلوب {user_id} لكن الموجود {user_data.get('user_id')}")
+            return False
+        
+        # تصفير جميع نقاط المنافسات والمجتمع
         doc_ref.update({
             "daily_competition_points": 0,
-            "community_rank": 0
+            "community_rank": 0,
+            "points": 0,  # تصفير النقاط الإجمالية المستخدمة في الترتيب
         })
-        logger.info(f"✅ تم حذف نقاط المنافسة للمستخدم {user_id}")
+        logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع للمستخدم {user_id}")
+        return True
+        
     except Exception as e:
-        logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
+        logger.error(f"❌ خطأ في تصفير نقاط المنافسات: {e}", exc_info=True)
+        return False
 
 def delete_all_competition_points():
     """تصفير جميع نقاط المنافسات والمجتمع من جميع المستخدمين"""
@@ -7124,12 +7151,20 @@ def handle_delete_user_points_input(update: Update, context: CallbackContext):
         update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
         return
     
-    delete_user_competition_points(target_user_id)
+    # محاولة تصفير نقاط المستخدم
+    success = delete_user_competition_points(target_user_id)
     WAITING_DELETE_USER_POINTS.discard(user_id)
-    update.message.reply_text(
-        f"✅ تم حذف نقاط المنافسة للمستخدم {target_user_id}",
-        reply_markup=ADMIN_PANEL_KB,
-    )
+    
+    if success:
+        update.message.reply_text(
+            f"✅ تم تصفير نقاط المنافسات والمجتمع للمستخدم {target_user_id}",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    else:
+        update.message.reply_text(
+            f"❌ فشل التصفير: المستخدم {target_user_id} غير موجود أو حدث خطأ.",
+            reply_markup=ADMIN_PANEL_KB,
+        )
 
 def handle_admin_delete_all_points(update: Update, context: CallbackContext):
     """تأكيد حذف جميع نقاط المنافسة"""
