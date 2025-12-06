@@ -1204,10 +1204,26 @@ def get_benefits():
     return get_benefits_from_firestore()
 
 def save_benefits(benefits_list):
-    """حفظ قائمة الفوائد - الآن يتم الحفظ في Firestore مباشرة"""
-    # لا نحتاج لحفظ في global config بعد الآن
-    # كل فائدة تُحفظ بشكل منفصل في Firestore
-    pass
+    """حفظ قائمة الفوائد - يتم الحفظ في Firestore مباشرة"""
+    if not firestore_available():
+        return
+    
+    try:
+        # حذف جميع الفوائد القديمة
+        docs = db.collection(COMMUNITY_BENEFITS_COLLECTION).stream()
+        for doc in docs:
+            doc.reference.delete()
+            
+        # إضافة الفوائد الجديدة
+        batch = db.batch()
+        for benefit in benefits_list:
+            doc_ref = db.collection(COMMUNITY_BENEFITS_COLLECTION).document(str(benefit["id"]))
+            batch.set(doc_ref, benefit)
+        
+        batch.commit()
+        logger.info(f"✅ تم حفظ {len(benefits_list)} فائدة في Firestore")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفوائد: {e}")
 
 
 def get_user_record(user):
@@ -4059,7 +4075,7 @@ def handle_memo_edit_text_input(update: Update, context: CallbackContext):
         )
         return
 
-    mems[idx] = text
+    memos[idx] = text
     record["heart_memos"] = memos
     
     # حفظ في Firestore
@@ -7055,17 +7071,20 @@ def reset_competition_points():
     try:
         users_ref = db.collection(USERS_COLLECTION)
         docs = users_ref.stream()
+        batch = db.batch()
         
         count = 0
         for doc in docs:
             # تصفير جميع النقاط والترتيب المتعلقة بالمنافسات والمجتمع
-            doc.reference.update({
+            batch.update(doc.reference, {
                 "daily_competition_points": 0,
                 "community_rank": 0,
                 "points": 0,  # تصفير النقاط الإجمالية المستخدمة في التصنيف
                 "total_points": 0, # تصفير النقاط الكلية (إذا كانت تستخدم في التصنيف)
             })
             count += 1
+        
+        batch.commit()
         
         logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع لـ {count} مستخدم")
     except Exception as e:
@@ -7095,16 +7114,19 @@ def reset_competition_medals():
     try:
         users_ref = db.collection(USERS_COLLECTION)
         docs = users_ref.stream()
+        batch = db.batch()
         
         count = 0
         for doc in docs:
             # تصفير فقط ميداليات المنافسات والمجتمع
             # الميداليات الأخرى (الإنجازات الدائمة) تبقى كما هي
-            doc.reference.update({
+            batch.update(doc.reference, {
                 "community_medals": [],
                 "medals": [] # تصفير الميداليات الإجمالية المستخدمة في التصنيف
             })
             count += 1
+            
+        batch.commit()
         
         logger.info(f"✅ تم تصفير ميداليات المنافسات والمجتمع لـ {count} مستخدم")
     except Exception as e:
