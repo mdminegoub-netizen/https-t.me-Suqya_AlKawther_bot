@@ -1392,7 +1392,6 @@ BTN_ADMIN_MOTIVATION_ADD = "إضافة رسالة تحفيزية ➕"
 BTN_ADMIN_MOTIVATION_DELETE = "حذف رسالة تحفيزية 🗑"
 BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
 BTN_ADMIN_MANAGE_POINTS = "إدارة نقاط المنافسة 🌟"
-BTN_SUPERVISOR_NEW_USERS = "متابعة الحسابات الجديدة 🂎"
 
 # جرعة تحفيزية للمستخدم
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
@@ -1696,7 +1695,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
 SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT)],
-        [KeyboardButton(BTN_SUPERVISOR_NEW_USERS)],
         [KeyboardButton(BTN_ADMIN_BROADCAST)],
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
@@ -6923,9 +6921,6 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_manage_points_start(update, context)
         return
 
-    if text == BTN_SUPERVISOR_NEW_USERS:
-        handle_supervisor_new_users(update, context)
-        return
 
     # أي نص آخر
     msg.reply_text(
