@@ -94,6 +94,31 @@ def run_flask():
 data = {}
 
 def load_data():
+    """
+    تحميل جميع المستخدمين من Firestore عند بدء البوت
+    """
+    loaded_data = {}
+    
+    # محاولة التحميل من Firestore أولاً
+    if firestore_available():
+        try:
+            logger.info("🔄 جاري تحميل جميع المستخدمين من Firestore...")
+            users_ref = db.collection(USERS_COLLECTION)
+            docs = users_ref.stream()
+            
+            count = 0
+            for doc in docs:
+                user_data = doc.to_dict()
+                loaded_data[doc.id] = user_data
+                count += 1
+            
+            logger.info(f"✅ تم تحميل {count} مستخدم من Firestore")
+            return loaded_data
+            
+        except Exception as e:
+            logger.error(f"❌ خطأ في تحميل المستخدمين من Firestore: {e}")
+    
+    # Fallback: التحميل من الملف المحلي
     if not os.path.exists(DATA_FILE):
         return {}
     try:
@@ -2058,6 +2083,13 @@ def add_points(user_id: int, amount: int, context: CallbackContext = None, reaso
                 "points": new_points,
                 "last_active": datetime.now(timezone.utc).isoformat()
             })
+            
+            # تحديث record للمستوى والميداليات
+            record["points"] = new_points
+            data[user_id_str] = record
+            
+            # فحص المستوى ومنح الميداليات
+            update_level_and_medals(user_id, record, context)
             
             logger.info(f"✅ تم إضافة {amount} نقطة للمستخدم {user_id} (السبب: {reason}). المجموع: {new_points}")
             
