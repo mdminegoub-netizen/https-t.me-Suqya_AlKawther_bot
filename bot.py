@@ -42,7 +42,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -1055,117 +1055,93 @@ def save_benefits(benefits_list):
 
 def get_user_record(user):
     """
-    ينشئ أو يرجع سجل المستخدم، ويحدّث آخر نشاط،
-    ويضمن وجود الحقول الجديدة في السجلات القديمة.
+    ينشئ أو يرجع سجل المستخدم من Firestore
     """
     user_id = str(user.id)
     now_iso = datetime.now(timezone.utc).isoformat()
-
-    if user_id not in data:
-        data[user_id] = {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "username": user.username,
-            "created_at": now_iso,
-            "last_active": now_iso,
-            # إشعار المستخدم الجديد
-            "is_new_user": True, # علامة مؤقتة للإشعار
-
-            # حالة الحظر
-            "is_banned": False,
-            "banned_by": None,
-            "banned_at": None,
-            "ban_reason": None,
-            # إعدادات الماء
-            "gender": None,  # نستخدمها أيضًا في الدعم
-            "age": None,
-            "weight": None,
-            "water_liters": None,
-            "cups_goal": None,
-            "reminders_on": False,
-            # تقدم الماء اليومي
-            "today_date": None,
-            "today_cups": 0,
-            # ورد القرآن
-            "quran_pages_goal": None,
-            "quran_pages_today": 0,
-            "quran_today_date": None,
-            # أرقام إحصائية
-            "tasbih_total": 0,
-            "adhkar_count": 0,
-            # مذكّرات قلبي
-            "heart_memos": [],
-            # رسائل إلى نفسي
-            "letters_to_self": [],
-            # نظام النقاط والمستويات والميداليات
-            "points": 0,
-            "level": 0,
-            "medals": [],
-            "best_rank": None,
-            # الاستمرارية اليومية (ماء + قرآن)
-            "daily_full_streak": 0,
-            "last_full_day": None,
-            # الجرعة التحفيزية (الإشعارات)
-            "motivation_on": True,
-        }
-    else:
-        record = data[user_id]
-        record["first_name"] = user.first_name
-        record["username"] = user.username
-        record["last_active"] = now_iso
-
-        # ضمان الحقول
-        record.setdefault("is_banned", False)
-        record.setdefault("banned_by", None)
-        record.setdefault("banned_at", None)
-        record.setdefault("ban_reason", None)
-        record.setdefault("gender", None)
-        record.setdefault("age", None)
-        record.setdefault("weight", None)
-        record.setdefault("water_liters", None)
-        record.setdefault("cups_goal", None)
-        record.setdefault("reminders_on", False)
-        record.setdefault("today_date", None)
-        record.setdefault("today_cups", 0)
-        record.setdefault("quran_pages_goal", None)
-        record.setdefault("quran_pages_today", 0)
-        record.setdefault("quran_today_date", None)
-        record.setdefault("tasbih_total", 0)
-        record.setdefault("adhkar_count", 0)
-        record.setdefault("heart_memos", [])
-        record.setdefault("letters_to_self", [])
-        record.setdefault("points", 0)
-        record.setdefault("level", 0)
-        record.setdefault("medals", [])
-        record.setdefault("best_rank", None)
-        record.setdefault("daily_full_streak", 0)
-        record.setdefault("last_full_day", None)
-        record.setdefault("motivation_on", True)
-        record.setdefault("is_new_user", False) # ضمان وجود الحقل للمستخدمين القدماء
-
-        medals = record.get("medals", [])
-        if medals:
-            new_medals = []
-            for m in medals:
-                if m == "ميدالية الاستمرار 💫":
-                    new_medals.append("ميدالية الاستمرار 🎓")
-                elif m == "ميدالية بطل سُقيا الكوثر 👑":
-                    new_medals.append("ميدالية بطل سُقيا الكوثر 🏆")
-                else:
-                    new_medals.append(m)
-            record["medals"] = new_medals
-
-    save_data()
-    return data[user_id]
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر، استخدام التخزين المحلي")
+        return get_user_record_local(user)
+    
+    try:
+        # قراءة من Firestore
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            record = doc.to_dict()
+            # تحديث آخر نشاط
+            doc_ref.update({"last_active": now_iso})
+            logger.info(f"✅ تم قراءة بيانات المستخدم {user_id} من Firestore")
+            return record
+        else:
+            # إنشاء سجل جديد
+            new_record = {
+                "user_id": user.id,
+                "first_name": user.first_name,
+                "username": user.username,
+                "created_at": now_iso,
+                "last_active": now_iso,
+                "is_new_user": True,
+                "is_banned": False,
+                "banned_by": None,
+                "banned_at": None,
+                "ban_reason": None,
+                "gender": None,
+                "age": None,
+                "weight": None,
+                "water_liters": None,
+                "cups_goal": None,
+                "reminders_on": False,
+                "today_date": None,
+                "today_cups": 0,
+                "quran_pages_goal": None,
+                "quran_pages_today": 0,
+                "quran_today_date": None,
+                "tasbih_total": 0,
+                "adhkar_count": 0,
+                "heart_memos": [],
+                "letters_to_self": [],
+                "points": 0,
+                "level": 1,
+                "streak_days": 0,
+                "last_streak_date": None,
+                "medals": [],
+                "saved_benefits": [],
+                "motivation_on": True,
+                "motivation_hours": [6, 9, 12, 15, 18, 21],
+            }
+            doc_ref.set(new_record)
+            logger.info(f"✅ تم إنشاء مستخدم جديد {user_id} في Firestore")
+            return new_record
+            
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة/إنشاء المستخدم {user_id} من Firestore: {e}")
+        return get_user_record_local(user)
 
 
 def update_user_record(user_id: int, **kwargs):
-    uid = str(user_id)
-    if uid not in data:
-        return
-    data[uid].update(kwargs)
-    data[uid]["last_active"] = datetime.now(timezone.utc).isoformat()
-    save_data()
+    """تحديث سجل المستخدم في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر، استخدام التخزين المحلي")
+        return update_user_record_local(user_id, **kwargs)
+    
+    try:
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        
+        # إضافة last_active تلقائياً
+        kwargs["last_active"] = datetime.now(timezone.utc).isoformat()
+        
+        # تحديث في Firestore
+        doc_ref.update(kwargs)
+        logger.info(f"✅ تم تحديث بيانات المستخدم {user_id} في Firestore: {list(kwargs.keys())}")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في تحديث المستخدم {user_id} في Firestore: {e}")
+        update_user_record_local(user_id, **kwargs)
 
 
 def get_all_user_ids():
@@ -1968,58 +1944,255 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
 
 
 def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
-    if amount <= 0:
+    """إضافة نقاط للمستخدم في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
         return
+    
+    try:
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            record = doc.to_dict()
+            current_points = record.get("points", 0)
+            new_points = current_points + amount
+            
+            # تحديث النقاط
+            doc_ref.update({
+                "points": new_points,
+                "last_active": datetime.now(timezone.utc).isoformat()
+            })
+            
+            logger.info(f"✅ تم إضافة {amount} نقطة للمستخدم {user_id} (السبب: {reason}). المجموع: {new_points}")
+            
+            # إرسال إشعار للمستخدم
+            if context and amount > 0:
+                try:
+                    context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"🎉 رائع! حصلت على {amount} نقطة\n{reason}\n\nمجموع نقاطك الآن: {new_points} 🌟"
+                    )
+                except Exception as e:
+                    logger.error(f"خطأ في إرسال إشعار النقاط: {e}")
+                    
+    except Exception as e:
+        logger.error(f"❌ خطأ في إضافة نقاط للمستخدم {user_id}: {e}")
 
-    uid = str(user_id)
-    if uid not in data:
+
+
+
+
+def save_note(user_id: int, note_text: str):
+    """حفظ مذكرة قلبي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
         return
+    
+    try:
+        # حفظ المذكرة في subcollection
+        note_data = {
+            "user_id": user_id,
+            "note": note_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("heart_memos").add(note_data)
+        logger.info(f"✅ تم حفظ مذكرة قلبي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
 
-    record = data[uid]
-    record["points"] = record.get("points", 0) + amount
-    update_level_and_medals(user_id, record, context)
 
-# =================== أذكار ثابتة ===================
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
 
-ADHKAR_MORNING_TEXT = (
-    "أذكار الصباح (من بعد الفجر حتى ارتفاع الشمس) 🌅:\n\n"
-    "1⃣ آية الكرسي: «اللّه لا إله إلا هو الحيّ القيّوم...» مرة واحدة.\n"
-    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أصبحت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم» سبع مرات.\n"
-    "7⃣ «اللهم صل وسلم على سيدنا محمد» عددًا كثيرًا.\n\n"
-    "للتسبيح بعدد معيّن (مثل 33 أو 100) يمكنك استخدام زر «السبحة 📿»."
-)
 
-ADHKAR_EVENING_TEXT = (
-    "أذكار المساء (من بعد العصر حتى الليل) 🌙:\n\n"
-    "1⃣ آية الكرسي مرة واحدة.\n"
-    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
-    "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
-)
+def save_benefit(benefit_data: Dict):
+    """حفظ فائدة/نصيحة في Firestore"""
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return None
+    
+    try:
+        # إضافة معلومات إضافية
+        if "created_at" not in benefit_data:
+            benefit_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        if "likes" not in benefit_data:
+            benefit_data["likes"] = 0
+        
+        # حفظ الفائدة
+        doc_ref = db.collection(BENEFITS_COLLECTION).add(benefit_data)
+        benefit_id = doc_ref[1].id
+        logger.info(f"✅ تم حفظ فائدة جديدة في Firestore (ID: {benefit_id})")
+        return benefit_id
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة: {e}")
+        return None
 
-ADHKAR_GENERAL_TEXT = (
-    "أذكار عامة تثبّت القلب وتريح الصدر 💚:\n\n"
-    "• «أستغفر الله العظيم وأتوب إليه».\n"
-    "• «لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "• «سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر».\n"
-    "• «لا حول ولا قوة إلا بالله».\n"
-    "• «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
-)
 
-# =================== أوامر البوت ===================
+def save_note(user_id: int, note_text: str):
+    """حفظ مذكرة قلبي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # حفظ المذكرة في subcollection
+        note_data = {
+            "user_id": user_id,
+            "note": note_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("heart_memos").add(note_data)
+        logger.info(f"✅ تم حفظ مذكرة قلبي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
+
+
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
+
+
+def save_benefit(benefit_data: Dict):
+    """حفظ فائدة/نصيحة في Firestore"""
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return None
+    
+    try:
+        # إضافة معلومات إضافية
+        if "created_at" not in benefit_data:
+            benefit_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        if "likes" not in benefit_data:
+            benefit_data["likes"] = 0
+        
+        # حفظ الفائدة
+        doc_ref = db.collection(BENEFITS_COLLECTION).add(benefit_data)
+        benefit_id = doc_ref[1].id
+        logger.info(f"✅ تم حفظ فائدة جديدة في Firestore (ID: {benefit_id})")
+        return benefit_id
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة: {e}")
+        return None
+
+
+def save_note(user_id: int, note_text: str):
+    """حفظ مذكرة قلبي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # حفظ المذكرة في subcollection
+        note_data = {
+            "user_id": user_id,
+            "note": note_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("heart_memos").add(note_data)
+        logger.info(f"✅ تم حفظ مذكرة قلبي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
+
+
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
+
+
+def save_benefit(benefit_data: Dict):
+    """حفظ فائدة/نصيحة في Firestore"""
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return None
+    
+    try:
+        # إضافة معلومات إضافية
+        if "created_at" not in benefit_data:
+            benefit_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        if "likes" not in benefit_data:
+            benefit_data["likes"] = 0
+        
+        # حفظ الفائدة
+        doc_ref = db.collection(BENEFITS_COLLECTION).add(benefit_data)
+        benefit_id = doc_ref[1].id
+        logger.info(f"✅ تم حفظ فائدة جديدة في Firestore (ID: {benefit_id})")
+        return benefit_id
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة: {e}")
+        return None
 
 
 def start_command(update: Update, context: CallbackContext):
