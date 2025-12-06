@@ -119,6 +119,7 @@ def save_data():
     
     try:
         # حفظ جميع المستخدمين في Firestore
+        saved_count = 0
         for user_id_str, user_data in data.items():
             # تجاهل المفاتيح غير الرقمية
             if user_id_str.startswith("_") or user_id_str == "GLOBAL_KEY":
@@ -128,14 +129,18 @@ def save_data():
                 user_id = int(user_id_str)
                 doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
                 doc_ref.set(user_data, merge=True)
-                logger.debug(f"✅ تم حفظ بيانات المستخدم {user_id} في Firestore")
+                saved_count += 1
+                logger.info(f"✅ تم حفظ بيانات المستخدم {user_id} في Firestore (عدد الحقول: {len(user_data)})")
             except ValueError:
                 continue
             except Exception as e:
                 logger.error(f"❌ خطأ في حفظ المستخدم {user_id_str}: {e}")
+        
+        if saved_count > 0:
+            logger.info(f"✅ تم حفظ {saved_count} مستخدم في Firestore")
                 
     except Exception as e:
-        logger.error(f"❌ خطأ في save_data: {e}")
+        logger.error(f"❌ خطأ في save_data: {e}", exc_info=True)
 
 
 def initialize_firebase():
@@ -1097,6 +1102,8 @@ def get_user_record(user):
             record = doc.to_dict()
             # تحديث آخر نشاط
             doc_ref.update({"last_active": now_iso})
+            # إضافة المستخدم إلى data المحلي
+            data[user_id] = record
             logger.info(f"✅ تم قراءة بيانات المستخدم {user_id} من Firestore")
             return record
         else:
@@ -1137,6 +1144,8 @@ def get_user_record(user):
                 "motivation_hours": [6, 9, 12, 15, 18, 21],
             }
             doc_ref.set(new_record)
+            # إضافة المستخدم إلى data المحلي
+            data[user_id] = new_record
             logger.info(f"✅ تم إنشاء مستخدم جديد {user_id} في Firestore")
             return new_record
             
@@ -1161,11 +1170,23 @@ def update_user_record(user_id: int, **kwargs):
         
         # تحديث في Firestore
         doc_ref.update(kwargs)
+        
+        # تحديث data المحلي أيضاً
+        if user_id_str in data:
+            data[user_id_str].update(kwargs)
+        else:
+            # إذا لم يكن في data، قراءته من Firestore
+            doc = doc_ref.get()
+            if doc.exists:
+                data[user_id_str] = doc.to_dict()
+        
         logger.info(f"✅ تم تحديث بيانات المستخدم {user_id} في Firestore: {list(kwargs.keys())}")
         
     except Exception as e:
-        logger.error(f"❌ خطأ في تحديث المستخدم {user_id} في Firestore: {e}")
-        update_user_record_local(user_id, **kwargs)
+        logger.error(f"❌ خطأ في تحديث المستخدم {user_id} في Firestore: {e}", exc_info=True)
+        # Fallback للتخزين المحلي
+        if user_id_str in data:
+            data[user_id_str].update(kwargs)
 
 
 def get_all_user_ids():
