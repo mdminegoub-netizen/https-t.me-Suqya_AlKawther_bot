@@ -43,7 +43,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -6191,6 +6191,15 @@ def get_user_record_by_id(user_id: int) -> Dict:
         logger.error(f"خطأ في الحصول على سجل المستخدم {user_id}: {e}")
         return data.get(user_id_str)
 
+
+def cleanup_manage_points_state(user_id: int):
+    """تنظيف جميع حالات إدارة النقاط المعلقة"""
+    WAITING_MANAGE_POINTS_ACTION_TYPE.discard(user_id)
+    WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
+    WAITING_MANAGE_POINTS_VALUE.discard(user_id)
+    WAITING_DELETE_MEDALS_USER_ID.discard(user_id)
+    WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
+
 def handle_admin_manage_points_start(update: Update, context: CallbackContext):
     """بدء عملية إدارة نقاط المنافسة"""
     user = update.effective_user
@@ -6215,7 +6224,7 @@ def handle_manage_points_action_type(update: Update, context: CallbackContext):
         return
     text = (update.message.text or "").strip()
     if text == BTN_CANCEL:
-        WAITING_MANAGE_POINTS_ACTION_TYPE.discard(user_id)
+        cleanup_manage_points_state(user_id)
         update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     if text.lower() == "تعديل":
@@ -6251,7 +6260,7 @@ def handle_manage_points_user_input(update: Update, context: CallbackContext):
         return
     text = (update.message.text or "").strip()
     if text == BTN_CANCEL:
-        WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
+        cleanup_manage_points_state(user_id)
         update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     try:
@@ -6280,7 +6289,7 @@ def handle_delete_medals_user_input(update: Update, context: CallbackContext):
         return
     text = (update.message.text or "").strip()
     if text == BTN_CANCEL:
-        WAITING_DELETE_MEDALS_USER_ID.discard(user_id)
+        cleanup_manage_points_state(user_id)
         update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     try:
@@ -6326,8 +6335,7 @@ def handle_manage_points_value_input(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
     target_user_id = WAITING_MANAGE_POINTS_ACTION[user_id]
     if text == BTN_CANCEL:
-        WAITING_MANAGE_POINTS_VALUE.discard(user_id)
-        WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
+        cleanup_manage_points_state(user_id)
         update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     if text.lower() == "تصفير":
