@@ -1443,8 +1443,6 @@ BTN_ADMIN_MOTIVATION_LIST = "عرض رسائل الجرعة 📜"
 BTN_ADMIN_MOTIVATION_ADD = "إضافة رسالة تحفيزية ➕"
 BTN_ADMIN_MOTIVATION_DELETE = "حذف رسالة تحفيزية 🗑"
 BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
-BTN_ADMIN_MANAGE_POINTS = "إدارة نقاط المنافسة 🌟"
-
 # أزرار إدارة المنافسات والمجتمع
 BTN_ADMIN_MANAGE_COMPETITION = "🔹 التحكم في المنافسات والمجتمع"
 BTN_ADMIN_DELETE_USER_POINTS = "حذف نقاط مستخدم 🔴"
@@ -1745,7 +1743,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
-        [KeyboardButton(BTN_ADMIN_MANAGE_POINTS)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -2483,40 +2480,55 @@ def start_command(update: Update, context: CallbackContext):
     except Exception as e:
         logger.error(f"Error sending welcome message to user {user_id}: {e}")
     
-    # الخطوة 5: إذا كان مستخدم جديد، إرسال إشعار للأدمن وتحديث العلامة
-    if record.get("is_new_user", False):
-        # إرسال إشعار للأدمن
+    # الخطوة 5: إرسال إشعار دخول للأدمن والمشرفة عند كل /start
+    if ADMIN_ID is not None or SUPERVISOR_ID is not None:
+        username_text = f"@{user.username}" if user.username else "غير متوفر"
+        
+        # تنسيق وقت الدخول بتوقيت الجزائر
+        now_utc = datetime.now(timezone.utc)
+        try:
+            local_tz = pytz.timezone("Africa/Algiers")
+        except:
+            local_tz = timezone.utc
+        
+        now_local = now_utc.astimezone(local_tz)
+        login_time_str = now_local.strftime("%d-%m-%Y | %H:%M:%S")
+        
+        # التحقق من كون المستخدم جديداً أم قديماً
+        is_new = record.get("is_new_user", False)
+        user_status = "🆕 مستخدم جديد" if is_new else "👤 مستخدم قديم"
+        
+        notification_message = (
+            f"🔔 {user_status} دخل البوت\n\n"
+            f"👤 الاسم: {user.first_name}\n"
+            f"🆔 User ID: {user.id}\n"
+            f"🧑‍💻 Username: {username_text}\n"
+            f"🕒 وقت الدخول: {login_time_str} (توقيت الجزائر)\n\n"
+            "📝 ملاحظة: معلومات الجهاز والموقع الجغرافي غير متوفرة من Telegram API"
+        )
+        
+        # إرسال الإشعار للأدمن
         if ADMIN_ID is not None:
-            username_text = f"@{user.username}" if user.username else "غير متوفر"
-            
-            # تنسيق وقت الانضمام بالتوقيت المحلي
-            now_utc = datetime.now(timezone.utc)
-            try:
-                local_tz = pytz.timezone("Africa/Cairo")
-            except:
-                local_tz = timezone.utc
-            
-            now_local = now_utc.astimezone(local_tz)
-            join_time_str = now_local.strftime("%d-%m-%Y | %I:%M %p")
-            
-            notification_message = (
-                "🔔 مستخدم جديد دخل البوت 🎉\n\n"
-                f"👤 الاسم: {user.first_name}\n"
-                f"🆔 User ID: {user.id}\n"
-                f"🧑‍💻 Username: {username_text}\n"
-                f"🕒 الانضمام: {join_time_str} (توقيت محلي)\n\n"
-                "📝 ملاحظة: معلومات الجهاز والموقع الجغرافي غير متوفرة من Telegram API"
-            )
-            
             try:
                 context.bot.send_message(
                     chat_id=ADMIN_ID,
                     text=notification_message,
                 )
             except Exception as e:
-                logger.error(f"Error sending new user notification to admin {ADMIN_ID}: {e}")
+                logger.error(f"Error sending login notification to admin {ADMIN_ID}: {e}")
         
-        # تعديل سجل المستخدم لجعل is_new_user = False
+        # إرسال الإشعار للمشرفة
+        if SUPERVISOR_ID is not None:
+            try:
+                context.bot.send_message(
+                    chat_id=SUPERVISOR_ID,
+                    text=notification_message,
+                )
+            except Exception as e:
+                logger.error(f"Error sending login notification to supervisor {SUPERVISOR_ID}: {e}")
+    
+    # الخطوة 6: إذا كان مستخدم جديد، تحديث العلامة
+    if record.get("is_new_user", False):
         update_user_record(user_id, is_new_user=False)
 
 
@@ -6263,93 +6275,6 @@ def get_user_record_by_id(user_id: int) -> Dict:
         logger.error(f"خطأ في الحصول على سجل المستخدم {user_id}: {e}")
         return data.get(user_id_str)
 
-def handle_admin_manage_points_start(update: Update, context: CallbackContext):
-    """بدء عملية إدارة نقاط المنافسة"""
-    user = update.effective_user
-    if not is_admin(user.id):
-        return
-    user_id = user.id
-    WAITING_MANAGE_POINTS_USER_ID.add(user_id)
-    update.message.reply_text(
-        "🌟 إدارة نقاط المنافسة\n\n"
-        "أرسل معرف المستخدم (user_id) الذي تريد تعديل نقاطه:\n"
-        "مثال: 123456789\n\n"
-        "أو اضغط «إلغاء ❌»",
-        reply_markup=CANCEL_KB,
-    )
-
-def handle_manage_points_user_input(update: Update, context: CallbackContext):
-    """معالجة إدخال معرف المستخدم"""
-    user = update.effective_user
-    user_id = user.id
-    if user_id not in WAITING_MANAGE_POINTS_USER_ID:
-        return
-    text = (update.message.text or "").strip()
-    if text == BTN_CANCEL:
-        WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
-        WAITING_MANAGE_POINTS_VALUE.discard(user_id)
-        WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
-        return
-    try:
-        target_user_id = int(text)
-    except ValueError:
-        update.message.reply_text("رجاءً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
-        return
-    target_record = get_user_record_by_id(target_user_id)
-    if not target_record:
-        update.message.reply_text(f"المستخدم {target_user_id} غير موجود.", reply_markup=CANCEL_KB)
-        return
-    WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
-    WAITING_MANAGE_POINTS_ACTION[user_id] = target_user_id
-    current_points = target_record.get("points", 0)
-    update.message.reply_text(
-        f"المستخدم: {target_user_id}\nالنقاط الحالية: {current_points}\n\nاختر الإجراء:\n1⃣ اكتب «تصفير» \n2⃣ اكتب الرقم الجديد\n\nأو اضغط «إلغاء ❌»",
-        reply_markup=CANCEL_KB,
-    )
-    WAITING_MANAGE_POINTS_VALUE.add(user_id)
-
-def handle_manage_points_value_input(update: Update, context: CallbackContext):
-    """معالجة إدخال القيمة الجديدة للنقاط"""
-    user = update.effective_user
-    user_id = user.id
-    if user_id not in WAITING_MANAGE_POINTS_VALUE:
-        return
-    if user_id not in WAITING_MANAGE_POINTS_ACTION:
-        WAITING_MANAGE_POINTS_VALUE.discard(user_id)
-        return
-    text = (update.message.text or "").strip()
-    target_user_id = WAITING_MANAGE_POINTS_ACTION[user_id]
-    if text == BTN_CANCEL:
-        WAITING_MANAGE_POINTS_VALUE.discard(user_id)
-        WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
-        return
-    if text.lower() == "تصفير":
-        new_points = 0
-    else:
-        try:
-            new_points = int(text)
-            if new_points < 0:
-                raise ValueError()
-        except ValueError:
-            update.message.reply_text("رجاءً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
-            return
-    target_record = get_user_record_by_id(target_user_id)
-    if target_record:
-        old_points = target_record.get("points", 0)
-        update_user_record(target_user_id, points=new_points)
-        logger.info(f"✅ تم تعديل نقاط {target_user_id} من {old_points} إلى {new_points}")
-        update.message.reply_text(
-            f"✅ تم تحديث النقاط!\nالمستخدم: {target_user_id}\nالسابقة: {old_points}\nالجديدة: {new_points}",
-            reply_markup=ADMIN_PANEL_KB,
-        )
-        try:
-            context.bot.send_message(chat_id=target_user_id, text=f"⚠️ تم تعديل نقاطك\nالسابقة: {old_points}\nالجديدة: {new_points}")
-        except Exception as e:
-            logger.error(f"خطأ في إرسال إشعار: {e}")
-    WAITING_MANAGE_POINTS_VALUE.discard(user_id)
-    WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
 
 def handle_supervisor_new_users(update: Update, context: CallbackContext):
     """عرض الحسابات الجديدة للمشرفة"""
@@ -6666,15 +6591,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if user_id in WAITING_MOTIVATION_TIMES:
         handle_admin_motivation_times_input(update, context)
-        return
-
-    # إدارة نقاط المنافسة
-    if user_id in WAITING_MANAGE_POINTS_USER_ID:
-        handle_manage_points_user_input(update, context)
-        return
-
-    if user_id in WAITING_MANAGE_POINTS_VALUE:
-        handle_manage_points_value_input(update, context)
         return
 
     # حذف نقاط وميداليات
@@ -7001,10 +6917,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MOTIVATION_TIMES:
         handle_admin_motivation_times_start(update, context)
-        return
-
-    if text == BTN_ADMIN_MANAGE_POINTS:
-        handle_admin_manage_points_start(update, context)
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
