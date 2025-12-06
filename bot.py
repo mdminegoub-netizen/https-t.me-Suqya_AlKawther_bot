@@ -1422,7 +1422,8 @@ BTN_TOP100 = "أفضل 100 🏆"
 BTN_BENEFITS_MAIN = "مجتمع الفوائد و النصائح 💡"
 BTN_BENEFIT_ADD = "✍️ أضف فائدة / نصيحة"
 BTN_BENEFIT_VIEW = "📖 استعراض الفوائد"
-BTN_BENEFIT_TOP10 = "🏆 أفضل 10 فوائد"
+BTN_BENEFIT_TOP10 = "🎆 أفضل 10 فوائد"
+BTN_BENEFIT_TOP100 = "🏆 أفضل 100 فائدة"
 BTN_MY_BENEFITS = "فوائدي (تعديل/حذف) 📝"
 BTN_BENEFIT_EDIT = "تعديل الفائدة ✏️"
 BTN_BENEFIT_DELETE = "حذف الفائدة 🗑️"
@@ -1616,7 +1617,7 @@ BENEFITS_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_BENEFIT_ADD)],
         [KeyboardButton(BTN_BENEFIT_VIEW)],
-        [KeyboardButton(BTN_BENEFIT_TOP10)],
+        [KeyboardButton(BTN_BENEFIT_TOP10), KeyboardButton(BTN_BENEFIT_TOP100)],
         [KeyboardButton(BTN_MY_BENEFITS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -4300,6 +4301,7 @@ def handle_add_benefit_text(update: Update, context: CallbackContext):
 
 
 def handle_view_benefits(update: Update, context: CallbackContext):
+    """عرض آخر الفوائد مع عرض الإعجابات بشكل صحيح"""
     user = update.effective_user
     record = get_user_record(user)
     
@@ -4315,11 +4317,12 @@ def handle_view_benefits(update: Update, context: CallbackContext):
         )
         return
 
-    # عرض آخر 5 فوائد
+    # عرض آخر 5 فوائد مرتبة حسب التاريخ
     latest_benefits = sorted(benefits, key=lambda b: b.get("date", ""), reverse=True)[:5]
     
     # التحقق من صلاحيات المدير/المشرف
     is_privileged = is_admin(user.id) or is_supervisor(user.id)
+    user_id = user.id
     
     update.message.reply_text(
         "📖 آخر 5 فوائد ونصائح مضافة:",
@@ -4334,20 +4337,25 @@ def handle_view_benefits(update: Update, context: CallbackContext):
         except:
             date_str = "تاريخ غير معروف"
             
+        # التأكد من وجود حقل likes_count
+        likes_count = benefit.get("likes_count", 0)
+        
         text_benefit = (
             f"• *{benefit['text']}*\n"
-            f"  - من: {benefit['first_name']} | الإعجابات: {benefit['likes_count']} 👍\n"
+            f"  - من: {benefit['first_name']} | الإعجابات: {likes_count} 👍\n"
             f"  - تاريخ الإضافة: {date_str}\n"
         )
         
-        # إضافة زر الإعجاب
-        like_button_text = f"👍 أعجبني ({benefit['likes_count']})"
+        # إضافة زر الإعجاب مع العدد الصحيح
+        liked_by = benefit.get("liked_by", [])
         
-        # التحقق مما إذا كان المستخدم قد أعجب بالفعل
-        if user.id in benefit.get("liked_by", []):
-            like_button_text = f"✅ أعجبتني ({benefit['likes_count']})"
+        # التحقق مما إذا كان المستخدم الحالي قد أعجب بالفعل
+        if user_id in liked_by:
+            like_button_text = f"✅ أعجبتني ({likes_count})"
+        else:
+            like_button_text = f"👍 أعجبني ({likes_count})"
         
-        # استخدام InlineKeyboardCallbackData للإعجاب
+        # بناء اللوحة مع زر الإعجاب
         keyboard_row = [
             InlineKeyboardButton(
                 like_button_text, 
@@ -4372,7 +4380,7 @@ def handle_view_benefits(update: Update, context: CallbackContext):
             parse_mode="Markdown",
         )
         
-    # إرسال رسالة ختامية ولوحة المفاتيح الرئيسية للقسم
+    # إرسال رسالة ختامية
     update.message.reply_text(
         "انتهى عرض آخر الفوائد.",
         reply_markup=BENEFITS_MENU_KB,
@@ -4794,6 +4802,39 @@ def handle_top10_benefits(update: Update, context: CallbackContext):
     )
 
 
+def handle_top100_benefits(update: Update, context: CallbackContext):
+    """عرض أفضل 100 فائدة مرتبة حسب الإعجابات"""
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+
+    benefits = get_benefits()
+    
+    if not benefits:
+        update.message.reply_text(
+            "لا توجد فوائد مضافة بعد لتصنيفها. 💡",
+            reply_markup=BENEFITS_MENU_KB,
+        )
+        return
+
+    # ترتيب الفوائد حسب عدد الإعجابات تنازليًا
+    sorted_benefits = sorted(benefits, key=lambda b: b.get("likes_count", 0), reverse=True)
+    
+    text = "🏆 أفضل 100 فائدة ونصيحة (حسب الإعجابات):\n\n"
+    
+    for i, benefit in enumerate(sorted_benefits[:100], start=1):
+        text += f"{i}. *{benefit['text']}*\n"
+        text += f"   - من: {benefit['first_name']} | الإعجابات: {benefit['likes_count']} 👍\n\n"
+        
+    update.message.reply_text(
+        text=text,
+        reply_markup=BENEFITS_MENU_KB,
+        parse_mode="Markdown",
+    )
+
+
 def check_and_award_medal(context: CallbackContext):
     """
     دالة تفحص أفضل 10 فوائد وتمنح الوسام لصاحبها إذا لم يكن لديه.
@@ -4880,6 +4921,7 @@ def handle_admin_delete_benefit_callback(update: Update, context: CallbackContex
 
 
 def handle_like_benefit_callback(update: Update, context: CallbackContext):
+    """معالجة الإعجاب بالفائدة مع حفظ صحيح في Firestore"""
     query = update.callback_query
     user = query.from_user
     user_id = user.id
@@ -4894,11 +4936,13 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
         benefits = get_benefits()
         benefit_index = -1
         benefit = None
+        firestore_id = None
         
         for i, b in enumerate(benefits):
             if b.get("id") == benefit_id:
                 benefit_index = i
                 benefit = b
+                firestore_id = b.get("firestore_id")
                 break
         
         if benefit is None:
@@ -4925,11 +4969,22 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
         owner_id = benefit["user_id"]
         add_points(owner_id, 1)
         
-        # 3. حفظ التغييرات
+        # 3. حفظ التغييرات في Firestore بشكل مباشر
+        if firestore_id and firestore_available():
+            try:
+                update_benefit_in_firestore(firestore_id, {
+                    "likes_count": benefit["likes_count"],
+                    "liked_by": liked_by
+                })
+                logger.info(f"✅ تم حفظ الإعجاب للفائدة {benefit_id} في Firestore")
+            except Exception as e:
+                logger.error(f"❌ خطأ في حفظ الإعجاب في Firestore: {e}")
+        
+        # 4. تحديث قائمة الفوائد المحلية
         benefits[benefit_index] = benefit
         save_benefits(benefits)
         
-        # 4. تحديث زر الإعجاب
+        # 5. تحديث زر الإعجاب
         new_likes_count = benefit["likes_count"]
         new_button_text = f"✅ أعجبتني ({new_likes_count})"
         
@@ -4947,7 +5002,7 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
             
         query.answer(f"تم الإعجاب! الفائدة لديها الآن {new_likes_count} إعجاب.")
         
-        # 5. فحص ومنح الوسام
+        # 6. فحص ومنح الوسام
         check_and_award_medal(context)
 
 
@@ -6815,6 +6870,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_top10_benefits(update, context)
         return
 
+    if text == BTN_BENEFIT_TOP100:
+        handle_top100_benefits(update, context)
+        return
+
     if text == BTN_MY_BENEFITS:
         handle_my_benefits(update, context)
         return
@@ -6972,23 +7031,28 @@ def delete_user_competition_points(user_id: int):
         logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
 
 def delete_all_competition_points():
-    """حذف جميع نقاط المنافسة"""
+    """تصفير جميع نقاط المنافسات والمجتمع من جميع المستخدمين"""
     if not firestore_available():
+        logger.warning("Firestore غير متوفر للتصفير")
         return
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
         docs = users_ref.stream()
         
+        count = 0
         for doc in docs:
+            # تصفير جميع النقاط والترتيب المتعلقة بالمنافسات والمجتمع
             doc.reference.update({
                 "daily_competition_points": 0,
-                "community_rank": 0
+                "community_rank": 0,
+                "points": 0,  # تصفير النقاط الإجمالية المستخدمة في التصنيف
             })
+            count += 1
         
-        logger.info("✅ تم حذف جميع نقاط المنافسة")
+        logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع لـ {count} مستخدم")
     except Exception as e:
-        logger.error(f"❌ خطأ في حذف جميع نقاط المنافسة: {e}")
+        logger.error(f"❌ خطأ في تصفير نقاط المنافسات والمجتمع: {e}", exc_info=True)
 
 def delete_user_medals(user_id: int):
     """حذف ميداليات مستخدم معين من المجتمع فقط"""
@@ -7006,22 +7070,27 @@ def delete_user_medals(user_id: int):
         logger.error(f"❌ خطأ في حذف الميداليات: {e}")
 
 def delete_all_medals():
-    """حذف جميع ميداليات المجتمع"""
+    """تصفير جميع ميداليات المنافسات والمجتمع فقط (الميداليات الأخرى تبقى)"""
     if not firestore_available():
+        logger.warning("Firestore غير متوفر للتصفير")
         return
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
         docs = users_ref.stream()
         
+        count = 0
         for doc in docs:
+            # تصفير فقط ميداليات المنافسات والمجتمع
+            # الميداليات الأخرى (الإنجازات الدائمة) تبقى كما هي
             doc.reference.update({
                 "community_medals": []
             })
+            count += 1
         
-        logger.info("✅ تم حذف جميع ميداليات المجتمع")
+        logger.info(f"✅ تم تصفير ميداليات المنافسات والمجتمع لـ {count} مستخدم")
     except Exception as e:
-        logger.error(f"❌ خطأ في حذف جميع الميداليات: {e}")
+        logger.error(f"❌ خطأ في تصفير ميداليات المنافسات والمجتمع: {e}", exc_info=True)
 
 def handle_admin_delete_user_points(update: Update, context: CallbackContext):
     """حذف نقاط مستخدم معين"""
