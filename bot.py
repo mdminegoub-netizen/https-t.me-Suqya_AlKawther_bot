@@ -90,6 +90,9 @@ def run_flask():
 # =================== تخزين البيانات ===================
 
 
+# تعريف data كـ dictionary فارغ في البداية
+data = {}
+
 def load_data():
     if not os.path.exists(DATA_FILE):
         return {}
