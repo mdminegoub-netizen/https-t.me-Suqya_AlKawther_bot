@@ -102,17 +102,38 @@ def load_data():
 
 
 def save_data():
+    """
+    دالة متوافقة مع الكود القديم - تحفظ جميع المستخدمين في Firestore
+    """
+    if not firestore_available():
+        # حفظ محلي كـ fallback
+        try:
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"خطأ في حفظ البيانات محلياً: {e}")
+        return
+    
     try:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        # حفظ جميع المستخدمين في Firestore
+        for user_id_str, user_data in data.items():
+            # تجاهل المفاتيح غير الرقمية
+            if user_id_str.startswith("_") or user_id_str == "GLOBAL_KEY":
+                continue
+            
+            try:
+                user_id = int(user_id_str)
+                doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+                doc_ref.set(user_data, merge=True)
+                logger.debug(f"✅ تم حفظ بيانات المستخدم {user_id} في Firestore")
+            except ValueError:
+                continue
+            except Exception as e:
+                logger.error(f"❌ خطأ في حفظ المستخدم {user_id_str}: {e}")
+                
     except Exception as e:
-        logger.error(f"Error saving data: {e}")
+        logger.error(f"❌ خطأ في save_data: {e}")
 
-
-data = load_data()
-
-
-# =================== Firebase ===================
 
 def initialize_firebase():
     try:
@@ -2690,7 +2711,7 @@ def send_letter_reminder(context: CallbackContext):
             letters = record.get("letters_to_self", [])
             if letter_index < len(letters):
                 letters[letter_index]["sent"] = True
-                save_data()
+                # تم حفظ البيانات في Firestore عبر update_user_record
 
         # إرسال الرسالة للمستخدم
         context.bot.send_message(
@@ -2824,7 +2845,7 @@ def handle_letter_delete_input(update: Update, context: CallbackContext):
 
     deleted = letters.pop(idx)
     record["letters_to_self"] = letters
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_LETTER_DELETE_SELECT.discard(user_id)
 
@@ -2922,7 +2943,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     gender = "male" if text == BTN_GENDER_MALE else "female"
     record["gender"] = gender
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_GENDER.discard(user_id)
     WAITING_AGE.add(user_id)
@@ -2962,7 +2983,7 @@ def handle_age_input(update: Update, context: CallbackContext):
 
     record = get_user_record(user)
     record["age"] = age
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_AGE.discard(user_id)
     WAITING_WEIGHT.add(user_id)
@@ -3047,16 +3068,21 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
     ensure_today_water(record)
     before = record.get("today_cups", 0)
-    record["today_cups"] = before + 1
+    new_cups = before + 1
 
-    add_points(user.id, POINTS_PER_WATER_CUP, context)
+    # حفظ في Firestore
+    update_user_record(user.id, today_cups=new_cups)
+    logger.info(f"✅ تم حفظ كوب ماء للمستخدم {user.id} في Firestore")
+
+    add_points(user.id, POINTS_PER_WATER_CUP, context, reason="شرب كوب ماء")
 
     cups_goal = record.get("cups_goal")
-    after = record["today_cups"]
-    if cups_goal and before < cups_goal <= after:
-        add_points(user.id, POINTS_WATER_DAILY_BONUS, context)
+    if cups_goal and before < cups_goal <= new_cups:
+        add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
 
-    save_data()
+    # تحديث record المحلي
+    record["today_cups"] = new_cups
+    check_daily_full_activity(user.id, record, context)
 
     check_daily_full_activity(user.id, record, context)
 
@@ -3117,7 +3143,7 @@ def handle_add_cups(update: Update, context: CallbackContext):
     if cups_goal and before < cups_goal <= after:
         add_points(user.id, POINTS_WATER_DAILY_BONUS, context)
 
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     check_daily_full_activity(user.id, record, context)
 
@@ -3163,7 +3189,7 @@ def handle_reminders_on(update: Update, context: CallbackContext):
         return
 
     record["reminders_on"] = True
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
@@ -3182,7 +3208,7 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["reminders_on"] = False
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
@@ -3266,7 +3292,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     ensure_today_quran(record)
     record["quran_pages_goal"] = pages
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_QURAN_GOAL.discard(user_id)
 
@@ -3386,7 +3412,7 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 
     ensure_today_quran(record)
     record["quran_pages_today"] = 0
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     update.message.reply_text(
         "تم إعادة تعيين ورد اليوم.\n"
@@ -3660,7 +3686,7 @@ def handle_memo_add_input(update: Update, context: CallbackContext):
     memos = record.get("heart_memos", [])
     memos.append(text)
     record["heart_memos"] = memos
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_MEMO_ADD.discard(user_id)
 
@@ -3771,7 +3797,7 @@ def handle_memo_edit_text_input(update: Update, context: CallbackContext):
 
     mems[idx] = text
     record["heart_memos"] = memos
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_MEMO_EDIT_TEXT.discard(user_id)
     MEMO_EDIT_INDEX.pop(user_id, None)
@@ -3844,7 +3870,7 @@ def handle_memo_delete_index_input(update: Update, context: CallbackContext):
 
     deleted = memos.pop(idx)
     record["heart_memos"] = memos
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_MEMO_DELETE_SELECT.discard(user_id)
 
@@ -4695,7 +4721,7 @@ def handle_motivation_on(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["motivation_on"] = True
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     update.message.reply_text(
         "تم تشغيل الجرعة التحفيزية ✨\n"
@@ -4714,7 +4740,7 @@ def handle_motivation_off(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["motivation_on"] = False
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     update.message.reply_text(
         "تم إيقاف الجرعة التحفيزية 😴\n"
@@ -4871,7 +4897,7 @@ def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
 
     cfg = get_global_config()
     cfg["motivation_messages"] = MOTIVATION_MESSAGES
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_MOTIVATION_ADD.discard(user_id)
 
@@ -4937,7 +4963,7 @@ def handle_admin_motivation_delete_input(update: Update, context: CallbackContex
 
     cfg = get_global_config()
     cfg["motivation_messages"] = MOTIVATION_MESSAGES
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     WAITING_MOTIVATION_DELETE.discard(user_id)
 
@@ -4999,7 +5025,7 @@ def handle_admin_motivation_times_input(update: Update, context: CallbackContext
 
     cfg = get_global_config()
     cfg["motivation_hours"] = MOTIVATION_HOURS_UTC
-    save_data()
+    # تم حفظ البيانات في Firestore عبر update_user_record
 
     for job in list(CURRENT_MOTIVATION_JOBS):
         try:
@@ -5858,7 +5884,7 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in WAITING_SUPPORT_GENDER:
         if text == BTN_GENDER_MALE:
             record["gender"] = "male"
-            save_data()
+            # تم حفظ البيانات في Firestore عبر update_user_record
             WAITING_SUPPORT_GENDER.discard(user_id)
             WAITING_SUPPORT.add(user_id)
             msg.reply_text(
@@ -5869,7 +5895,7 @@ def handle_text(update: Update, context: CallbackContext):
             return
         elif text == BTN_GENDER_FEMALE:
             record["gender"] = "female"
-            save_data()
+            # تم حفظ البيانات في Firestore عبر update_user_record
             WAITING_SUPPORT_GENDER.discard(user_id)
             WAITING_SUPPORT.add(user_id)
             msg.reply_text(
