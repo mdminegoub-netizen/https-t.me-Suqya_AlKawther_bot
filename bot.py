@@ -7046,7 +7046,7 @@ def delete_user_competition_points(user_id: int):
     except Exception as e:
         logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
 
-def delete_all_competition_points():
+def reset_competition_points():
     """تصفير جميع نقاط المنافسات والمجتمع من جميع المستخدمين"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
@@ -7085,7 +7085,7 @@ def delete_user_medals(user_id: int):
     except Exception as e:
         logger.error(f"❌ خطأ في حذف الميداليات: {e}")
 
-def delete_all_medals():
+def reset_competition_medals():
     """تصفير جميع ميداليات المنافسات والمجتمع فقط (الميداليات الأخرى تبقى)"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
@@ -7174,7 +7174,7 @@ def handle_confirm_reset_points_input(update: Update, context: CallbackContext):
     WAITING_CONFIRM_RESET_POINTS.discard(user_id)
     
     if text == "✅ نعم، تصفير الآن":
-        delete_all_competition_points()
+        reset_competition_points()
         update.message.reply_text(
             "✅ تم تصفير كل نقاط المنافسات والمجتمع بنجاح.",
             reply_markup=ADMIN_PANEL_KB,
@@ -7197,7 +7197,7 @@ def handle_confirm_reset_medals_input(update: Update, context: CallbackContext):
     WAITING_CONFIRM_RESET_MEDALS.discard(user_id)
     
     if text == "✅ نعم، تصفير الآن":
-        delete_all_medals()
+        reset_competition_medals()
         update.message.reply_text(
             "✅ تم تصفير كل ميداليات المنافسات والمجتمع بنجاح.",
             reply_markup=ADMIN_PANEL_KB,
