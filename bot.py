@@ -1054,6 +1054,54 @@ _global_cfg = get_global_config()
 MOTIVATION_HOURS_UTC = _global_cfg["motivation_hours"]
 MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
 
+
+# =================== نصوص الأذكار ===================
+
+ADHKAR_MORNING_TEXT = (
+    "أذكار الصباح (من بعد الفجر حتى ارتفاع الشمس) 🌅:\n\n"
+    "1⃣ آية الكرسي: «اللّه لا إله إلا هو الحيّ القيّوم...» مرة واحدة.\n"
+    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
+    "3⃣ «أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
+    "له الملك وله الحمد وهو على كل شيء قدير».\n"
+    "4⃣ «اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
+    "5⃣ «اللهم إني أصبحت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
+    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
+    "6⃣ «حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم» سبع مرات.\n"
+    "7⃣ «اللهم صل وسلم على سيدنا محمد» عددًا كثيرًا.\n\n"
+    "للتسبيح بعدد معيّن (مثل 33 أو 100) يمكنك استخدام زر «السبحة 📿»."
+)
+
+ADHKAR_EVENING_TEXT = (
+    "أذكار المساء (من بعد العصر حتى الليل) 🌙:\n\n"
+    "1⃣ آية الكرسي مرة واحدة.\n"
+    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
+    "3⃣ «أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
+    "له الملك وله الحمد وهو على كل شيء قدير».\n"
+    "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
+    "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
+    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
+    "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
+    "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
+    "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
+)
+
+ADHKAR_GENERAL_TEXT = (
+    "أذكار عامة تثبّت القلب وتريح الصدر 💚:\n\n"
+    "• «أستغفر الله العظيم وأتوب إليه».\n"
+    "• «لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».\n"
+    "• «سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر».\n"
+    "• «لا حول ولا قوة إلا بالله».\n"
+    "• «اللهم صل وسلم على سيدنا محمد».\n\n"
+    "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
+)
+
+
+# أزرار الأذكار
+BTN_ADHKAR_MAIN = "أذكاري 🤲"
+BTN_ADHKAR_MORNING = "أذكار الصباح 🌅"
+BTN_ADHKAR_EVENING = "أذكار المساء 🌙"
+BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
+
 # =================== سجلات المستخدمين ===================
 
 
@@ -2869,7 +2917,10 @@ def handle_letter_delete_input(update: Update, context: CallbackContext):
 
     deleted = letters.pop(idx)
     record["letters_to_self"] = letters
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, letters_to_self=record["letters_to_self"])
+    save_data()
 
     WAITING_LETTER_DELETE_SELECT.discard(user_id)
 
@@ -2967,7 +3018,10 @@ def handle_gender_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     gender = "male" if text == BTN_GENDER_MALE else "female"
     record["gender"] = gender
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, gender=record["gender"])
+    save_data()
 
     WAITING_GENDER.discard(user_id)
     WAITING_AGE.add(user_id)
@@ -3007,7 +3061,10 @@ def handle_age_input(update: Update, context: CallbackContext):
 
     record = get_user_record(user)
     record["age"] = age
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, age=record["age"])
+    save_data()
 
     WAITING_AGE.discard(user_id)
     WAITING_WEIGHT.add(user_id)
@@ -3213,7 +3270,10 @@ def handle_reminders_on(update: Update, context: CallbackContext):
         return
 
     record["reminders_on"] = True
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, reminders_on=record["reminders_on"])
+    save_data()
 
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
@@ -3232,7 +3292,10 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["reminders_on"] = False
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, reminders_on=record["reminders_on"])
+    save_data()
 
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
@@ -3316,7 +3379,10 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     ensure_today_quran(record)
     record["quran_pages_goal"] = pages
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, quran_pages_goal=record["quran_pages_goal"])
+    save_data()
 
     WAITING_QURAN_GOAL.discard(user_id)
 
@@ -3436,7 +3502,10 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 
     ensure_today_quran(record)
     record["quran_pages_today"] = 0
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, quran_pages_today=record["quran_pages_today"])
+    save_data()
 
     update.message.reply_text(
         "تم إعادة تعيين ورد اليوم.\n"
@@ -3710,7 +3779,11 @@ def handle_memo_add_input(update: Update, context: CallbackContext):
     memos = record.get("heart_memos", [])
     memos.append(text)
     record["heart_memos"] = memos
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, heart_memos=memos)
+    save_data()
+    logger.info(f"✅ تم حفظ مذكرة جديدة للمستخدم {user.id} في Firestore")
 
     WAITING_MEMO_ADD.discard(user_id)
 
@@ -3821,7 +3894,10 @@ def handle_memo_edit_text_input(update: Update, context: CallbackContext):
 
     mems[idx] = text
     record["heart_memos"] = memos
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, heart_memos=record["heart_memos"])
+    save_data()
 
     WAITING_MEMO_EDIT_TEXT.discard(user_id)
     MEMO_EDIT_INDEX.pop(user_id, None)
@@ -3894,7 +3970,10 @@ def handle_memo_delete_index_input(update: Update, context: CallbackContext):
 
     deleted = memos.pop(idx)
     record["heart_memos"] = memos
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, heart_memos=record["heart_memos"])
+    save_data()
 
     WAITING_MEMO_DELETE_SELECT.discard(user_id)
 
@@ -4745,7 +4824,10 @@ def handle_motivation_on(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["motivation_on"] = True
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, motivation_on=record["motivation_on"])
+    save_data()
 
     update.message.reply_text(
         "تم تشغيل الجرعة التحفيزية ✨\n"
@@ -4764,7 +4846,10 @@ def handle_motivation_off(update: Update, context: CallbackContext):
     
     record = get_user_record(user)
     record["motivation_on"] = False
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    
+    # حفظ في Firestore
+    update_user_record(user.id, motivation_on=record["motivation_on"])
+    save_data()
 
     update.message.reply_text(
         "تم إيقاف الجرعة التحفيزية 😴\n"
@@ -5908,7 +5993,8 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in WAITING_SUPPORT_GENDER:
         if text == BTN_GENDER_MALE:
             record["gender"] = "male"
-            # تم حفظ البيانات في Firestore عبر update_user_record
+            update_user_record(user.id, gender="male")
+            save_data()
             WAITING_SUPPORT_GENDER.discard(user_id)
             WAITING_SUPPORT.add(user_id)
             msg.reply_text(
@@ -5919,7 +6005,8 @@ def handle_text(update: Update, context: CallbackContext):
             return
         elif text == BTN_GENDER_FEMALE:
             record["gender"] = "female"
-            # تم حفظ البيانات في Firestore عبر update_user_record
+            update_user_record(user.id, gender="female")
+            save_data()
             WAITING_SUPPORT_GENDER.discard(user_id)
             WAITING_SUPPORT.add(user_id)
             msg.reply_text(
