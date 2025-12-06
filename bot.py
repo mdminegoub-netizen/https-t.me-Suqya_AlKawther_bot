@@ -216,6 +216,10 @@ TIPS_COLLECTION = "tips"
 NOTES_COLLECTION = "notes"
 LETTERS_COLLECTION = "letters"
 GLOBAL_CONFIG_COLLECTION = "global_config"
+# Collections جديدة للمجتمع والمنافسات
+COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
+COMPETITION_POINTS_COLLECTION = "competition_points"
+COMMUNITY_MEDALS_COLLECTION = "community_medals"
 
 
 # =================== نهاية Firebase ===================
@@ -1132,34 +1136,78 @@ BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
 
 
 def get_next_benefit_id():
-    """يرجع المعرف الفريد التالي للفائدة."""
-    cfg = get_global_config()
-    benefits = cfg.get("benefits", [])
+    """يرجع معرف فريد للفائدة الجديدة"""
+    benefits = get_benefits_from_firestore()
     if not benefits:
         return 1
-    # البحث عن أكبر ID موجود
     max_id = max(b.get("id", 0) for b in benefits)
     return max_id + 1
 
 
-def get_benefits():
-    """يرجع قائمة الفوائد من الإعدادات العامة."""
-    cfg = get_global_config()
-    return cfg.get("benefits", [])
+def get_benefits_from_firestore():
+    """قراءة الفوائد من Firestore"""
+    if not firestore_available():
+        cfg = get_global_config()
+        return cfg.get("benefits", [])
+    
+    try:
+        benefits_ref = db.collection(COMMUNITY_BENEFITS_COLLECTION)
+        docs = benefits_ref.stream()
+        benefits = []
+        for doc in docs:
+            benefit_data = doc.to_dict()
+            benefit_data['firestore_id'] = doc.id
+            benefits.append(benefit_data)
+        return benefits
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة الفوائد من Firestore: {e}")
+        return []
 
+def save_benefit_to_firestore(benefit_data: Dict) -> str:
+    """حفظ فائدة جديدة في Firestore"""
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return ""
+    
+    try:
+        benefit_ref = db.collection(COMMUNITY_BENEFITS_COLLECTION).add(benefit_data)
+        logger.info(f"✅ تم حفظ الفائدة في Firestore: {benefit_ref[1].id}")
+        return benefit_ref[1].id
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة في Firestore: {e}")
+        return ""
+
+def update_benefit_in_firestore(firestore_id: str, benefit_data: Dict):
+    """تحديث فائدة في Firestore"""
+    if not firestore_available():
+        return
+    
+    try:
+        db.collection(COMMUNITY_BENEFITS_COLLECTION).document(firestore_id).set(benefit_data, merge=True)
+        logger.info(f"✅ تم تحديث الفائدة في Firestore: {firestore_id}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في تحديث الفائدة: {e}")
+
+def delete_benefit_from_firestore(firestore_id: str):
+    """حذف فائدة من Firestore"""
+    if not firestore_available():
+        return
+    
+    try:
+        db.collection(COMMUNITY_BENEFITS_COLLECTION).document(firestore_id).delete()
+        logger.info(f"✅ تم حذف الفائدة من Firestore: {firestore_id}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف الفائدة: {e}")
+
+def get_benefits():
+    """يرجع قائمة الفوائد من Firestore أو الإعدادات العامة"""
+    return get_benefits_from_firestore()
 
 def save_benefits(benefits_list):
-    """يحفظ قائمة الفوائد المحدثة في الإعدادات العامة."""
-    cfg = get_global_config()
-    cfg["benefits"] = benefits_list
-    data[GLOBAL_KEY] = cfg
-    save_data()
-    # تحديث Firestore مباشرة
-    if firestore_available():
-        try:
-            db.collection(GLOBAL_CONFIG_COLLECTION).document("config").set({"benefits": benefits_list}, merge=True)
-        except Exception as e:
-            logger.error(f"خطأ في حفظ الفوائد في Firestore: {e}")
+    """حفظ قائمة الفوائد - الآن يتم الحفظ في Firestore مباشرة"""
+    # لا نحتاج لحفظ في global config بعد الآن
+    # كل فائدة تُحفظ بشكل منفصل في Firestore
+    pass
 
 
 def get_user_record(user):
@@ -1343,6 +1391,10 @@ WAITING_UNBAN_USER = set()
 WAITING_BAN_REASON = set()
 BAN_TARGET_ID = {}  # user_id -> target_user_id
 
+# إدارة المنافسات والمجتمع
+WAITING_DELETE_USER_POINTS = set()
+WAITING_DELETE_USER_MEDALS = set()
+
 # =================== الأزرار ===================
 
 # رئيسية
@@ -1392,6 +1444,13 @@ BTN_ADMIN_MOTIVATION_ADD = "إضافة رسالة تحفيزية ➕"
 BTN_ADMIN_MOTIVATION_DELETE = "حذف رسالة تحفيزية 🗑"
 BTN_ADMIN_MOTIVATION_TIMES = "تعديل أوقات الجرعة ⏰"
 BTN_ADMIN_MANAGE_POINTS = "إدارة نقاط المنافسة 🌟"
+
+# أزرار إدارة المنافسات والمجتمع
+BTN_ADMIN_MANAGE_COMPETITION = "🔹 التحكم في المنافسات والمجتمع"
+BTN_ADMIN_DELETE_USER_POINTS = "حذف نقاط مستخدم 🔴"
+BTN_ADMIN_DELETE_ALL_POINTS = "تصفير كل النقاط ماشا الله 🔴"
+BTN_ADMIN_DELETE_USER_MEDALS = "حذف ميداليات مستخدم 🎆"
+BTN_ADMIN_DELETE_ALL_MEDALS = "تصفير كل الميداليات 🎆"
 
 # جرعة تحفيزية للمستخدم
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
@@ -1687,6 +1746,7 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_POINTS)],
+        [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -1700,6 +1760,17 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COMPETITION_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_DELETE_USER_POINTS)],
+        [KeyboardButton(BTN_ADMIN_DELETE_ALL_POINTS)],
+        [KeyboardButton(BTN_ADMIN_DELETE_USER_MEDALS)],
+        [KeyboardButton(BTN_ADMIN_DELETE_ALL_MEDALS)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
 )
@@ -4202,9 +4273,8 @@ def handle_add_benefit_text(update: Update, context: CallbackContext):
         "liked_by": [],
     }
 
-    benefits = get_benefits()
-    benefits.append(new_benefit)
-    save_benefits(benefits)
+    # حفظ الفائدة في Firestore مباشرة
+    save_benefit_to_firestore(new_benefit)
 
     # 2. منح النقاط
     add_points(user_id, 2)
@@ -5063,17 +5133,21 @@ def daily_reset_competition():
             daily_points = user_data.get("daily_competition_points", 0)
             
             if daily_points > 0:
-                # تصفير نقاط المنافسة اليومية فقط
-                doc.reference.update({"daily_competition_points": 0})
+                # تصفير نقاط المنافسة اليومية والترتيب
+                doc.reference.update({
+                    "daily_competition_points": 0,
+                    "community_rank": 0
+                })
                 
                 # تحديث data المحلي
                 if doc.id in data:
                     data[doc.id]["daily_competition_points"] = 0
+                    data[doc.id]["community_rank"] = 0
                 
                 reset_count += 1
         
-        logger.info(f"✅ تم تصفير نقاط المنافسة اليومية لـ {reset_count} مستخدم")
-        logger.info("ℹ️ النقاط الإجمالية والميداليات لم تتأثر")
+        logger.info(f"✅ تم تصفير نقاط المنافسة اليومية والترتيب لـ {reset_count} مستخدم")
+        logger.info("ℹ️ النقاط الإجمالية والميداليات الدائمة لم تتأثر")
         
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير نقاط المنافسة: {e}", exc_info=True)
@@ -5885,14 +5959,23 @@ def handle_admin_panel(update: Update, context: CallbackContext):
 
     if is_admin(user_id):
         text = (
-            "لوحة التحكم 🛠:\n"
-            "• عرض عدد المستخدمين.\n"
-            "• عرض قائمة المستخدمين.\n"
-            "• إرسال رسالة جماعية.\n"
-            "• عرض ترتيب المنافسة تفصيليًا.\n"
-            "• حظر وفك حظر المستخدمين.\n"
-            "• عرض قائمة المحظورين.\n"
-            "• إدارة رسائل وأوقات الجرعة التحفيزية 💡."
+            "لوحة التحكم 🔧:
+"
+            "• عرض عدد المستخدمين.
+"
+            "• عرض قائمة المستخدمين.
+"
+            "• إرسال رسالة جماعية.
+"
+            "• عرض ترتيب المنافسة تفصيلياً.
+"
+            "• حظر وفك حظر المستخدمين.
+"
+            "• عرض قائمة المحظورين.
+"
+            "• إدارة رسالل وأوقات الجرعة التحفيزية 💫.
+"
+            "• التحكم في المنافسات والمجتمع (حذف نقاط وميداليات)."
         )
     else:
         text = (
@@ -6212,6 +6295,8 @@ def handle_manage_points_user_input(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
     if text == BTN_CANCEL:
         WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
+        WAITING_MANAGE_POINTS_VALUE.discard(user_id)
+        WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
         update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
         return
     try:
@@ -6600,6 +6685,15 @@ def handle_text(update: Update, context: CallbackContext):
         handle_manage_points_value_input(update, context)
         return
 
+    # حذف نقاط وميداليات
+    if user_id in WAITING_DELETE_USER_POINTS:
+        handle_delete_user_points_input(update, context)
+        return
+
+    if user_id in WAITING_DELETE_USER_MEDALS:
+        handle_delete_user_medals_input(update, context)
+        return
+
     # نظام الحظر
     if user_id in WAITING_BAN_USER:
         handle_ban_user_id_input(update, context)
@@ -6921,6 +7015,31 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_manage_points_start(update, context)
         return
 
+    if text == BTN_ADMIN_MANAGE_COMPETITION:
+        update.message.reply_text(
+            "🔹 التحكم في المنافسات والمجتمع:
+"
+            "اختر العملية المطلوبة:",
+            reply_markup=ADMIN_COMPETITION_KB,
+        )
+        return
+
+    if text == BTN_ADMIN_DELETE_USER_POINTS:
+        handle_admin_delete_user_points(update, context)
+        return
+
+    if text == BTN_ADMIN_DELETE_ALL_POINTS:
+        handle_admin_delete_all_points(update, context)
+        return
+
+    if text == BTN_ADMIN_DELETE_USER_MEDALS:
+        handle_admin_delete_user_medals(update, context)
+        return
+
+    if text == BTN_ADMIN_DELETE_ALL_MEDALS:
+        handle_admin_delete_all_medals(update, context)
+        return
+
 
     # أي نص آخر
     msg.reply_text(
@@ -6929,6 +7048,178 @@ def handle_text(update: Update, context: CallbackContext):
         "1️⃣ اضغط على زر «تواصل مع الدعم ✉️»\n"
         "2️⃣ أو اضغط على الرسالة التي وصلتك من البوت، ثم اختر Reply / الرد، واكتب رسالتك.",
         reply_markup=main_kb,
+    )
+
+# =================== دوال إدارة المنافسات والمجتمع ===================
+
+def delete_user_competition_points(user_id: int):
+    """حذف نقاط المنافسة لمستخدم معين"""
+    if not firestore_available():
+        return
+    
+    try:
+        user_id_str = str(user_id)
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        doc_ref.update({
+            "daily_competition_points": 0,
+            "community_rank": 0
+        })
+        logger.info(f"✅ تم حذف نقاط المنافسة للمستخدم {user_id}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
+
+def delete_all_competition_points():
+    """حذف جميع نقاط المنافسة"""
+    if not firestore_available():
+        return
+    
+    try:
+        users_ref = db.collection(USERS_COLLECTION)
+        docs = users_ref.stream()
+        
+        for doc in docs:
+            doc.reference.update({
+                "daily_competition_points": 0,
+                "community_rank": 0
+            })
+        
+        logger.info("✅ تم حذف جميع نقاط المنافسة")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف جميع نقاط المنافسة: {e}")
+
+def delete_user_medals(user_id: int):
+    """حذف ميداليات مستخدم معين من المجتمع فقط"""
+    if not firestore_available():
+        return
+    
+    try:
+        user_id_str = str(user_id)
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        doc_ref.update({
+            "community_medals": []
+        })
+        logger.info(f"✅ تم حذف ميداليات المجتمع للمستخدم {user_id}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف الميداليات: {e}")
+
+def delete_all_medals():
+    """حذف جميع ميداليات المجتمع"""
+    if not firestore_available():
+        return
+    
+    try:
+        users_ref = db.collection(USERS_COLLECTION)
+        docs = users_ref.stream()
+        
+        for doc in docs:
+            doc.reference.update({
+                "community_medals": []
+            })
+        
+        logger.info("✅ تم حذف جميع ميداليات المجتمع")
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف جميع الميداليات: {e}")
+
+def handle_admin_delete_user_points(update: Update, context: CallbackContext):
+    """حذف نقاط مستخدم معين"""
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+    user_id = user.id
+    WAITING_DELETE_USER_POINTS.add(user_id)
+    update.message.reply_text(
+        "🌟 حذف نقاط المنافسة\n\n"
+        "أرسل معرف المستخدم (user_id):\n"
+        "مثال: 123456789\n\n"
+        "أو اضغط «إلغاء ❌»",
+        reply_markup=CANCEL_KB,
+    )
+
+def handle_delete_user_points_input(update: Update, context: CallbackContext):
+    """معالجة إدخال معرف المستخدم لحذف نقاطه"""
+    user = update.effective_user
+    user_id = user.id
+    if user_id not in WAITING_DELETE_USER_POINTS:
+        return
+    text = (update.message.text or "").strip()
+    if text == BTN_CANCEL:
+        WAITING_DELETE_USER_POINTS.discard(user_id)
+        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
+        return
+    try:
+        target_user_id = int(text)
+    except ValueError:
+        update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
+        return
+    
+    delete_user_competition_points(target_user_id)
+    WAITING_DELETE_USER_POINTS.discard(user_id)
+    update.message.reply_text(
+        f"✅ تم حذف نقاط المنافسة للمستخدم {target_user_id}",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+def handle_admin_delete_all_points(update: Update, context: CallbackContext):
+    """تأكيد حذف جميع نقاط المنافسة"""
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+    
+    delete_all_competition_points()
+    update.message.reply_text(
+        "✅ تم حذف جميع نقاط المنافسة اليومية والترتيب",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+def handle_admin_delete_user_medals(update: Update, context: CallbackContext):
+    """حذف ميداليات مستخدم معين"""
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+    user_id = user.id
+    WAITING_DELETE_USER_MEDALS.add(user_id)
+    update.message.reply_text(
+        "🎆 حذف ميداليات المجتمع\n\n"
+        "أرسل معرف المستخدم (user_id):\n"
+        "مثال: 123456789\n\n"
+        "أو اضغط «إلغاء ❌»",
+        reply_markup=CANCEL_KB,
+    )
+
+def handle_delete_user_medals_input(update: Update, context: CallbackContext):
+    """معالجة إدخال معرف المستخدم لحذف ميدالياته"""
+    user = update.effective_user
+    user_id = user.id
+    if user_id not in WAITING_DELETE_USER_MEDALS:
+        return
+    text = (update.message.text or "").strip()
+    if text == BTN_CANCEL:
+        WAITING_DELETE_USER_MEDALS.discard(user_id)
+        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
+        return
+    try:
+        target_user_id = int(text)
+    except ValueError:
+        update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
+        return
+    
+    delete_user_medals(target_user_id)
+    WAITING_DELETE_USER_MEDALS.discard(user_id)
+    update.message.reply_text(
+        f"✅ تم حذف ميداليات المجتمع للمستخدم {target_user_id}",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+
+def handle_admin_delete_all_medals(update: Update, context: CallbackContext):
+    """تأكيد حذف جميع ميداليات المجتمع"""
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+    
+    delete_all_medals()
+    update.message.reply_text(
+        "✅ تم حذف جميع ميداليات المجتمع",
+        reply_markup=ADMIN_PANEL_KB,
     )
 
 # =================== تشغيل البوت ===================
