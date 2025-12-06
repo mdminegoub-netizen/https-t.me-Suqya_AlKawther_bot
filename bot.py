@@ -7014,54 +7014,40 @@ def handle_text(update: Update, context: CallbackContext):
 
 # =================== دوال إدارة المنافسات والمجتمع ===================
 
-def delete_user_competition_points(user_id: int) -> bool:
-    """تصفير جميع نقاط المنافسات والمجتمع لمستخدم معين مع التحقق من وجوده
-    
-    Args:
-        user_id: معرف المستخدم الرقمي
-    
-    Returns:
-        True إذا نجحت العملية، False إذا لم يوجد المستخدم
-    """
+def delete_user_competition_points(user_id: int):
+    """حذف نقاط المنافسة لمستخدم معين"""
     if not firestore_available():
-        logger.warning("Firestore غير متوفر")
+        logger.warning(f"Firestore غير متوفر لحذف نقاط المستخدم {user_id}")
         return False
     
     try:
         user_id_str = str(user_id)
         doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
-        doc = doc_ref.get()
         
-        # التحقق من وجود المستخدم بتطابق دقيق
+        # التحقق من وجود المستخدم أولاً
+        doc = doc_ref.get()
         if not doc.exists:
             logger.warning(f"⚠️ المستخدم {user_id} غير موجود في Firestore")
             return False
         
-        user_data = doc.to_dict()
-        
-        # التحقق من مطابقة user_id بالضبط
-        if user_data.get("user_id") != user_id:
-            logger.warning(f"⚠️ عدم تطابق user_id: المطلوب {user_id} لكن الموجود {user_data.get('user_id')}")
-            return False
-        
-        # تصفير جميع نقاط المنافسات والمجتمع
+        # حذف جميع حقول النقاط المتعلقة بالمنافسات والمجتمع
         doc_ref.update({
             "daily_competition_points": 0,
             "community_rank": 0,
-            "points": 0,  # تصفير النقاط الإجمالية المستخدمة في الترتيب
+            "points": 0,  # حذف النقاط المستخدمة في الترتيب
+            "community_medals": [],  # حذف الميداليات المجتمع
         })
-        logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع للمستخدم {user_id}")
+        logger.info(f"✅ تم حذف نقاط المنافسة والميداليات للمستخدم {user_id}")
         return True
-        
     except Exception as e:
-        logger.error(f"❌ خطأ في تصفير نقاط المنافسات: {e}", exc_info=True)
+        logger.error(f"❌ خطأ في حذف نقاط المنافسة: {e}")
         return False
 
 def delete_all_competition_points():
     """تصفير جميع نقاط المنافسات والمجتمع من جميع المستخدمين"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
-        return
+        return False
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
@@ -7069,38 +7055,51 @@ def delete_all_competition_points():
         
         count = 0
         for doc in docs:
-            # تصفير جميع النقاط والترتيب المتعلقة بالمنافسات والمجتمع
+            # تصفير فقط نقاط المنافسات والمجتمع
             doc.reference.update({
                 "daily_competition_points": 0,
                 "community_rank": 0,
-                "points": 0,  # تصفير النقاط الإجمالية المستخدمة في التصنيف
+                "points": 0,  # تصفير نقاط المنافسات
+                "community_medals": [],  # تصفير ميداليات المجتمع
             })
             count += 1
         
         logger.info(f"✅ تم تصفير نقاط المنافسات والمجتمع لـ {count} مستخدم")
+        return True
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير نقاط المنافسات والمجتمع: {e}", exc_info=True)
+        return False
 
 def delete_user_medals(user_id: int):
     """حذف ميداليات مستخدم معين من المجتمع فقط"""
     if not firestore_available():
-        return
+        logger.warning(f"Firestore غير متوفر لحذف ميداليات المستخدم {user_id}")
+        return False
     
     try:
         user_id_str = str(user_id)
         doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        
+        # التحقق من وجود المستخدم
+        doc = doc_ref.get()
+        if not doc.exists:
+            logger.warning(f"⚠️ المستخدم {user_id} غير موجود في Firestore")
+            return False
+        
         doc_ref.update({
             "community_medals": []
         })
         logger.info(f"✅ تم حذف ميداليات المجتمع للمستخدم {user_id}")
+        return True
     except Exception as e:
         logger.error(f"❌ خطأ في حذف الميداليات: {e}")
+        return False
 
 def delete_all_medals():
     """تصفير جميع ميداليات المنافسات والمجتمع فقط (الميداليات الأخرى تبقى)"""
     if not firestore_available():
         logger.warning("Firestore غير متوفر للتصفير")
-        return
+        return False
     
     try:
         users_ref = db.collection(USERS_COLLECTION)
@@ -7116,8 +7115,10 @@ def delete_all_medals():
             count += 1
         
         logger.info(f"✅ تم تصفير ميداليات المنافسات والمجتمع لـ {count} مستخدم")
+        return True
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير ميداليات المنافسات والمجتمع: {e}", exc_info=True)
+        return False
 
 def handle_admin_delete_user_points(update: Update, context: CallbackContext):
     """حذف نقاط مستخدم معين"""
@@ -7151,18 +7152,18 @@ def handle_delete_user_points_input(update: Update, context: CallbackContext):
         update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
         return
     
-    # محاولة تصفير نقاط المستخدم
+    # حذف النقاط والتحقق من النجاح
     success = delete_user_competition_points(target_user_id)
     WAITING_DELETE_USER_POINTS.discard(user_id)
     
     if success:
         update.message.reply_text(
-            f"✅ تم تصفير نقاط المنافسات والمجتمع للمستخدم {target_user_id}",
+            f"✅ تم حذف نقاط المنافسة والميداليات للمستخدم {target_user_id}",
             reply_markup=ADMIN_PANEL_KB,
         )
     else:
         update.message.reply_text(
-            f"❌ فشل التصفير: المستخدم {target_user_id} غير موجود أو حدث خطأ.",
+            f"❌ فشل حذف النقاط. تحقق من أن المستخدم {target_user_id} موجود.",
             reply_markup=ADMIN_PANEL_KB,
         )
 
@@ -7172,11 +7173,17 @@ def handle_admin_delete_all_points(update: Update, context: CallbackContext):
     if not is_admin(user.id):
         return
     
-    delete_all_competition_points()
-    update.message.reply_text(
-        "✅ تم حذف جميع نقاط المنافسة اليومية والترتيب",
-        reply_markup=ADMIN_PANEL_KB,
-    )
+    success = delete_all_competition_points()
+    if success:
+        update.message.reply_text(
+            "✅ تم حذف جميع نقاط المنافسة والميداليات",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    else:
+        update.message.reply_text(
+            "❌ حدث خطأ في حذف النقاط",
+            reply_markup=ADMIN_PANEL_KB,
+        )
 
 def handle_admin_delete_user_medals(update: Update, context: CallbackContext):
     """حذف ميداليات مستخدم معين"""
@@ -7210,12 +7217,20 @@ def handle_delete_user_medals_input(update: Update, context: CallbackContext):
         update.message.reply_text("رجاءاً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
         return
     
-    delete_user_medals(target_user_id)
+    # حذف الميداليات والتحقق من النجاح
+    success = delete_user_medals(target_user_id)
     WAITING_DELETE_USER_MEDALS.discard(user_id)
-    update.message.reply_text(
-        f"✅ تم حذف ميداليات المجتمع للمستخدم {target_user_id}",
-        reply_markup=ADMIN_PANEL_KB,
-    )
+    
+    if success:
+        update.message.reply_text(
+            f"✅ تم حذف ميداليات المجتمع للمستخدم {target_user_id}",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    else:
+        update.message.reply_text(
+            f"❌ فشل حذف الميداليات. تحقق من أن المستخدم {target_user_id} موجود.",
+            reply_markup=ADMIN_PANEL_KB,
+        )
 
 def handle_admin_delete_all_medals(update: Update, context: CallbackContext):
     """تأكيد حذف جميع ميداليات المجتمع"""
@@ -7223,11 +7238,17 @@ def handle_admin_delete_all_medals(update: Update, context: CallbackContext):
     if not is_admin(user.id):
         return
     
-    delete_all_medals()
-    update.message.reply_text(
-        "✅ تم حذف جميع ميداليات المجتمع",
-        reply_markup=ADMIN_PANEL_KB,
-    )
+    success = delete_all_medals()
+    if success:
+        update.message.reply_text(
+            "✅ تم حذف جميع ميداليات المجتمع",
+            reply_markup=ADMIN_PANEL_KB,
+        )
+    else:
+        update.message.reply_text(
+            "❌ حدث خطأ في حذف الميداليات",
+            reply_markup=ADMIN_PANEL_KB,
+        )
 
 # =================== تشغيل البوت ===================
 
