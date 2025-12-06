@@ -43,7 +43,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -1352,6 +1352,7 @@ BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
+BTN_DOWNLOAD_STATS_PDF = "تحميل احصائياتي PDF 📥"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
@@ -1422,7 +1423,8 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_DOWNLOAD_STATS_PDF)],
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -1440,7 +1442,8 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_DOWNLOAD_STATS_PDF)],
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -1460,7 +1463,8 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_DOWNLOAD_STATS_PDF)],
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -4068,6 +4072,125 @@ def handle_memo_delete_index_input(update: Update, context: CallbackContext):
 # =================== احصائياتي ===================
 
 
+def generate_stats_pdf(user_id: int, record: dict) -> str:
+    """توليد ملف PDF بإحصائيات المستخدم"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.units import inch
+    from datetime import datetime
+    
+    try:
+        # إنشاء ملف PDF مؤقت
+        pdf_path = f"/tmp/stats_{user_id}.pdf"
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # عنوان
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor='#1a1a1a',
+            spaceAfter=30,
+            alignment=1
+        )
+        story.append(Paragraph("📊 إحصائياتي الشخصية", title_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # معلومات المستخدم
+        username = record.get("username", "مستخدم")
+        first_name = record.get("first_name", "")
+        story.append(Paragraph(f"<b>الاسم:</b> {first_name}", styles['Normal']))
+        story.append(Paragraph(f"<b>معرف المستخدم:</b> {user_id}", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # النقاط والمستوى
+        points = record.get("points", 0)
+        level = record.get("level", 0)
+        story.append(Paragraph(f"<b>مجموع النقاط:</b> {points} نقطة", styles['Normal']))
+        story.append(Paragraph(f"<b>المستوى الحالي:</b> {level}", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # الميداليات
+        medals = record.get("medals", [])
+        if medals:
+            medals_text = "، ".join(medals)
+            story.append(Paragraph(f"<b>الميداليات:</b> {medals_text}", styles['Normal']))
+        else:
+            story.append(Paragraph("<b>الميداليات:</b> لا توجد ميداليات حتى الآن", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # الإحصائيات
+        ensure_today_water(record)
+        ensure_today_quran(record)
+        
+        today_cups = record.get("today_cups", 0)
+        cups_goal = record.get("cups_goal", 0)
+        q_today = record.get("quran_pages_today", 0)
+        q_goal = record.get("quran_pages_goal", 0)
+        tasbih_total = record.get("tasbih_total", 0)
+        adhkar_count = record.get("adhkar_count", 0)
+        memos_count = len(record.get("heart_memos", []))
+        letters_count = len(record.get("letters_to_self", []))
+        
+        story.append(Paragraph("<b>الإحصائيات:</b>", styles['Heading2']))
+        if cups_goal:
+            story.append(Paragraph(f"- الماء: {today_cups} / {cups_goal} كوب", styles['Normal']))
+        if q_goal:
+            story.append(Paragraph(f"- ورد القرآن: {q_today} / {q_goal} صفحة", styles['Normal']))
+        story.append(Paragraph(f"- الأذكار: {adhkar_count} مرة", styles['Normal']))
+        story.append(Paragraph(f"- التسبيحات: {tasbih_total} تسبيحة", styles['Normal']))
+        story.append(Paragraph(f"- مذكرات القلب: {memos_count} مذكرة", styles['Normal']))
+        story.append(Paragraph(f"- الرسائل إلى النفس: {letters_count} رسالة", styles['Normal']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # التاريخ
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        story.append(Paragraph(f"<i>تم الإنشاء في: {now}</i>", styles['Normal']))
+        
+        # بناء PDF
+        doc.build(story)
+        return pdf_path
+    except Exception as e:
+        logger.error(f"خطأ في إنشاء PDF: {e}")
+        return None
+
+def handle_download_stats_pdf(update: Update, context: CallbackContext):
+    """معالج تحميل PDF الإحصائيات"""
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+    
+    if record.get("is_banned", False):
+        return
+    
+    try:
+        # توليد PDF
+        pdf_path = generate_stats_pdf(user_id, record)
+        
+        if pdf_path:
+            # إرسال الملف
+            with open(pdf_path, 'rb') as pdf_file:
+                update.message.reply_document(
+                    document=pdf_file,
+                    filename=f"احصائياتي_{user_id}.pdf",
+                    caption="📊 إحصائياتك الشخصية"
+                )
+            
+            # حذف الملف المؤقت
+            import os
+            os.remove(pdf_path)
+            
+            logger.info(f"✅ تم إرسال PDF الإحصائيات للمستخدم {user_id}")
+        else:
+            update.message.reply_text("❌ حدث خطأ في إنشاء ملف PDF")
+    except Exception as e:
+        logger.error(f"خطأ في إرسال PDF: {e}")
+        update.message.reply_text("❌ حدث خطأ في إرسال الملف")
+
+
 def handle_stats(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
@@ -6251,6 +6374,7 @@ def handle_manage_points_action_type(update: Update, context: CallbackContext):
             "رجاءً اكتب **تعديل** أو **حذف**",
             reply_markup=CANCEL_KB,
         )
+        # لا نزيل المستخدم من الحالة ليحاول مرة أخرى
 
 def handle_manage_points_user_input(update: Update, context: CallbackContext):
     """معالجة إدخال معرف المستخدم"""
@@ -6771,6 +6895,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_STATS:
         handle_stats(update, context)
+        return
+
+    if text == BTN_DOWNLOAD_STATS_PDF:
+        handle_download_stats_pdf(update, context)
         return
 
     if text == BTN_LETTER_MAIN:
