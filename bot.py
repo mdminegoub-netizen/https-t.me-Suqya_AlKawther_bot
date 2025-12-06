@@ -43,7 +43,7 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 logging.basicConfig(
@@ -1696,7 +1696,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
 SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_USERS_COUNT)],
-        [KeyboardButton(BTN_SUPERVISOR_NEW_USERS)],
         [KeyboardButton(BTN_ADMIN_BROADCAST)],
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
@@ -6169,9 +6168,11 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
 # =================== دوال جديدة للميزات المطلوبة ===================
 
 # حالات الانتظار الجديدة
+WAITING_MANAGE_POINTS_ACTION_TYPE = set()  # تعديل أو حذف
 WAITING_MANAGE_POINTS_USER_ID = set()
 WAITING_MANAGE_POINTS_ACTION = {}  # user_id -> target_user_id
 WAITING_MANAGE_POINTS_VALUE = set()
+WAITING_DELETE_MEDALS_USER_ID = set()
 
 def get_user_record_by_id(user_id: int) -> Dict:
     """الحصول على سجل المستخدم بناءً على المعرف"""
@@ -6196,14 +6197,51 @@ def handle_admin_manage_points_start(update: Update, context: CallbackContext):
     if not is_admin(user.id):
         return
     user_id = user.id
-    WAITING_MANAGE_POINTS_USER_ID.add(user_id)
+    WAITING_MANAGE_POINTS_ACTION_TYPE.add(user_id)
     update.message.reply_text(
         "🌟 إدارة نقاط المنافسة\n\n"
-        "أرسل معرف المستخدم (user_id) الذي تريد تعديل نقاطه:\n"
-        "مثال: 123456789\n\n"
+        "اختر العملية:\n"
+        "1️⃣ اكتب **تعديل** لتعديل النقاط\n"
+        "2️⃣ اكتب **حذف** لحذف النقاط والميداليات\n\n"
         "أو اضغط «إلغاء ❌»",
         reply_markup=CANCEL_KB,
     )
+
+def handle_manage_points_action_type(update: Update, context: CallbackContext):
+    """معالجة اختيار نوع العملية"""
+    user = update.effective_user
+    user_id = user.id
+    if user_id not in WAITING_MANAGE_POINTS_ACTION_TYPE:
+        return
+    text = (update.message.text or "").strip()
+    if text == BTN_CANCEL:
+        WAITING_MANAGE_POINTS_ACTION_TYPE.discard(user_id)
+        update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
+        return
+    if text.lower() == "تعديل":
+        WAITING_MANAGE_POINTS_ACTION_TYPE.discard(user_id)
+        WAITING_MANAGE_POINTS_USER_ID.add(user_id)
+        update.message.reply_text(
+            "أرسل معرف المستخدم (user_id) الذي تريد تعديل نقاطه:\n"
+            "مثال: 123456789\n\n"
+            "أو اضغط «إلغاء ❌»",
+            reply_markup=CANCEL_KB,
+        )
+    elif text.lower() == "حذف":
+        WAITING_MANAGE_POINTS_ACTION_TYPE.discard(user_id)
+        WAITING_DELETE_MEDALS_USER_ID.add(user_id)
+        update.message.reply_text(
+            "🗑 حذف نقاط وميداليات المجتمع\n\n"
+            "أرسل معرف المستخدم (user_id) الذي تريد حذف نقاطه وميدالياته:\n"
+            "مثال: 123456789\n\n"
+            "أو اضغط «إلغاء ❌»",
+            reply_markup=CANCEL_KB,
+        )
+    else:
+        update.message.reply_text(
+            "رجاءً اكتب **تعديل** أو **حذف**",
+            reply_markup=CANCEL_KB,
+        )
 
 def handle_manage_points_user_input(update: Update, context: CallbackContext):
     """معالجة إدخال معرف المستخدم"""
@@ -6214,7 +6252,7 @@ def handle_manage_points_user_input(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
     if text == BTN_CANCEL:
         WAITING_MANAGE_POINTS_USER_ID.discard(user_id)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
+        update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     try:
         target_user_id = int(text)
@@ -6234,6 +6272,48 @@ def handle_manage_points_user_input(update: Update, context: CallbackContext):
     )
     WAITING_MANAGE_POINTS_VALUE.add(user_id)
 
+def handle_delete_medals_user_input(update: Update, context: CallbackContext):
+    """معالجة حذف النقاط والميداليات"""
+    user = update.effective_user
+    user_id = user.id
+    if user_id not in WAITING_DELETE_MEDALS_USER_ID:
+        return
+    text = (update.message.text or "").strip()
+    if text == BTN_CANCEL:
+        WAITING_DELETE_MEDALS_USER_ID.discard(user_id)
+        update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
+        return
+    try:
+        target_user_id = int(text)
+    except ValueError:
+        update.message.reply_text("رجاءً أرسل رقم صحيح.", reply_markup=CANCEL_KB)
+        return
+    target_record = get_user_record_by_id(target_user_id)
+    if not target_record:
+        update.message.reply_text(f"المستخدم {target_user_id} غير موجود.", reply_markup=CANCEL_KB)
+        return
+    old_points = target_record.get("points", 0)
+    old_medals = target_record.get("medals", {})
+    update_user_record(target_user_id, points=0, medals={})
+    logger.info(f"✅ تم حذف نقاط وميداليات المستخدم {target_user_id}")
+    update.message.reply_text(
+        f"✅ تم حذف النقاط والميداليات بنجاح!\n\n"
+        f"المستخدم: {target_user_id}\n"
+        f"النقاط المحذوفة: {old_points}\n"
+        f"الميداليات المحذوفة: {len(old_medals)}",
+        reply_markup=ADMIN_PANEL_KB,
+    )
+    try:
+        context.bot.send_message(
+            chat_id=target_user_id,
+            text=f"⚠️ تم حذف نقاطك وميدالياتك في المجتمع من قبل الأدمن.\n"
+                 f"النقاط المحذوفة: {old_points}\n"
+                 f"الميداليات المحذوفة: {len(old_medals)}"
+        )
+    except Exception as e:
+        logger.error(f"خطأ في إرسال إشعار: {e}")
+    WAITING_DELETE_MEDALS_USER_ID.discard(user_id)
+
 def handle_manage_points_value_input(update: Update, context: CallbackContext):
     """معالجة إدخال القيمة الجديدة للنقاط"""
     user = update.effective_user
@@ -6248,7 +6328,7 @@ def handle_manage_points_value_input(update: Update, context: CallbackContext):
     if text == BTN_CANCEL:
         WAITING_MANAGE_POINTS_VALUE.discard(user_id)
         WAITING_MANAGE_POINTS_ACTION.pop(user_id, None)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_PANEL_KB)
+        update.message.reply_text("تم الإلغاء بنجاح ❌ عدنا للوحة التحكم الرئيسية.", reply_markup=ADMIN_PANEL_KB)
         return
     if text.lower() == "تصفير":
         new_points = 0
@@ -6594,12 +6674,20 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # إدارة نقاط المنافسة
+    if user_id in WAITING_MANAGE_POINTS_ACTION_TYPE:
+        handle_manage_points_action_type(update, context)
+        return
+
     if user_id in WAITING_MANAGE_POINTS_USER_ID:
         handle_manage_points_user_input(update, context)
         return
 
     if user_id in WAITING_MANAGE_POINTS_VALUE:
         handle_manage_points_value_input(update, context)
+        return
+
+    if user_id in WAITING_DELETE_MEDALS_USER_ID:
+        handle_delete_medals_user_input(update, context)
         return
 
     # نظام الحظر
@@ -6921,10 +7009,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MANAGE_POINTS:
         handle_admin_manage_points_start(update, context)
-        return
-
-    if text == BTN_SUPERVISOR_NEW_USERS:
-        handle_supervisor_new_users(update, context)
         return
 
     # أي نص آخر
