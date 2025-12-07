@@ -5241,10 +5241,15 @@ REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
 def water_reminder_job(context: CallbackContext):
     logger.info("Running water reminder job...")
     bot = context.bot
+    current_hour = context.job.context if hasattr(context, "job") else None
 
     for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
         if not rec.get("reminders_on"):
+            continue
+
+        user_hours = _normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC)
+        if current_hour is not None and current_hour not in user_hours:
             continue
 
         ensure_today_water(rec)
@@ -5397,14 +5402,54 @@ def daily_reset_all(context: CallbackContext = None):
 # =================== الجرعة التحفيزية (JobQueue + إدارة) ===================
 
 
+def _normalize_hours(raw_hours, fallback: List[int]) -> List[int]:
+    hours = []
+    for h in raw_hours or []:
+        try:
+            h_int = int(h)
+            if 0 <= h_int <= 23:
+                hours.append(h_int)
+        except (TypeError, ValueError):
+            continue
+
+    return sorted(set(hours)) or fallback
+
+
+def _all_motivation_hours() -> List[int]:
+    hours = set()
+    for uid in get_active_user_ids():
+        rec = data.get(str(uid)) or {}
+        if rec.get("motivation_on") is False:
+            continue
+        hours.update(_normalize_hours(rec.get("motivation_hours"), MOTIVATION_HOURS_UTC))
+
+    return sorted(hours) or MOTIVATION_HOURS_UTC
+
+
+def _all_water_hours() -> List[int]:
+    hours = set()
+    for uid in get_active_user_ids():
+        rec = data.get(str(uid)) or {}
+        if not rec.get("reminders_on"):
+            continue
+        hours.update(_normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC))
+
+    return sorted(hours) or REMINDER_HOURS_UTC
+
+
 def motivation_job(context: CallbackContext):
     logger.info("Running motivation job...")
     bot = context.bot
+    current_hour = context.job.context if hasattr(context, "job") else None
 
     for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
 
         if rec.get("motivation_on") is False:
+            continue
+
+        user_hours = _normalize_hours(rec.get("motivation_hours"), MOTIVATION_HOURS_UTC)
+        if current_hour is not None and current_hour not in user_hours:
             continue
 
         if not MOTIVATION_MESSAGES:
@@ -7380,6 +7425,7 @@ def handle_confirm_reset_medals_input(update: Update, context: CallbackContext):
 def start_bot():
     """بدء البوت"""
     global IS_RUNNING, job_queue, dispatcher
+    global data
     
     if not BOT_TOKEN:
         raise RuntimeError("❌ BOT_TOKEN غير موجود!")
@@ -7387,6 +7433,10 @@ def start_bot():
     logger.info("🚀 بدء تهيئة البوت...")
     
     try:
+        logger.info("🔄 جارٍ تحميل بيانات المستخدمين...")
+        data = load_data()
+        logger.info(f"✅ تم تحميل {len([k for k in data if k != GLOBAL_KEY])} مستخدم في الذاكرة")
+
         if db is not None:
             logger.info("جاري ترحيل البيانات...")
             try:
@@ -7420,24 +7470,26 @@ def start_bot():
             logger.warning(f"⚠️ خطأ في جدولة الميدالية: {e}")
         
         REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-        for h in REMINDER_HOURS_UTC:
+        for h in _all_water_hours():
             try:
                 job_queue.run_daily(
                     water_reminder_job,
                     time=time(hour=h, minute=0, tzinfo=pytz.UTC),
                     name=f"water_reminder_{h}",
+                    context=h,
                 )
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
         
         global CURRENT_MOTIVATION_JOBS
         CURRENT_MOTIVATION_JOBS = []
-        for h in MOTIVATION_HOURS_UTC:
+        for h in _all_motivation_hours():
             try:
                 job = job_queue.run_daily(
                     motivation_job,
                     time=time(hour=h, minute=0, tzinfo=pytz.UTC),
                     name=f"motivation_job_{h}",
+                    context=h,
                 )
                 CURRENT_MOTIVATION_JOBS.append(job)
             except Exception as e:
