@@ -1534,12 +1534,12 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: عرض الميداليات
-        [KeyboardButton(BTN_MEDALS)],
-        # السطر السادس: فوائد ونصائح
+        # السطر الرابع: احصائياتي بجانب ميدالياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
+        # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
@@ -1554,12 +1554,12 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: عرض الميداليات
-        [KeyboardButton(BTN_MEDALS)],
-        # السطر السادس: فوائد ونصائح
+        # السطر الرابع: احصائياتي بجانب ميدالياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
+        # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر الثامن: لوحة التحكم (فقط للمدير)
@@ -1576,12 +1576,12 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: عرض الميداليات
-        [KeyboardButton(BTN_MEDALS)],
-        # السطر السادس: فوائد ونصائح
+        # السطر الرابع: احصائياتي بجانب ميدالياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
+        # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
         # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر الثامن: لوحة التحكم (للمشرفة)
@@ -3454,16 +3454,16 @@ def handle_add_cups(update: Update, context: CallbackContext):
 
     ensure_today_water(record)
     before = record.get("today_cups", 0)
-    record["today_cups"] = before + cups
+    new_total = before + cups
 
-    add_points(user.id, cups * POINTS_PER_WATER_CUP, context)
+    update_user_record(user.id, today_cups=new_total)
+    record["today_cups"] = new_total
+
+    add_points(user.id, cups * POINTS_PER_WATER_CUP, context, reason="إضافة أكواب ماء")
 
     cups_goal = record.get("cups_goal")
-    after = record["today_cups"]
-    if cups_goal and before < cups_goal <= after:
-        add_points(user.id, POINTS_WATER_DAILY_BONUS, context)
-
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    if cups_goal and before < cups_goal <= new_total:
+        add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
 
     check_daily_full_activity(user.id, record, context)
 
