@@ -169,6 +169,11 @@ def save_data():
         logger.error(f"❌ خطأ في save_data: {e}", exc_info=True)
 
 
+def save_data_local():
+    """حفظ بيانات التخزين المحلي مع دعم الواجهة القديمة."""
+    save_data()
+
+
 def initialize_firebase():
     try:
         secrets_path = "/etc/secrets"
@@ -238,7 +243,7 @@ def get_user_record_local_by_id(user_id: int) -> Dict:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_active": datetime.now(timezone.utc).isoformat(),
             "heart_memos": [],
-            "letters_to_self": []
+            "letters_to_self": [],
         }
     return data[uid]
 
@@ -443,7 +448,7 @@ def get_user_record_local(user: User) -> Dict:
         for field, default_value in default_fields.items():
             if field not in record:
                 record[field] = default_value
-    
+
     save_data_local()
     return data[user_id]
 
@@ -631,17 +636,85 @@ def update_benefit_local(benefit_id: int, benefit_data: Dict):
 def get_user_record_local_by_id(user_id: int) -> Dict:
     """مساعدة للحصول على سجل محلي بواسطة ID"""
     uid = str(user_id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     if uid not in data:
-        # إنشاء سجل افتراضي
         data[uid] = {
             "user_id": user_id,
             "first_name": "مستخدم",
             "username": None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "last_active": datetime.now(timezone.utc).isoformat(),
+            "created_at": now_iso,
+            "last_active": now_iso,
+            "is_new_user": True,
+            "is_banned": False,
+            "banned_by": None,
+            "banned_at": None,
+            "ban_reason": None,
+            "gender": None,
+            "age": None,
+            "weight": None,
+            "water_liters": None,
+            "cups_goal": None,
+            "reminders_on": False,
+            "today_date": None,
+            "today_cups": 0,
+            "quran_pages_goal": None,
+            "quran_pages_today": 0,
+            "quran_today_date": None,
+            "tasbih_total": 0,
+            "adhkar_count": 0,
             "heart_memos": [],
-            "letters_to_self": []
+            "letters_to_self": [],
+            "points": 0,
+            "level": 0,
+            "medals": [],
+            "best_rank": None,
+            "daily_full_streak": 0,
+            "last_full_day": None,
+            "motivation_on": True,
         }
+    else:
+        record = data[uid]
+        record_defaults = {
+            "first_name": "مستخدم",
+            "username": None,
+            "is_new_user": False,
+            "is_banned": False,
+            "banned_by": None,
+            "banned_at": None,
+            "ban_reason": None,
+            "gender": None,
+            "age": None,
+            "weight": None,
+            "water_liters": None,
+            "cups_goal": None,
+            "reminders_on": False,
+            "today_date": None,
+            "today_cups": 0,
+            "quran_pages_goal": None,
+            "quran_pages_today": 0,
+            "quran_today_date": None,
+            "tasbih_total": 0,
+            "adhkar_count": 0,
+            "heart_memos": [],
+            "letters_to_self": [],
+            "points": 0,
+            "level": 0,
+            "medals": [],
+            "best_rank": None,
+            "daily_full_streak": 0,
+            "last_full_day": None,
+            "motivation_on": True,
+        }
+
+        record.setdefault("created_at", now_iso)
+        record.setdefault("last_active", now_iso)
+
+        for field, default_value in record_defaults.items():
+            if field not in record:
+                record[field] = default_value
+
+    save_data_local()
     return data[uid]
 
 # دالة المساعدة للرسائل (محلية)
@@ -845,7 +918,7 @@ def get_user_record_local(user: User) -> Dict:
         for field, default_value in default_fields.items():
             if field not in record:
                 record[field] = default_value
-    
+
     save_data_local()
     return data[user_id]
 
@@ -2068,6 +2141,22 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
         logger.error(f"Error sending rank improvement message to {user_id}: {e}")
 
 
+MEDAL_NAME_NORMALIZATION = {
+    "ميدالية بداية الطريق 🟢": "ميدالية بداية الطريق 🥉",
+    "ميدالية الاستمرار 🎓": "ميدالية الاستمرار 🥈",
+    "ميدالية الهمة العالية 🔥": "ميدالية الهمة العالية 🥇",
+    "ميدالية بطل سُقيا الكوثر 🏆": "ميدالية بطل سُقيا الكوثر 💎",
+    "ميدالية الاستمرارية 📅": "ميدالية الاستمرارية 🔁",
+    "وسام صاحب فائدة من العشرة الأوائل 💡🏅": "وسام صاحب فائدة من أفضل 10 🂡",
+}
+
+
+def normalize_medals_list(medals: List[str]) -> List[str]:
+    if not medals:
+        return []
+    return [MEDAL_NAME_NORMALIZATION.get(m, m) for m in medals]
+
+
 def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
     old_level = record.get("level", 0)
     points = record.get("points", 0)
@@ -2079,14 +2168,14 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
         return
 
     record["level"] = new_level
-    medals = record.get("medals", [])
+    medals = normalize_medals_list(record.get("medals", []))
     new_medals = []
 
     medal_rules = [
-        (1, "ميدالية بداية الطريق 🟢"),
-        (3, "ميدالية الاستمرار 🎓"),
-        (5, "ميدالية الهمة العالية 🔥"),
-        (10, "ميدالية بطل سُقيا الكوثر 🏆"),
+        (3, "ميدالية بداية الطريق 🥉"),
+        (7, "ميدالية الاستمرار 🥈"),
+        (12, "ميدالية الهمة العالية 🥇"),
+        (20, "ميدالية بطل سُقيا الكوثر 💎"),
     ]
 
     for lvl, name in medal_rules:
@@ -2127,16 +2216,14 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     today_date = datetime.now(timezone.utc).date()
     today_str = today_date.isoformat()
 
-    medals = record.get("medals", []) or []
+    medals = normalize_medals_list(record.get("medals", []) or [])
     streak = record.get("daily_full_streak", 0) or 0
     last_full_day = record.get("last_full_day")
 
+    streak_medal_name = "ميدالية الاستمرارية 🔁"
+
     got_new_daily_medal = False
     got_new_streak_medal = False
-
-    if "ميدالية النشاط اليومي ⚡" not in medals:
-        medals.append("ميدالية النشاط اليومي ⚡")
-        got_new_daily_medal = True
 
     if last_full_day == today_str:
         pass
@@ -2156,8 +2243,12 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     record["daily_full_streak"] = streak
     record["last_full_day"] = today_str
 
-    if streak >= 7 and "ميدالية الاستمرارية 📅" not in medals:
-        medals.append("ميدالية الاستمرارية 📅")
+    if streak >= 3 and "ميدالية النشاط اليومي ⚡" not in medals:
+        medals.append("ميدالية النشاط اليومي ⚡")
+        got_new_daily_medal = True
+
+    if streak >= 10 and streak_medal_name not in medals:
+        medals.append(streak_medal_name)
         got_new_streak_medal = True
 
     record["medals"] = medals
@@ -2169,7 +2260,7 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
                 context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        "⚡ مبروك! أنجزت هدف الماء وهدف القرآن في نفس اليوم لأول مرة.\n"
+                        "⚡ مبروك! أكملت كل مهام اليوم (ماء + قرآن) لثلاثة أيام.\n"
                         "هذه *ميدالية النشاط اليومي*، بداية جميلة لاستمرار أجمل 🤍"
                     ),
                     parse_mode="Markdown",
@@ -2178,8 +2269,8 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
                 context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        "📅 ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة ٧ أيام متتالية.\n"
-                        "حصلت على *ميدالية الاستمرارية* 🏆\n"
+                        "🔁 ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة ١٠ أيام متتالية.\n"
+                        "حصلت على *ميدالية الاستمرارية* 🔁\n"
                         "استمر، فالقليل الدائم أحبّ إلى الله من الكثير المنقطع 🤍"
                     ),
                     parse_mode="Markdown",
@@ -2795,15 +2886,18 @@ def handle_reminder_option(update: Update, context: CallbackContext):
         "reminder_date": reminder_date.isoformat() if reminder_date else None,
         "sent": False
     }
-    
+
     letters.append(new_letter)
     record["letters_to_self"] = letters
-    
+
     # إضافة نقاط
     add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
     save_data()
     # تحديث Firestore مباشرة
-    update_user_record(user_id, letters_to_self=letters)
+    update_user_record(
+        user_id,
+        letters_to_self=letters,
+    )
 
     # جدولة التذكير إذا كان هناك تاريخ
     if reminder_date and context.job_queue:
@@ -2894,13 +2988,17 @@ def handle_custom_date_input(update: Update, context: CallbackContext):
             "reminder_date": reminder_date.isoformat(),
             "sent": False
         }
-        
+
         letters.append(new_letter)
         record["letters_to_self"] = letters
-        
         # إضافة نقاط
         add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
         save_data()
+
+        update_user_record(
+            user_id,
+            letters_to_self=letters,
+        )
 
         # جدولة التذكير
         if context.job_queue:
@@ -3399,6 +3497,9 @@ def handle_add_cups(update: Update, context: CallbackContext):
     after = record["today_cups"]
     if cups_goal and before < cups_goal <= after:
         add_points(user.id, POINTS_WATER_DAILY_BONUS, context)
+        update_user_record(user.id, today_cups=record["today_cups"])
+    else:
+        update_user_record(user.id, today_cups=record["today_cups"])
 
     # تم حفظ البيانات في Firestore عبر update_user_record
 
@@ -3669,10 +3770,21 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     after = record["quran_pages_today"]
     if goal and before < goal <= after:
         add_points(user_id, POINTS_QURAN_DAILY_BONUS, context)
-
+        today_date = record.get("quran_today_date") or datetime.now(timezone.utc).date().isoformat()
+        update_user_record(
+            user_id,
+            quran_pages_today=record["quran_pages_today"],
+            quran_today_date=record.get("quran_today_date"),
+        )
+    else:
+        update_user_record(
+            user_id,
+            quran_pages_today=record["quran_pages_today"],
+            quran_today_date=record.get("quran_today_date"),
+        )
     save_data()
     # تحديث Firestore مباشرة
-    update_user_record(user_id, quran_pages_today=record["quran_pages_today"], quran_today_date=record.get("quran_today_date"))
+    
 
     check_daily_full_activity(user_id, record, context)
 
@@ -4225,7 +4337,7 @@ def handle_stats(update: Update, context: CallbackContext):
 
     points = record.get("points", 0)
     level = record.get("level", 0)
-    medals = record.get("medals", [])
+    medals = normalize_medals_list(record.get("medals", []))
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
@@ -4896,13 +5008,14 @@ def check_and_award_medal(context: CallbackContext):
     for benefit in sorted_benefits[:10]:
         top_10_user_ids.add(benefit["user_id"])
         
-    MEDAL_TEXT = "وسام صاحب فائدة من العشرة الأوائل 💡🏅"
-    
+    MEDAL_TEXT = "وسام صاحب فائدة من أفضل 10 🂡"
+    MEDAL_LEGACY = "وسام صاحب فائدة من العشرة الأوائل 💡🏅"
+
     for user_id in top_10_user_ids:
         uid_str = str(user_id)
         if uid_str in data:
             record = data[uid_str]
-            medals = record.get("medals", [])
+            medals = normalize_medals_list(record.get("medals", []))
             
             if MEDAL_TEXT not in medals:
                 medals.append(MEDAL_TEXT)
@@ -5014,7 +5127,7 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
         # 2. منح نقطة لصاحب الفائدة
         owner_id = benefit["user_id"]
         add_points(owner_id, 1)
-        
+
         # 3. حفظ التغييرات في Firestore بشكل مباشر
         if firestore_id and firestore_available():
             try:
@@ -5586,7 +5699,7 @@ def handle_my_profile(update: Update, context: CallbackContext):
 
     points = record.get("points", 0)
     level = record.get("level", 0)
-    medals = record.get("medals", []) or []
+    medals = normalize_medals_list(record.get("medals", []) or [])
     best_rank = record.get("best_rank")
 
     sorted_users = get_users_sorted_by_points()
@@ -5639,7 +5752,7 @@ def handle_top10(update: Update, context: CallbackContext):
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
         points = rec.get("points", 0)
-        medals = rec.get("medals", []) or []
+        medals = normalize_medals_list(rec.get("medals", []) or [])
 
         # تعديل العرض: إذا كانت النقاط والميداليات صفر/فارغة، اعرض اسم المستخدم فقط مع 0 نقطة ولا توجد ميداليات
         if points == 0 and not medals:
@@ -5676,7 +5789,7 @@ def handle_top100(update: Update, context: CallbackContext):
     for idx, rec in enumerate(top, start=1):
         name = rec.get("first_name") or "مستخدم"
         points = rec.get("points", 0)
-        medals = rec.get("medals", []) or []
+        medals = normalize_medals_list(rec.get("medals", []) or [])
 
         # تعديل العرض: إذا كانت النقاط والميداليات صفر/فارغة، اعرض اسم المستخدم فقط مع 0 نقطة ولا توجد ميداليات
         if points == 0 and not medals:
