@@ -1991,11 +1991,39 @@ def increment_tasbih_total(user_id: int, amount: int = 1):
 
 
 def get_users_sorted_by_points():
-    return sorted(
-        [r for k, r in data.items() if k != GLOBAL_KEY],
-        key=lambda r: r.get("points", 0),
-        reverse=True,
-    )
+    """جلب جميع المستخدمين من Firestore وفرزهم حسب النقاط"""
+    if not firestore_available():
+        # Fallback to local data
+        return sorted(
+            [r for k, r in data.items() if k != GLOBAL_KEY],
+            key=lambda r: r.get("points", 0),
+            reverse=True,
+        )
+        
+    try:
+        users_ref = db.collection(USERS_COLLECTION)
+        # جلب جميع الوثائق
+        docs = users_ref.stream()
+        
+        users_list = []
+        for doc in docs:
+            users_list.append(doc.to_dict())
+            
+        # فرز القائمة
+        return sorted(
+            users_list,
+            key=lambda r: r.get("points", 0),
+            reverse=True,
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب المستخدمين وفرزهم من Firestore: {e}")
+        # Fallback to local data
+        return sorted(
+            [r for k, r in data.items() if k != GLOBAL_KEY],
+            key=lambda r: r.get("points", 0),
+            reverse=True,
+        )
 
 
 def check_rank_improvement(user_id: int, record: dict, context: CallbackContext = None):
