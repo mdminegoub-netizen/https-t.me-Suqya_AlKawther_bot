@@ -39,6 +39,33 @@ DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
+# الحقول المرتبطة بنظام الميداليات الجديد الذي تمت إزالته
+LEGACY_NEW_MEDAL_FIELDS = [
+    "total_water_goal_days",
+    "total_quran_pages",
+    "total_quran_target_days",
+    "total_self_messages",
+    "total_benefits",
+    "total_benefit_likes_received",
+]
+
+
+def purge_new_medal_system_fields(record: Dict) -> bool:
+    """إزالة أي بقايا لحقول نظام الميداليات الجديد من سجل المستخدم."""
+    removed = False
+
+    for field in LEGACY_NEW_MEDAL_FIELDS:
+        if field in record:
+            record.pop(field, None)
+            removed = True
+
+    # النظام الجديد كان يستخدم قاموسًا للميداليات، نعيده للقائمة الفارغة إذا وُجد
+    if isinstance(record.get("medals"), dict):
+        record["medals"] = []
+        removed = True
+
+    return removed
+
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
@@ -245,7 +272,12 @@ def get_user_record_local_by_id(user_id: int) -> Dict:
             "heart_memos": [],
             "letters_to_self": [],
         }
-    return data[uid]
+    record = data[uid]
+
+    if purge_new_medal_system_fields(record):
+        save_data_local()
+
+    return record
 
 # دالة المساعدة للرسائل (محلية)
 def save_letter_local(user_id: int, letter_data: Dict) -> str:
@@ -448,6 +480,9 @@ def get_user_record_local(user: User) -> Dict:
         for field, default_value in default_fields.items():
             if field not in record:
                 record[field] = default_value
+
+    if purge_new_medal_system_fields(data[user_id]):
+        save_data_local()
 
     save_data_local()
     return data[user_id]
@@ -919,6 +954,9 @@ def get_user_record_local(user: User) -> Dict:
             if field not in record:
                 record[field] = default_value
 
+    if purge_new_medal_system_fields(data[user_id]):
+        save_data_local()
+
     save_data_local()
     return data[user_id]
 
@@ -1317,8 +1355,14 @@ def get_user_record(user):
         
         if doc.exists:
             record = doc.to_dict()
+            removed = purge_new_medal_system_fields(record)
             # تحديث آخر نشاط
             doc_ref.update({"last_active": now_iso})
+            if removed:
+                update_data = {field: firestore.DELETE_FIELD for field in LEGACY_NEW_MEDAL_FIELDS}
+                if isinstance(record.get("medals"), list):
+                    update_data["medals"] = record.get("medals", [])
+                doc_ref.update(update_data)
             # إضافة المستخدم إلى data المحلي
             data[user_id] = record
             logger.info(f"✅ تم قراءة بيانات المستخدم {user_id} من Firestore")
@@ -6490,6 +6534,11 @@ def get_user_record_by_id(user_id: int) -> Dict:
         doc = doc_ref.get()
         if doc.exists:
             record = doc.to_dict()
+            if purge_new_medal_system_fields(record):
+                update_data = {field: firestore.DELETE_FIELD for field in LEGACY_NEW_MEDAL_FIELDS}
+                if isinstance(record.get("medals"), list):
+                    update_data["medals"] = record.get("medals", [])
+                doc_ref.update(update_data)
             data[user_id_str] = record
             return record
         return None
