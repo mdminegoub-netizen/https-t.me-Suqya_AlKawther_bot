@@ -5373,7 +5373,7 @@ def daily_reset_competition():
                 reset_count += 1
         
         logger.info(f"✅ تم تصفير نقاط المنافسة اليومية والترتيب لـ {reset_count} مستخدم")
-        logger.info("ℹ️ النقاط الإجمالية والميداليات الدائمة لم تتأثر")
+        logger.info("ℹ️ النقاط الإجمالية والميداليات الأساسية لم تتأثر")
         
     except Exception as e:
         logger.error(f"❌ خطأ في تصفير نقاط المنافسة: {e}", exc_info=True)
@@ -7260,7 +7260,7 @@ def reset_competition_medals():
         count = 0
         for doc in docs:
             # تصفير فقط ميداليات المنافسات والمجتمع
-            # الميداليات الأخرى (الإنجازات الدائمة) تبقى كما هي
+            # الميداليات الأخرى تبقى كما هي
             batch.update(doc.reference, {
                 "community_medals": [],
                 "medals": [] # تصفير الميداليات الإجمالية المستخدمة في التصنيف
