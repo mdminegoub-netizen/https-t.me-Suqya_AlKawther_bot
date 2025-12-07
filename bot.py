@@ -1059,8 +1059,22 @@ def get_global_config():
     يرجع (أو ينشئ) الإعدادات العامة للبوت (مثل أوقات الجرعة التحفيزية ورسائلها).
     تُخزَّن تحت مفتاح خاص في نفس ملف JSON.
     """
-    cfg = data.get(GLOBAL_KEY)
+    cfg = {}
     changed = False
+
+    # حاول القراءة من Firestore أولاً
+    if firestore_available():
+        try:
+            doc_ref = db.collection(GLOBAL_CONFIG_COLLECTION).document("config")
+            doc = doc_ref.get()
+            if doc.exists:
+                cfg = doc.to_dict() or {}
+        except Exception as e:
+            logger.error(f"❌ خطأ في قراءة الإعدادات العامة من Firestore: {e}")
+
+    # fallback إلى البيانات المحملة محليًا
+    if not cfg:
+        cfg = data.get(GLOBAL_KEY)
 
     if not cfg or not isinstance(cfg, dict):
         cfg = {}
@@ -1079,9 +1093,25 @@ def get_global_config():
         changed = True
 
     data[GLOBAL_KEY] = cfg
+
     if changed:
-        save_data()
+        save_global_config(cfg)
+
     return cfg
+
+
+def save_global_config(cfg: Dict):
+    """حفظ الإعدادات العامة في Firestore أو محليًا عند عدم توفره"""
+    data[GLOBAL_KEY] = cfg
+
+    if firestore_available():
+        try:
+            db.collection(GLOBAL_CONFIG_COLLECTION).document("config").set(cfg, merge=True)
+            logger.info("✅ تم حفظ الإعدادات العامة في Firestore")
+        except Exception as e:
+            logger.error(f"❌ خطأ في حفظ الإعدادات العامة في Firestore: {e}")
+    else:
+        save_data()
 
 
 _global_cfg = get_global_config()
@@ -5553,7 +5583,7 @@ def handle_admin_motivation_add_input(update: Update, context: CallbackContext):
 
     cfg = get_global_config()
     cfg["motivation_messages"] = MOTIVATION_MESSAGES
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    save_global_config(cfg)
 
     WAITING_MOTIVATION_ADD.discard(user_id)
 
@@ -5619,7 +5649,7 @@ def handle_admin_motivation_delete_input(update: Update, context: CallbackContex
 
     cfg = get_global_config()
     cfg["motivation_messages"] = MOTIVATION_MESSAGES
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    save_global_config(cfg)
 
     WAITING_MOTIVATION_DELETE.discard(user_id)
 
@@ -5681,7 +5711,7 @@ def handle_admin_motivation_times_input(update: Update, context: CallbackContext
 
     cfg = get_global_config()
     cfg["motivation_hours"] = MOTIVATION_HOURS_UTC
-    # تم حفظ البيانات في Firestore عبر update_user_record
+    save_global_config(cfg)
 
     for job in list(CURRENT_MOTIVATION_JOBS):
         try:
