@@ -240,6 +240,7 @@ def get_user_record_local_by_id(user_id: int) -> Dict:
             "heart_memos": [],
             "letters_to_self": []
         }
+    ensure_medal_defaults(data[uid])
     return data[uid]
 
 # دالة المساعدة للرسائل (محلية)
@@ -401,6 +402,7 @@ def get_user_record_local(user: User) -> Dict:
             "best_rank": None,
             "daily_full_streak": 0,
             "last_full_day": None,
+            "daily_full_count": 0,
             "motivation_on": True,
         }
     else:
@@ -436,6 +438,7 @@ def get_user_record_local(user: User) -> Dict:
             "best_rank": None,
             "daily_full_streak": 0,
             "last_full_day": None,
+            "daily_full_count": 0,
             "motivation_on": True,
             "is_new_user": False
         }
@@ -443,7 +446,8 @@ def get_user_record_local(user: User) -> Dict:
         for field, default_value in default_fields.items():
             if field not in record:
                 record[field] = default_value
-    
+
+    ensure_medal_defaults(record)
     save_data_local()
     return data[user_id]
 
@@ -1248,6 +1252,7 @@ def get_user_record(user):
             doc_ref.update({"last_active": now_iso})
             # إضافة المستخدم إلى data المحلي
             data[user_id] = record
+            ensure_medal_defaults(record)
             logger.info(f"✅ تم قراءة بيانات المستخدم {user_id} من Firestore")
             return record
         else:
@@ -1283,12 +1288,14 @@ def get_user_record(user):
                 "streak_days": 0,
                 "last_streak_date": None,
                 "medals": [],
+                "daily_full_count": 0,
                 "saved_benefits": [],
                 "motivation_on": True,
                 "motivation_hours": [6, 9, 12, 15, 18, 21],
             }
             doc_ref.set(new_record)
             # إضافة المستخدم إلى data المحلي
+            ensure_medal_defaults(new_record)
             data[user_id] = new_record
             logger.info(f"✅ تم إنشاء مستخدم جديد {user_id} في Firestore")
             return new_record
@@ -1423,6 +1430,7 @@ BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
+BTN_MEDALS = "ميدالياتي 🏵️"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
@@ -1487,6 +1495,35 @@ BTN_REMINDER_2MONTHS = "بعد شهرين 📆"
 BTN_REMINDER_CUSTOM = "تاريخ مخصص 🗓️"
 BTN_REMINDER_NONE = "بدون تذكير ❌"
 
+# الميداليات
+MEDAL_BEGINNING = "ميدالية بداية الطريق 🌱"
+MEDAL_PERSISTENCE = "ميدالية الاستمرار 🚀"
+MEDAL_HIGH_SPIRIT = "ميدالية الهمة العالية 💪"
+MEDAL_HERO = "ميدالية بطل سُقيا الكوثر 🥇"
+MEDAL_DAILY_ACTIVITY = "ميدالية النشاط اليومي ✨"
+MEDAL_STREAK = "ميدالية الاستمرارية (ستريك الأيام) 🗓️"
+MEDAL_TOP_BENEFIT = "وسام صاحب فائدة من العشرة الأوائل 💡🥇"
+
+LEVEL_MEDAL_RULES = [
+    (3, MEDAL_BEGINNING),
+    (8, MEDAL_PERSISTENCE),
+    (15, MEDAL_HIGH_SPIRIT),
+    (25, MEDAL_HERO),
+]
+
+DAILY_FULL_MEDAL_THRESHOLD = 3
+DAILY_STREAK_MEDAL_THRESHOLD = 14
+
+MEDAL_RENAMES = {
+    "ميدالية بداية الطريق 🟢": MEDAL_BEGINNING,
+    "ميدالية الاستمرار 🎓": MEDAL_PERSISTENCE,
+    "ميدالية الهمة العالية 🔥": MEDAL_HIGH_SPIRIT,
+    "ميدالية بطل سُقيا الكوثر 🏆": MEDAL_HERO,
+    "ميدالية النشاط اليومي ⚡": MEDAL_DAILY_ACTIVITY,
+    "ميدالية الاستمرارية 📅": MEDAL_STREAK,
+    "وسام صاحب فائدة من العشرة الأوائل 💡🏅": MEDAL_TOP_BENEFIT,
+}
+
 # ===== تعديل القوائم الرئيسية حسب طلبك =====
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
@@ -1497,11 +1534,13 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الرابع: احصائياتي بجانب الميداليات
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر السادس: المنافسات و المجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
+        # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -1515,13 +1554,15 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الرابع: احصائياتي بجانب الميداليات
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر السادس: المنافسات و المجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
+        # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (فقط للمدير)
+        # السطر الثامن: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1535,13 +1576,15 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب المنافسات و المجتمع
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الرابع: احصائياتي بجانب الميداليات
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
         # السطر الخامس: فوائد ونصائح
         [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: الاشعارات على اليسار، التواصل مع الدعم على اليمين
+        # السطر السادس: المنافسات و المجتمع
+        [KeyboardButton(BTN_COMP_MAIN)],
+        # السطر السابع: الاشعارات على اليسار، التواصل مع الدعم على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (للمشرفة)
+        # السطر الثامن: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1847,6 +1890,25 @@ POINTS_PER_LETTER = 5
 def tasbih_points_for_session(target_count: int) -> int:
     return max(target_count // 10, 1)
 
+# =================== الميداليات ===================
+
+
+def normalize_medals_list(medals: List[str]) -> List[str]:
+    normalized = []
+    for medal in medals or []:
+        new_name = MEDAL_RENAMES.get(medal, medal)
+        if new_name not in normalized:
+            normalized.append(new_name)
+    return normalized
+
+
+def ensure_medal_defaults(record: dict):
+    record["medals"] = normalize_medals_list(record.get("medals", []))
+    record.setdefault("daily_full_count", 0)
+    record.setdefault("daily_full_streak", 0)
+    record.setdefault("last_full_day", None)
+
+
 # =================== دوال مساعدة عامة ===================
 
 
@@ -2069,6 +2131,7 @@ def check_rank_improvement(user_id: int, record: dict, context: CallbackContext 
 
 
 def update_level_and_medals(user_id: int, record: dict, context: CallbackContext = None):
+    ensure_medal_defaults(record)
     old_level = record.get("level", 0)
     points = record.get("points", 0)
 
@@ -2082,14 +2145,7 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
     medals = record.get("medals", [])
     new_medals = []
 
-    medal_rules = [
-        (1, "ميدالية بداية الطريق 🟢"),
-        (3, "ميدالية الاستمرار 🎓"),
-        (5, "ميدالية الهمة العالية 🔥"),
-        (10, "ميدالية بطل سُقيا الكوثر 🏆"),
-    ]
-
-    for lvl, name in medal_rules:
+    for lvl, name in LEVEL_MEDAL_RULES:
         if new_level >= lvl and name not in medals:
             medals.append(name)
             new_medals.append(name)
@@ -2110,6 +2166,7 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
 
 
 def check_daily_full_activity(user_id: int, record: dict, context: CallbackContext = None):
+    ensure_medal_defaults(record)
     ensure_today_water(record)
     ensure_today_quran(record)
 
@@ -2130,34 +2187,40 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
     medals = record.get("medals", []) or []
     streak = record.get("daily_full_streak", 0) or 0
     last_full_day = record.get("last_full_day")
+    total_full_days = record.get("daily_full_count", 0) or 0
 
     got_new_daily_medal = False
     got_new_streak_medal = False
 
-    if "ميدالية النشاط اليومي ⚡" not in medals:
-        medals.append("ميدالية النشاط اليومي ⚡")
+    is_new_completion = last_full_day != today_str
+
+    if is_new_completion:
+        total_full_days += 1
+        if last_full_day:
+            try:
+                y, m, d = map(int, last_full_day.split("-"))
+                last_date = datetime(y, m, d, tzinfo=timezone.utc).date()
+                if (today_date - last_date).days == 1:
+                    streak += 1
+                else:
+                    streak = 1
+            except Exception:
+                streak = 1
+        else:
+            streak = 1
+
+    if total_full_days >= DAILY_FULL_MEDAL_THRESHOLD and MEDAL_DAILY_ACTIVITY not in medals:
+        medals.append(MEDAL_DAILY_ACTIVITY)
         got_new_daily_medal = True
 
-    if last_full_day == today_str:
-        pass
-    elif last_full_day:
-        try:
-            y, m, d = map(int, last_full_day.split("-"))
-            last_date = datetime(y, m, d, tzinfo=timezone.utc).date()
-            if (today_date - last_date).days == 1:
-                streak += 1
-            else:
-                streak = 1
-        except Exception:
-            streak = 1
-    else:
-        streak = 1
-
+    record["daily_full_count"] = total_full_days
     record["daily_full_streak"] = streak
-    record["last_full_day"] = today_str
 
-    if streak >= 7 and "ميدالية الاستمرارية 📅" not in medals:
-        medals.append("ميدالية الاستمرارية 📅")
+    if is_new_completion:
+        record["last_full_day"] = today_str
+
+    if streak >= DAILY_STREAK_MEDAL_THRESHOLD and MEDAL_STREAK not in medals:
+        medals.append(MEDAL_STREAK)
         got_new_streak_medal = True
 
     record["medals"] = medals
@@ -2169,8 +2232,8 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
                 context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        "⚡ مبروك! أنجزت هدف الماء وهدف القرآن في نفس اليوم لأول مرة.\n"
-                        "هذه *ميدالية النشاط اليومي*، بداية جميلة لاستمرار أجمل 🤍"
+                        "✨ مبروك! أنجزت هدف الماء وهدف القرآن لعدة أيام.\n"
+                        f"هذه *{MEDAL_DAILY_ACTIVITY}* بعد الوصول إلى {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة. استمر! 🤍"
                     ),
                     parse_mode="Markdown",
                 )
@@ -2178,8 +2241,8 @@ def check_daily_full_activity(user_id: int, record: dict, context: CallbackConte
                 context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        "📅 ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة ٧ أيام متتالية.\n"
-                        "حصلت على *ميدالية الاستمرارية* 🏆\n"
+                        f"🗓️ ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة {DAILY_STREAK_MEDAL_THRESHOLD} أيام متتالية.\n"
+                        f"حصلت على *{MEDAL_STREAK}*\n"
                         "استمر، فالقليل الدائم أحبّ إلى الله من الكثير المنقطع 🤍"
                     ),
                     parse_mode="Markdown",
@@ -3393,6 +3456,12 @@ def handle_add_cups(update: Update, context: CallbackContext):
     before = record.get("today_cups", 0)
     record["today_cups"] = before + cups
 
+    update_user_record(
+        user.id,
+        today_cups=record["today_cups"],
+        today_date=record.get("today_date"),
+    )
+
     add_points(user.id, cups * POINTS_PER_WATER_CUP, context)
 
     cups_goal = record.get("cups_goal")
@@ -4257,6 +4326,56 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
+
+def open_medals_overview(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    ensure_medal_defaults(record)
+
+    user_id = user.id
+    medals = record.get("medals", [])
+    level = record.get("level", 0)
+    total_full_days = record.get("daily_full_count", 0) or 0
+    streak = record.get("daily_full_streak", 0) or 0
+
+    lines = ["🏵️ لوحة الميداليات:\n"]
+
+    if medals:
+        lines.append("ميدالياتك الحالية:")
+        lines.extend(f"- {medal}" for medal in medals)
+    else:
+        lines.append("لا توجد ميداليات حالياً. اجمع النقاط لتبدأ رحلتك 🤍")
+
+    lines.append("\nالشروط الحالية:")
+    lines.append("• ميداليات المستوى:")
+    for lvl, name in LEVEL_MEDAL_RULES:
+        status = "✅" if name in medals else "⏳" if level >= lvl else "⌛"
+        lines.append(f"  {status} {name} — تبدأ من المستوى {lvl}.")
+
+    daily_status = "✅" if MEDAL_DAILY_ACTIVITY in medals else "⏳"
+    lines.append(
+        f"• {daily_status} {MEDAL_DAILY_ACTIVITY}: بعد {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة (أنجزت {total_full_days})."
+    )
+
+    streak_status = "✅" if MEDAL_STREAK in medals else "⏳"
+    lines.append(
+        f"• {streak_status} {MEDAL_STREAK}: تتطلب {DAILY_STREAK_MEDAL_THRESHOLD} يومًا متتاليًا (سلسلتك الحالية {streak})."
+    )
+
+    benefit_status = "✅" if MEDAL_TOP_BENEFIT in medals else "⏳"
+    lines.append(
+        f"• {benefit_status} {MEDAL_TOP_BENEFIT}: حافظ على فائدة ضمن أفضل 10 بالإعجابات."
+    )
+
+    update.message.reply_text(
+        "\n".join(lines),
+        reply_markup=user_main_keyboard(user_id),
+    )
+
 # =================== قسم الفوائد والنصائح ===================
 
 def open_benefits_menu(update: Update, context: CallbackContext):
@@ -4896,25 +5015,24 @@ def check_and_award_medal(context: CallbackContext):
     for benefit in sorted_benefits[:10]:
         top_10_user_ids.add(benefit["user_id"])
         
-    MEDAL_TEXT = "وسام صاحب فائدة من العشرة الأوائل 💡🏅"
-    
     for user_id in top_10_user_ids:
         uid_str = str(user_id)
         if uid_str in data:
             record = data[uid_str]
+            ensure_medal_defaults(record)
             medals = record.get("medals", [])
-            
-            if MEDAL_TEXT not in medals:
-                medals.append(MEDAL_TEXT)
+
+            if MEDAL_TOP_BENEFIT not in medals:
+                medals.append(MEDAL_TOP_BENEFIT)
                 record["medals"] = medals
                 save_data()
-                
+
                 # إرسال رسالة تهنئة
                 try:
                     context.bot.send_message(
                         chat_id=user_id,
                         text=f"تهانينا! 🎉\n"
-                             f"لقد حصلت على وسام جديد: *{MEDAL_TEXT}*\n"
+                             f"لقد حصلت على وسام جديد: *{MEDAL_TOP_BENEFIT}*\n"
                              f"أحد فوائدك وصل إلى قائمة أفضل 10 فوائد. استمر في المشاركة! 🤍",
                         parse_mode="Markdown",
                     )
@@ -6378,6 +6496,7 @@ def get_user_record_by_id(user_id: int) -> Dict:
         if doc.exists:
             record = doc.to_dict()
             data[user_id_str] = record
+            ensure_medal_defaults(record)
             return record
         return None
     except Exception as e:
@@ -6784,6 +6903,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_STATS:
         handle_stats(update, context)
+        return
+
+    if text == BTN_MEDALS:
+        open_medals_overview(update, context)
         return
 
     if text == BTN_LETTER_MAIN:
