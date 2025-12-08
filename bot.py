@@ -7637,7 +7637,7 @@ if __name__ == "__main__":
 
             # JobQueue لا يعمل تلقائيًا في وضع Webhook المخصّص
             try:
-                if job_queue and not job_queue._running:
+                if job_queue:
                     job_queue.start()
                     logger.info("✅ تم تشغيل JobQueue في وضع Webhook")
             except Exception as e:
