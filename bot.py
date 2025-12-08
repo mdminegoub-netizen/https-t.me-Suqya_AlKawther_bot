@@ -5566,6 +5566,12 @@ def motivation_job(context: CallbackContext):
         except Exception as e:
             logger.error(f"Error sending motivation message to {uid}: {e}")
 
+
+def _seconds_until_next_minute() -> float:
+    now = datetime.now(timezone.utc)
+    remaining_seconds = 60 - now.second - now.microsecond / 1_000_000
+    return max(0.0, remaining_seconds)
+
 # ======== لوحة التحكم لإدارة الجرعة التحفيزية (أدمن + مشرفة) ========
 
 
@@ -7572,11 +7578,16 @@ def start_bot():
                 logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
         
         try:
+            first_run_delay = _seconds_until_next_minute()
             job_queue.run_repeating(
                 motivation_job,
-                interval=60,
-                first=0,
+                interval=timedelta(minutes=1),
+                first=first_run_delay,
                 name="motivation_job_minutely",
+            )
+            logger.info(
+                "✅ تم تفعيل فحص الجرعة التحفيزية كل دقيقة (أول تشغيل بعد %.1f ثانية)",
+                first_run_delay,
             )
         except Exception as e:
             logger.error(f"Error scheduling motivation job: {e}")
