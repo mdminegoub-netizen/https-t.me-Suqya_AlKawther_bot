@@ -347,7 +347,11 @@ def migrate_data_to_firestore():
         # حفظ الإعدادات العامة
         config_doc_ref = db.collection(GLOBAL_CONFIG_COLLECTION).document("config")
         config_doc_ref.set({
-            "motivation_hours": global_config.get("motivation_hours", [6, 9, 12, 15, 18, 21]),
+            "motivation_times": _normalize_times(
+                global_config.get("motivation_times")
+                or global_config.get("motivation_hours"),
+                DEFAULT_MOTIVATION_TIMES_UTC.copy(),
+            ),
             "motivation_messages": global_config.get("motivation_messages", []),
             "benefits": []  # الفوائد محفوظة منفصلة الآن
         })
@@ -752,7 +756,11 @@ def migrate_data_to_firestore():
         # حفظ الإعدادات العامة
         config_doc_ref = db.collection(GLOBAL_CONFIG_COLLECTION).document("config")
         config_doc_ref.set({
-            "motivation_hours": global_config.get("motivation_hours", [6, 9, 12, 15, 18, 21]),
+            "motivation_times": _normalize_times(
+                global_config.get("motivation_times")
+                or global_config.get("motivation_hours"),
+                DEFAULT_MOTIVATION_TIMES_UTC.copy(),
+            ),
             "motivation_messages": global_config.get("motivation_messages", []),
             "benefits": []  # الفوائد محفوظة منفصلة الآن
         })
@@ -1034,7 +1042,14 @@ def update_benefit_local(benefit_id: int, benefit_data: Dict):
 
 # =================== إعدادات افتراضية للجرعة التحفيزية (على مستوى البوت) ===================
 
-DEFAULT_MOTIVATION_HOURS_UTC = [6, 9, 12, 15, 18, 21]
+DEFAULT_MOTIVATION_TIMES_UTC = [
+    "06:00",
+    "09:00",
+    "12:00",
+    "15:00",
+    "18:00",
+    "21:00",
+]
 
 DEFAULT_MOTIVATION_MESSAGES = [
     "🍃 تذكّر: قليلٌ دائم خيرٌ من كثير منقطع، خطوة اليوم تقرّبك من نسختك الأفضل 🤍",
@@ -1048,10 +1063,42 @@ DEFAULT_MOTIVATION_MESSAGES = [
 
 GLOBAL_KEY = "_global_config"
 
-MOTIVATION_HOURS_UTC = []
-MOTIVATION_MESSAGES = []
+def _time_to_minutes(time_str: str) -> int:
+    try:
+        parts = time_str.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return -1
 
-CURRENT_MOTIVATION_JOBS = []
+
+def _normalize_times(raw_times, fallback: List[str]) -> List[str]:
+    times = []
+
+    for t in raw_times or []:
+        hour = None
+        minute = None
+
+        if isinstance(t, int):
+            hour = t
+            minute = 0
+        elif isinstance(t, str):
+            match = re.match(r"^(\d{1,2}):(\d{2})$", t.strip())
+            if match:
+                hour = int(match.group(1))
+                minute = int(match.group(2))
+
+        if hour is None or minute is None:
+            continue
+
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            times.append(f"{hour:02d}:{minute:02d}")
+
+    normalized = sorted(set(times), key=_time_to_minutes)
+    return normalized or fallback
+
+
+MOTIVATION_TIMES_UTC = []
+MOTIVATION_MESSAGES = []
 
 
 def get_global_config():
@@ -1080,8 +1127,11 @@ def get_global_config():
         cfg = {}
         changed = True
 
-    if "motivation_hours" not in cfg or not cfg.get("motivation_hours"):
-        cfg["motivation_hours"] = DEFAULT_MOTIVATION_HOURS_UTC.copy()
+    if "motivation_times" not in cfg or not cfg.get("motivation_times"):
+        legacy_hours = cfg.get("motivation_hours")
+        cfg["motivation_times"] = _normalize_times(
+            legacy_hours if legacy_hours is not None else [], DEFAULT_MOTIVATION_TIMES_UTC.copy()
+        )
         changed = True
 
     if "motivation_messages" not in cfg or not cfg.get("motivation_messages"):
@@ -1115,7 +1165,7 @@ def save_global_config(cfg: Dict):
 
 
 _global_cfg = get_global_config()
-MOTIVATION_HOURS_UTC = _global_cfg["motivation_hours"]
+MOTIVATION_TIMES_UTC = _global_cfg["motivation_times"]
 MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
 
 
@@ -1321,7 +1371,7 @@ def get_user_record(user):
                 "daily_full_count": 0,
                 "saved_benefits": [],
                 "motivation_on": True,
-                "motivation_hours": [6, 9, 12, 15, 18, 21],
+                "motivation_times": DEFAULT_MOTIVATION_TIMES_UTC.copy(),
             }
             doc_ref.set(new_record)
             # إضافة المستخدم إلى data المحلي
@@ -5445,15 +5495,20 @@ def _normalize_hours(raw_hours, fallback: List[int]) -> List[int]:
     return sorted(set(hours)) or fallback
 
 
-def _all_motivation_hours() -> List[int]:
-    hours = set()
+def _all_motivation_times() -> List[str]:
+    times = set()
     for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
         if rec.get("motivation_on") is False:
             continue
-        hours.update(_normalize_hours(rec.get("motivation_hours"), MOTIVATION_HOURS_UTC))
+        times.update(
+            _normalize_times(
+                rec.get("motivation_times") or rec.get("motivation_hours"),
+                MOTIVATION_TIMES_UTC,
+            )
+        )
 
-    return sorted(hours) or MOTIVATION_HOURS_UTC
+    return sorted(times, key=_time_to_minutes) or MOTIVATION_TIMES_UTC
 
 
 def _all_water_hours() -> List[int]:
@@ -5468,11 +5523,9 @@ def _all_water_hours() -> List[int]:
 
 
 def motivation_job(context: CallbackContext):
-    current_hour = context.job.context if hasattr(context, "job") else None
-    logger.info(
-        "Running motivation job%s...",
-        f" for hour {current_hour}" if current_hour is not None else "",
-    )
+    now_utc = datetime.now(timezone.utc)
+    current_time_str = now_utc.strftime("%H:%M")
+    logger.info("Running motivation job for %s...", current_time_str)
 
     bot = context.bot
     active_users = get_active_user_ids()
@@ -5485,13 +5538,16 @@ def motivation_job(context: CallbackContext):
             logger.debug("⏭️ المستخدم %s أوقف الجرعة التحفيزية، سيتم التجاوز.", uid)
             continue
 
-        user_hours = _normalize_hours(rec.get("motivation_hours"), MOTIVATION_HOURS_UTC)
-        if current_hour is not None and current_hour not in user_hours:
+        user_times = _normalize_times(
+            rec.get("motivation_times") or rec.get("motivation_hours"),
+            MOTIVATION_TIMES_UTC,
+        )
+        if current_time_str not in set(user_times):
             logger.debug(
-                "⏭️ المستخدم %s لا يملك الساعة %s ضمن أوقاته (%s).",
+                "⏭️ المستخدم %s لا يملك الوقت %s ضمن أوقاته (%s).",
                 uid,
-                current_hour,
-                user_hours,
+                current_time_str,
+                user_times,
             )
             continue
 
@@ -5522,7 +5578,7 @@ def open_admin_motivation_menu(update: Update, context: CallbackContext):
         )
         return
 
-    hours_text = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC) if MOTIVATION_HOURS_UTC else "لا توجد أوقات مضبوطة"
+    hours_text = ", ".join(MOTIVATION_TIMES_UTC) if MOTIVATION_TIMES_UTC else "لا توجد أوقات مضبوطة"
     count = len(MOTIVATION_MESSAGES)
 
     update.message.reply_text(
@@ -5684,12 +5740,12 @@ def handle_admin_motivation_times_start(update: Update, context: CallbackContext
     WAITING_MOTIVATION_ADD.discard(user.id)
     WAITING_MOTIVATION_DELETE.discard(user.id)
 
-    current = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC) if MOTIVATION_HOURS_UTC else "لا توجد"
+    current = ", ".join(MOTIVATION_TIMES_UTC) if MOTIVATION_TIMES_UTC else "لا توجد"
     update.message.reply_text(
         "تعديل أوقات الجرعة التحفيزية ⏰\n\n"
         f"الأوقات الحالية (بتوقيت UTC): {current}\n\n"
-        "أرسل الأوقات الجديدة بالأرقام (0–23) مفصولة بفواصل، مثال:\n"
-        "`6,9,12,15,18,21`\n\n"
+        "أرسل الأوقات الجديدة بصيغة الساعات والدقائق (24h) مثل:\n"
+        "`06:30 , 12:00 , 18:45` أو `21:10 — 18:45 — 09:05`\n\n"
         "أو اضغط «إلغاء ❌».",
         reply_markup=CANCEL_KB,
         parse_mode="Markdown",
@@ -5711,44 +5767,33 @@ def handle_admin_motivation_times_input(update: Update, context: CallbackContext
         open_admin_motivation_menu(update, context)
         return
 
-    parts = re.findall(r"\d+", text)
-    hours = sorted({int(p) for p in parts if 0 <= int(p) <= 23})
+    matches = re.findall(r"(\d{1,2}):(\d{2})", text)
+    times = []
+    for h_str, m_str in matches:
+        hour = int(h_str)
+        minute = int(m_str)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            times.append(f"{hour:02d}:{minute:02d}")
 
-    if not hours:
+    times = sorted(set(times), key=_time_to_minutes)
+
+    if not times:
         msg.reply_text(
-            "رجاءً أرسل ساعات صحيحة بين 0 و 23 مثل: 6,9,12,15,18,21",
+            "رجاءً أرسل الأوقات بصيغة صحيحة مثل: 06:30, 12:00, 18:45",
             reply_markup=CANCEL_KB,
         )
         return
 
-    global MOTIVATION_HOURS_UTC, CURRENT_MOTIVATION_JOBS
-    MOTIVATION_HOURS_UTC = hours
+    global MOTIVATION_TIMES_UTC
+    MOTIVATION_TIMES_UTC = times
 
     cfg = get_global_config()
-    cfg["motivation_hours"] = MOTIVATION_HOURS_UTC
+    cfg["motivation_times"] = MOTIVATION_TIMES_UTC
     save_global_config(cfg)
-
-    for job in list(CURRENT_MOTIVATION_JOBS):
-        try:
-            job.schedule_removal()
-        except Exception:
-            pass
-    CURRENT_MOTIVATION_JOBS = []
-
-    for h in MOTIVATION_HOURS_UTC:
-        try:
-            job = context.job_queue.run_daily(
-                motivation_job,
-                time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-                name=f"motivation_job_{h}",
-            )
-            CURRENT_MOTIVATION_JOBS.append(job)
-        except Exception as e:
-            logger.error(f"Error scheduling motivation job at hour {h}: {e}")
 
     WAITING_MOTIVATION_TIMES.discard(user_id)
 
-    hours_text = ", ".join(str(h) for h in MOTIVATION_HOURS_UTC)
+    hours_text = ", ".join(MOTIVATION_TIMES_UTC)
     msg.reply_text(
         f"تم تحديث أوقات الجرعة التحفيزية بنجاح ✅\n"
         f"الأوقات الجديدة (بتوقيت UTC): {hours_text}",
@@ -7526,19 +7571,15 @@ def start_bot():
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
         
-        global CURRENT_MOTIVATION_JOBS
-        CURRENT_MOTIVATION_JOBS = []
-        for h in _all_motivation_hours():
-            try:
-                job = job_queue.run_daily(
-                    motivation_job,
-                    time=time(hour=h, minute=0, tzinfo=pytz.UTC),
-                    name=f"motivation_job_{h}",
-                    context=h,
-                )
-                CURRENT_MOTIVATION_JOBS.append(job)
-            except Exception as e:
-                logger.error(f"Error scheduling motivation job at hour {h}: {e}")
+        try:
+            job_queue.run_repeating(
+                motivation_job,
+                interval=60,
+                first=0,
+                name="motivation_job_minutely",
+            )
+        except Exception as e:
+            logger.error(f"Error scheduling motivation job: {e}")
         
         # جدولة التصفير اليومي عند 00:00 بتوقيت الجزائر
         algeria_tz = pytz.timezone('Africa/Algiers')
