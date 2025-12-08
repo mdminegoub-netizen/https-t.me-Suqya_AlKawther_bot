@@ -7741,6 +7741,7 @@ def main():
         if updater:
             updater.stop()
     except Exception as e:
-        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True
-    if __name__ == "__main__":
-    main()                 
+        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
+
+if __name__ == "__main__":
+    main()
