@@ -5,6 +5,7 @@ import logging
 import re
 import random
 from datetime import datetime, timezone, time, timedelta
+from telegram.ext import CallbackContext
 from threading import Thread
 from typing import List, Dict
 
@@ -7518,6 +7519,10 @@ def handle_confirm_reset_medals_input(update: Update, context: CallbackContext):
             reply_markup=ADMIN_PANEL_KB,
         )
 
+
+
+
+
 def start_bot():
     """بدء البوت"""
     global IS_RUNNING, job_queue, dispatcher
@@ -7611,6 +7616,67 @@ def start_bot():
         raise
 
 if __name__ == "__main__":
+    main()
+
+
+def get_all_users_with_motivation_on():
+    """يرجع قائمة بجميع المستخدمين الذين قاموا بتفعيل الجرعة التحفيزية."""
+    if not firestore_available():
+        return []
+    try:
+        users_ref = db.collection(USERS_COLLECTION)
+        query = users_ref.where('motivation_on', '==', True)
+        docs = query.stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب المستخدمين مع تفعيل الجرعة التحفيزية: {e}")
+        return []
+
+def send_motivation_dose(context: CallbackContext, user_id: int, message: str):
+    """يرسل رسالة الجرعة التحفيزية لمستخدم معين."""
+    try:
+        context.bot.send_message(chat_id=user_id, text=message)
+        logger.info(f"✅ تم إرسال الجرعة التحفيزية للمستخدم {user_id}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في إرسال الجرعة التحفيزية للمستخدم {user_id}: {e}")
+
+def motivation_job(context: CallbackContext):
+    """يتحقق من أوقات الجرعة ويرسلها للمستخدمين."""
+    now_utc = datetime.now(pytz.utc)
+    current_time_str = now_utc.strftime("%H:%M")
+
+    # 1. قراءة أوقات الجرعة من Firestore
+    global_config = get_global_config()
+    motivation_times = global_config.get("motivation_times", [])
+    
+    # 2. التأكد من أن الإرسال يتم للمستخدمين المفعّلين فقط
+    users_to_notify = get_all_users_with_motivation_on()
+    num_users = len(users_to_notify)
+
+    # 3. تسجيل (log) محاولة الإرسال
+    logger.info(f"Checking motivational dose at {current_time_str} for {num_users} users")
+
+    # 4. مقارنة الوقت الحالي وإرسال الجرعة
+    if current_time_str in motivation_times:
+        logger.info(f"🎯 تطابق وقت الجرعة التحفيزية: {current_time_str} UTC. جاري الإرسال لـ {num_users} مستخدم.")
+        
+        if not users_to_notify:
+            logger.info("😕 لا يوجد مستخدمون مفعّلون لتلقي الجرعة التحفيزية.")
+            return
+
+        motivation_messages = global_config.get("motivation_messages", [])
+        if not motivation_messages:
+            logger.warning("⚠️ لا توجد رسائل تحفيزية مهيأة.")
+            return
+
+        message_to_send = random.choice(motivation_messages)
+
+        for user_data in users_to_notify:
+            user_id = user_data.get("user_id")
+            if user_id:
+                send_motivation_dose(context, user_id, message_to_send)
+
+def main():
     logger.info("=" * 50)
     logger.info("🚀 بدء سُقيا الكوثر")
     logger.info("=" * 50)
@@ -7619,6 +7685,7 @@ if __name__ == "__main__":
     initialize_firebase()
     
     # تهيئة Updater و Dispatcher و job_queue مرة واحدة
+    global updater, dispatcher, job_queue
     try:
         updater = Updater(BOT_TOKEN, use_context=True)
         dispatcher = updater.dispatcher
@@ -7674,6 +7741,6 @@ if __name__ == "__main__":
         if updater:
             updater.stop()
     except Exception as e:
-        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
-if __name__ == "__main__":
-    main()
+        logger.error(f"❌ خطأ نهائي: {e}", exc_info=True
+    if __name__ == "__main__":
+    main()                 
