@@ -1209,12 +1209,39 @@ ADHKAR_GENERAL_TEXT = (
     "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
 )
 
+SLEEP_ADHKAR_ITEMS = [
+    {
+        "title": "آية الكرسي",
+        "text": "﴿اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ... وَهُوَ الْعَلِيُّ الْعَظِيمُ﴾ (البقرة: 255)",
+        "repeat": "مرة واحدة قبل النوم.",
+    },
+    {
+        "title": "خواتيم سورة البقرة",
+        "text": "﴿آمَنَ الرَّسُولُ بِمَا أُنزِلَ إِلَيْهِ مِن رَّبِّهِ... وَانصُرْنَا عَلَى الْقَوْمِ الْكَافِرِينَ﴾ (البقرة: 285-286)",
+        "repeat": "مرة واحدة تكفي عن قيام الليل بإذن الله.",
+    },
+    {
+        "title": "النفث بالمعوّذات",
+        "text": "جمع الكفين ثم قراءة: قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس، ثم النفث والمسح على الجسد. تُكرر ثلاث مرات.",
+        "repeat": "ثلاث مرات مع المسح بعد كل مرة.",
+    },
+    {
+        "title": "دعاء البراء بن عازب",
+        "text": "«باسمك ربي وضعت جنبي وبك أرفعه، فإن أمسكت نفسي فارحمها، وإن أرسلتها فاحفظها بما تحفظ به عبادك الصالحين».",
+        "repeat": "مرة واحدة مع وضع اليد تحت الخد الأيمن.",
+    },
+    {
+        "title": "ذكر التسليم واليقين",
+        "text": "«اللهم أسلمت نفسي إليك، وفوّضت أمري إليك، وألجأت ظهري إليك، رغبة ورهبة إليك، لا ملجأ ولا منجى منك إلا إليك، آمنت بكتابك الذي أنزلت، وبنبيك الذي أرسلت».",
+        "repeat": "مرة واحدة قبل إغلاق العينين.",
+    },
+    {
+        "title": "تسبيح خاتمة اليوم",
+        "text": "«سبحان الله» 33، «الحمد لله» 33، «الله أكبر» 34 مرة.",
+        "repeat": "يُقال بالترتيب قبل النوم.",
+    },
+]
 
-# أزرار الأذكار
-BTN_ADHKAR_MAIN = "أذكاري 🤲"
-BTN_ADHKAR_MORNING = "أذكار الصباح 🌅"
-BTN_ADHKAR_EVENING = "أذكار المساء 🌙"
-BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
 
 # =================== سجلات المستخدمين ===================
 
@@ -1482,6 +1509,9 @@ WAITING_BENEFIT_TEXT = set()
 WAITING_BENEFIT_EDIT_TEXT = set()
 WAITING_BENEFIT_DELETE_CONFIRM = set()
 BENEFIT_EDIT_ID = {} # user_id -> benefit_id
+
+# أذكار النوم
+SLEEP_ADHKAR_STATE = {}  # user_id -> current_index
 
 # إدارة الجرعة التحفيزية (من لوحة التحكم)
 WAITING_MOTIVATION_ADD = set()
@@ -1780,11 +1810,14 @@ QURAN_MENU_KB_ADMIN = ReplyKeyboardMarkup(
 BTN_ADHKAR_MORNING = "أذكار الصباح 🌅"
 BTN_ADHKAR_EVENING = "أذكار المساء 🌙"
 BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
+BTN_ADHKAR_SLEEP = "💤 أذكار النوم"
+BTN_SLEEP_ADHKAR_NEXT = "⬅️ التالي"
+BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
 
 ADHKAR_MENU_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MORNING), KeyboardButton(BTN_ADHKAR_EVENING)],
-        [KeyboardButton(BTN_ADHKAR_GENERAL)],
+        [KeyboardButton(BTN_ADHKAR_GENERAL), KeyboardButton(BTN_ADHKAR_SLEEP)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -1793,8 +1826,16 @@ ADHKAR_MENU_KB_USER = ReplyKeyboardMarkup(
 ADHKAR_MENU_KB_ADMIN = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADHKAR_MORNING), KeyboardButton(BTN_ADHKAR_EVENING)],
-        [KeyboardButton(BTN_ADHKAR_GENERAL)],
+        [KeyboardButton(BTN_ADHKAR_GENERAL), KeyboardButton(BTN_ADHKAR_SLEEP)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+SLEEP_ADHKAR_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_SLEEP_ADHKAR_NEXT)],
+        [KeyboardButton(BTN_SLEEP_ADHKAR_BACK)],
     ],
     resize_keyboard=True,
 )
@@ -3884,7 +3925,8 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
         "أذكاري 🤲:\n"
         "• أذكار الصباح.\n"
         "• أذكار المساء.\n"
-        "• أذكار عامة تريح القلب.",
+        "• أذكار عامة تريح القلب.\n"
+        "• أذكار النوم الموثوقة.",
         reply_markup=kb,
     )
 
@@ -3934,6 +3976,78 @@ def send_general_adhkar(update: Update, context: CallbackContext):
     update.message.reply_text(
         ADHKAR_GENERAL_TEXT,
         reply_markup=kb,
+    )
+
+
+def format_sleep_adhkar_text(index: int) -> str:
+    total = len(SLEEP_ADHKAR_ITEMS)
+    item = SLEEP_ADHKAR_ITEMS[index]
+    return (
+        f"💤 أذكار النوم ({index + 1}/{total}):\n\n"
+        f"{item['title']}:\n{item['text']}\n\n"
+        f"التكرار: {item['repeat']}"
+    )
+
+
+def start_sleep_adhkar(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    SLEEP_ADHKAR_STATE[user.id] = 0
+    update.message.reply_text(
+        format_sleep_adhkar_text(0),
+        reply_markup=SLEEP_ADHKAR_KB,
+    )
+
+
+def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    if user_id not in SLEEP_ADHKAR_STATE:
+        start_sleep_adhkar(update, context)
+        return
+
+    current_index = SLEEP_ADHKAR_STATE[user_id]
+    increment_adhkar_count(user_id, 1)
+
+    if current_index >= len(SLEEP_ADHKAR_ITEMS) - 1:
+        SLEEP_ADHKAR_STATE.pop(user_id, None)
+        update.message.reply_text(
+            "اكتملت أذكار النوم. تصبح على خير ✨",
+            reply_markup=adhkar_menu_keyboard(user_id),
+        )
+        return
+
+    next_index = current_index + 1
+    SLEEP_ADHKAR_STATE[user_id] = next_index
+    update.message.reply_text(
+        format_sleep_adhkar_text(next_index),
+        reply_markup=SLEEP_ADHKAR_KB,
+    )
+
+
+def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    if user_id in SLEEP_ADHKAR_STATE:
+        increment_adhkar_count(user_id, 1)
+    SLEEP_ADHKAR_STATE.pop(user_id, None)
+    update.message.reply_text(
+        "عدنا إلى القائمة الرئيسية.",
+        reply_markup=user_main_keyboard(user_id),
     )
 
 # =================== قسم السبحة ===================
@@ -6837,6 +6951,7 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_UNBAN_USER.discard(user_id)
         WAITING_BAN_REASON.discard(user_id)
         BAN_TARGET_ID.pop(user_id, None)
+        SLEEP_ADHKAR_STATE.pop(user_id, None)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
         if user_id in WAITING_BENEFIT_EDIT_TEXT:
@@ -7015,6 +7130,15 @@ def handle_text(update: Update, context: CallbackContext):
         handle_edit_benefit_text(update, context)
         return
 
+    # أذكار النوم
+    if text == BTN_SLEEP_ADHKAR_NEXT:
+        handle_sleep_adhkar_next(update, context)
+        return
+
+    if text == BTN_SLEEP_ADHKAR_BACK:
+        handle_sleep_adhkar_back(update, context)
+        return
+
     # الأزرار الرئيسية
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
@@ -7082,6 +7206,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADHKAR_GENERAL:
         send_general_adhkar(update, context)
+        return
+
+    if text == BTN_ADHKAR_SLEEP:
+        start_sleep_adhkar(update, context)
         return
 
     # منبّه الماء
