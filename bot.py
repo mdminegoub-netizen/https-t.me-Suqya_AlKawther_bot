@@ -93,36 +93,41 @@ def run_flask():
 
 # تعريف data كـ dictionary فارغ في البداية
 data = {}
+# مؤشر لتتبع مصدر البيانات (Firestore أو ملف محلي)
+DATA_LOADED_FROM_FIRESTORE = False
 
 def load_data():
     """
     تحميل جميع المستخدمين من Firestore عند بدء البوت
     """
+    global DATA_LOADED_FROM_FIRESTORE
     loaded_data = {}
-    
+
     # محاولة التحميل من Firestore أولاً
     if firestore_available():
         try:
             logger.info("🔄 جاري تحميل جميع المستخدمين من Firestore...")
             users_ref = db.collection(USERS_COLLECTION)
             docs = users_ref.stream()
-            
+
             count = 0
             for doc in docs:
                 user_data = doc.to_dict()
                 loaded_data[doc.id] = user_data
                 count += 1
-            
+
             logger.info(f"✅ تم تحميل {count} مستخدم من Firestore")
+            DATA_LOADED_FROM_FIRESTORE = True
             return loaded_data
-            
+
         except Exception as e:
             logger.error(f"❌ خطأ في تحميل المستخدمين من Firestore: {e}")
-    
+
     # Fallback: التحميل من الملف المحلي
     if not os.path.exists(DATA_FILE):
         return {}
     try:
+        DATA_LOADED_FROM_FIRESTORE = False
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
@@ -1352,9 +1357,34 @@ def get_user_record(user):
         # قراءة من Firestore
         doc_ref = db.collection(USERS_COLLECTION).document(user_id)
         doc = doc_ref.get()
-        
+
         if doc.exists:
             record = doc.to_dict()
+            # تحميل المذكرات والرسائل من Subcollections إذا كانت غير موجودة في السجل
+            try:
+                if not record.get("heart_memos"):
+                    memos_data = []
+                    for memo_doc in doc_ref.collection("heart_memos").stream():
+                        memo_data = memo_doc.to_dict()
+                        if memo_data.get("note"):
+                            memos_data.append(memo_data)
+                    if memos_data:
+                        memos_data.sort(key=lambda m: m.get("created_at") or "")
+                        record["heart_memos"] = [m.get("note") for m in memos_data]
+                if not record.get("letters_to_self"):
+                    letters_list = []
+                    for letter_doc in doc_ref.collection("letters").stream():
+                        letter_data = letter_doc.to_dict()
+                        if letter_data:
+                            letters_list.append(letter_data)
+                    if letters_list:
+                        letters_list.sort(
+                            key=lambda l: l.get("created_at") or l.get("reminder_date") or ""
+                        )
+                        record["letters_to_self"] = letters_list
+            except Exception as e:
+                logger.warning(f"⚠️ تعذر تحميل المذكرات/الرسائل الفرعية للمستخدم {user_id}: {e}")
+
             # تحديث آخر نشاط
             doc_ref.update({"last_active": now_iso})
             # إضافة المستخدم إلى data المحلي
@@ -7661,8 +7691,9 @@ def start_bot():
         data = load_data()
         logger.info(f"✅ تم تحميل {len([k for k in data if k != GLOBAL_KEY])} مستخدم في الذاكرة")
 
-        if db is not None:
-            logger.info("جاري ترحيل البيانات...")
+        # عدم ترحيل بيانات Firestore عند كل تشغيل لمنع الكتابة فوق البيانات الحالية
+        if db is not None and not DATA_LOADED_FROM_FIRESTORE:
+            logger.info("جاري ترحيل البيانات من التخزين المحلي إلى Firestore...")
             try:
                 migrate_data_to_firestore()
             except Exception as e:
