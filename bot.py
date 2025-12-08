@@ -60,8 +60,6 @@ WEBHOOK_MAX_CONNECTIONS = int(os.getenv("WEBHOOK_MAX_CONNECTIONS", 40))
 REQUEST_KWARGS = {
     "read_timeout": WEBHOOK_TIMEOUT,
     "connect_timeout": int(os.getenv("WEBHOOK_CONNECT_TIMEOUT", 10)),
-    "pool_connections": WEBHOOK_MAX_CONNECTIONS,
-    "pool_maxsize": WEBHOOK_MAX_CONNECTIONS,
 }
 
 # إعدادات الكاش لتقليل قراءات Firestore المتكررة
