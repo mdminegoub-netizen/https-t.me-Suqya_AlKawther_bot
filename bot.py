@@ -5468,26 +5468,41 @@ def _all_water_hours() -> List[int]:
 
 
 def motivation_job(context: CallbackContext):
-    logger.info("Running motivation job...")
-    bot = context.bot
     current_hour = context.job.context if hasattr(context, "job") else None
+    logger.info(
+        "Running motivation job%s...",
+        f" for hour {current_hour}" if current_hour is not None else "",
+    )
 
-    for uid in get_active_user_ids():
+    bot = context.bot
+    active_users = get_active_user_ids()
+    logger.info("📨 سيتم فحص %s مستخدم نشط لإرسال الجرعة التحفيزية.", len(active_users))
+
+    for uid in active_users:
         rec = data.get(str(uid)) or {}
 
         if rec.get("motivation_on") is False:
+            logger.debug("⏭️ المستخدم %s أوقف الجرعة التحفيزية، سيتم التجاوز.", uid)
             continue
 
         user_hours = _normalize_hours(rec.get("motivation_hours"), MOTIVATION_HOURS_UTC)
         if current_hour is not None and current_hour not in user_hours:
+            logger.debug(
+                "⏭️ المستخدم %s لا يملك الساعة %s ضمن أوقاته (%s).",
+                uid,
+                current_hour,
+                user_hours,
+            )
             continue
 
         if not MOTIVATION_MESSAGES:
+            logger.warning("⚠️ لا توجد رسائل جرعة تحفيزية لإرسالها.")
             continue
 
         msg = random.choice(MOTIVATION_MESSAGES)
 
         try:
+            logger.info("🚀 إرسال جرعة تحفيزية للمستخدم %s", uid)
             bot.send_message(
                 chat_id=uid,
                 text=msg,
@@ -7564,10 +7579,18 @@ if __name__ == "__main__":
         if WEBHOOK_URL:
             # وضع Webhook
             logger.info("🌐 تشغيل البوت في وضع Webhook...")
-            
+
             # تهيئة البوت (تسجيل handlers والمهام اليومية)
             start_bot()
-            
+
+            # JobQueue لا يعمل تلقائيًا في وضع Webhook المخصّص
+            try:
+                if job_queue and not job_queue._running:
+                    job_queue.start()
+                    logger.info("✅ تم تشغيل JobQueue في وضع Webhook")
+            except Exception as e:
+                logger.error(f"❌ خطأ في تشغيل JobQueue: {e}", exc_info=True)
+
             # إعداد Webhook
             updater.bot.set_webhook(WEBHOOK_URL + BOT_TOKEN)
             logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
