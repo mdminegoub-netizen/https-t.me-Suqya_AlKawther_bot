@@ -46,11 +46,27 @@ ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
 )
 logger = logging.getLogger(__name__)
+
+WEBHOOK_TIMEOUT = int(os.getenv("WEBHOOK_TIMEOUT", 15))
+WEBHOOK_MAX_CONNECTIONS = int(os.getenv("WEBHOOK_MAX_CONNECTIONS", 40))
+
+# ضبط اتصال البوت لتحمل عدد أكبر من الاتصالات
+REQUEST_KWARGS = {
+    "read_timeout": WEBHOOK_TIMEOUT,
+    "connect_timeout": int(os.getenv("WEBHOOK_CONNECT_TIMEOUT", 10)),
+    "pool_connections": WEBHOOK_MAX_CONNECTIONS,
+    "pool_maxsize": WEBHOOK_MAX_CONNECTIONS,
+}
+
+# إعدادات الكاش لتقليل قراءات Firestore المتكررة
+USER_CACHE_TTL_SECONDS = int(os.getenv("USER_CACHE_TTL_SECONDS", 60))
+LAST_ACTIVE_UPDATE_INTERVAL_SECONDS = int(os.getenv("LAST_ACTIVE_UPDATE_INTERVAL_SECONDS", 60))
 
 # =================== خادم ويب بسيط لـ Render ===================
 
@@ -95,6 +111,9 @@ def run_flask():
 data = {}
 # مؤشر لتتبع مصدر البيانات (Firestore أو ملف محلي)
 DATA_LOADED_FROM_FIRESTORE = False
+# كاش بسيط لتجنب قراءات Firestore المتكررة خلال فترة قصيرة
+USER_CACHE_TIMESTAMPS: Dict[str, datetime] = {}
+LAST_ACTIVE_WRITE_TRACKER: Dict[str, datetime] = {}
 
 def load_data():
     """
@@ -213,6 +232,36 @@ except Exception as e:
 def firestore_available():
     """التحقق مما إذا كان Firestore متاحاً"""
     return db is not None
+
+
+def _is_cache_fresh(user_id: str, now: datetime) -> bool:
+    """يتحقق من صلاحية الكاش للمستخدم"""
+    cached_at = USER_CACHE_TIMESTAMPS.get(user_id)
+    if not cached_at:
+        return False
+    return (now - cached_at).total_seconds() < USER_CACHE_TTL_SECONDS
+
+
+def _remember_cache(user_id: str, record: Dict, fetched_at: datetime):
+    """تحديث الكاش المحلي ووقت آخر تحميل"""
+    data[user_id] = record
+    USER_CACHE_TIMESTAMPS[user_id] = fetched_at
+
+
+def _throttled_last_active_update(user_id: str, now_iso: str, now_dt: datetime):
+    """تحديث last_active في Firestore مع تقليل عدد الكتابات"""
+    last_write = LAST_ACTIVE_WRITE_TRACKER.get(user_id)
+    if last_write and (now_dt - last_write).total_seconds() < LAST_ACTIVE_UPDATE_INTERVAL_SECONDS:
+        return
+
+    LAST_ACTIVE_WRITE_TRACKER[user_id] = now_dt
+    if not firestore_available():
+        return
+
+    try:
+        db.collection(USERS_COLLECTION).document(user_id).update({"last_active": now_iso})
+    except Exception as e:
+        logger.debug("تعذر تحديث آخر نشاط للمستخدم %s: %s", user_id, e)
 
 # المجموعات (Collections) في Firestore
 USERS_COLLECTION = "users"
@@ -1347,7 +1396,16 @@ def get_user_record(user):
     ينشئ أو يرجع سجل المستخدم من Firestore
     """
     user_id = str(user.id)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+
+    # محاولة استخدام الكاش لتجنب قراءات Firestore المتكررة في نفس الجلسة
+    cached_record = data.get(user_id)
+    if cached_record and _is_cache_fresh(user_id, now_dt):
+        cached_record["last_active"] = now_iso
+        _throttled_last_active_update(user_id, now_iso, now_dt)
+        ensure_medal_defaults(cached_record)
+        return cached_record
     
     if not firestore_available():
         logger.warning("Firestore غير متوفر، استخدام التخزين المحلي")
@@ -1385,12 +1443,12 @@ def get_user_record(user):
             except Exception as e:
                 logger.warning(f"⚠️ تعذر تحميل المذكرات/الرسائل الفرعية للمستخدم {user_id}: {e}")
 
-            # تحديث آخر نشاط
-            doc_ref.update({"last_active": now_iso})
+            # تحديث آخر نشاط مع تقليل الكتابات المتكررة
+            _throttled_last_active_update(user_id, now_iso, now_dt)
             # إضافة المستخدم إلى data المحلي
-            data[user_id] = record
             ensure_medal_defaults(record)
-            logger.info(f"✅ تم قراءة بيانات المستخدم {user_id} من Firestore")
+            _remember_cache(user_id, record, now_dt)
+            logger.debug("قراءة بيانات المستخدم %s من Firestore", user_id)
             return record
         else:
             # إنشاء سجل جديد
@@ -1433,7 +1491,7 @@ def get_user_record(user):
             doc_ref.set(new_record)
             # إضافة المستخدم إلى data المحلي
             ensure_medal_defaults(new_record)
-            data[user_id] = new_record
+            _remember_cache(user_id, new_record, now_dt)
             logger.info(f"✅ تم إنشاء مستخدم جديد {user_id} في Firestore")
             return new_record
             
@@ -1458,17 +1516,18 @@ def update_user_record(user_id: int, **kwargs):
         
         # تحديث في Firestore
         doc_ref.update(kwargs)
-        
+
         # تحديث data المحلي أيضاً
         if user_id_str in data:
             data[user_id_str].update(kwargs)
+            _remember_cache(user_id_str, data[user_id_str], datetime.now(timezone.utc))
         else:
             # إذا لم يكن في data، قراءته من Firestore
             doc = doc_ref.get()
             if doc.exists:
-                data[user_id_str] = doc.to_dict()
-        
-        logger.info(f"✅ تم تحديث بيانات المستخدم {user_id} في Firestore: {list(kwargs.keys())}")
+                _remember_cache(user_id_str, doc.to_dict(), datetime.now(timezone.utc))
+
+        logger.debug("تم تحديث بيانات المستخدم %s في Firestore: %s", user_id, list(kwargs.keys()))
         
     except Exception as e:
         logger.error(f"❌ خطأ في تحديث المستخدم {user_id} في Firestore: {e}", exc_info=True)
@@ -7691,6 +7750,12 @@ def start_bot():
         data = load_data()
         logger.info(f"✅ تم تحميل {len([k for k in data if k != GLOBAL_KEY])} مستخدم في الذاكرة")
 
+        # تمييز البيانات المحملة على أنها محدثة حديثًا لتجنب قراءات Firestore المكررة فور التشغيل
+        preload_time = datetime.now(timezone.utc)
+        for uid in data:
+            if uid != GLOBAL_KEY:
+                USER_CACHE_TIMESTAMPS[uid] = preload_time
+
         # عدم ترحيل بيانات Firestore عند كل تشغيل لمنع الكتابة فوق البيانات الحالية
         if db is not None and not DATA_LOADED_FROM_FIRESTORE:
             logger.info("جاري ترحيل البيانات من التخزين المحلي إلى Firestore...")
@@ -7718,8 +7783,9 @@ def start_bot():
         try:
             job_queue.run_daily(
                 check_and_award_medal,
-                time=time(hour=0, minute=0, tzinfo=pytz.UTC),
+                time=time(hour=0, minute=0, second=random.randint(0, 30), tzinfo=pytz.UTC),
                 name="check_and_award_medal",
+                job_kwargs={"misfire_grace_time": 300, "coalesce": True},
             )
         except Exception as e:
             logger.warning(f"⚠️ خطأ في جدولة الميدالية: {e}")
@@ -7729,20 +7795,22 @@ def start_bot():
             try:
                 job_queue.run_daily(
                     water_reminder_job,
-                    time=time(hour=h, minute=0, tzinfo=pytz.UTC),
+                    time=time(hour=h, minute=0, second=random.randint(0, 45), tzinfo=pytz.UTC),
                     name=f"water_reminder_{h}",
                     context=h,
+                    job_kwargs={"misfire_grace_time": 300, "coalesce": True},
                 )
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
         
         try:
-            first_run_delay = _seconds_until_next_minute()
+            first_run_delay = _seconds_until_next_minute() + random.uniform(0, 10)
             job_queue.run_repeating(
                 motivation_job,
                 interval=timedelta(minutes=1),
                 first=first_run_delay,
                 name="motivation_job_minutely",
+                job_kwargs={"misfire_grace_time": 60, "coalesce": True},
             )
             logger.info(
                 "✅ تم تفعيل فحص الجرعة التحفيزية كل دقيقة (أول تشغيل بعد %.1f ثانية)",
@@ -7779,7 +7847,7 @@ if __name__ == "__main__":
     
     # تهيئة Updater و Dispatcher و job_queue مرة واحدة
     try:
-        updater = Updater(BOT_TOKEN, use_context=True)
+        updater = Updater(BOT_TOKEN, use_context=True, request_kwargs=REQUEST_KWARGS)
         dispatcher = updater.dispatcher
         job_queue = updater.job_queue
     except Exception as e:
@@ -7803,8 +7871,12 @@ if __name__ == "__main__":
                 logger.error(f"❌ خطأ في تشغيل JobQueue: {e}", exc_info=True)
 
             # إعداد Webhook
-            updater.bot.set_webhook(WEBHOOK_URL + BOT_TOKEN)
-            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN}")
+            updater.bot.set_webhook(
+                WEBHOOK_URL + BOT_TOKEN,
+                max_connections=WEBHOOK_MAX_CONNECTIONS,
+                timeout=WEBHOOK_TIMEOUT,
+            )
+            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN} بعدد اتصالات {WEBHOOK_MAX_CONNECTIONS}")
             
             # تشغيل Flask (Blocking)
             run_flask()
