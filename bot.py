@@ -1638,7 +1638,7 @@ BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
-BTN_AUDIO_LIBRARY = "🎧 مكتبة صوتية"
+BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
@@ -4576,19 +4576,60 @@ def handle_memo_delete_index_input(update: Update, context: CallbackContext):
 # =================== احصائياتي ===================
 
 
+def build_medals_overview_lines(record: dict) -> List[str]:
+    ensure_medal_defaults(record)
+
+    medals = record.get("medals", [])
+    level = record.get("level", 0)
+    total_full_days = record.get("daily_full_count", 0) or 0
+    streak = record.get("daily_full_streak", 0) or 0
+
+    lines = ["🏵️ لوحة الميداليات:\n"]
+
+    if medals:
+        lines.append("ميدالياتك الحالية:")
+        lines.extend(f"- {medal}" for medal in medals)
+    else:
+        lines.append("لا توجد ميداليات حالياً. اجمع النقاط لتبدأ رحلتك 🤍")
+
+    lines.append("\nالشروط الحالية:")
+    lines.append("• ميداليات المستوى:")
+    for lvl, name in LEVEL_MEDAL_RULES:
+        status = "✅" if name in medals else "⏳" if level >= lvl else "⌛"
+        lines.append(f"  {status} {name} — تبدأ من المستوى {lvl}.")
+
+    daily_status = "✅" if MEDAL_DAILY_ACTIVITY in medals else "⏳"
+    lines.append(
+        f"• {daily_status} {MEDAL_DAILY_ACTIVITY}: بعد {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة (أنجزت {total_full_days})."
+    )
+
+    streak_status = "✅" if MEDAL_STREAK in medals else "⏳"
+    lines.append(
+        f"• {streak_status} {MEDAL_STREAK}: تتطلب {DAILY_STREAK_MEDAL_THRESHOLD} يومًا متتاليًا (سلسلتك الحالية {streak})."
+    )
+
+    benefit_status = "✅" if MEDAL_TOP_BENEFIT in medals else "⏳"
+    lines.append(
+        f"• {benefit_status} {MEDAL_TOP_BENEFIT}: حافظ على فائدة ضمن أفضل 10 بالإعجابات."
+    )
+
+    return lines
+
+
 def handle_stats(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
-    
+
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
-    
+
     user_id = user.id
     record = get_user_record(user)
 
     ensure_today_water(record)
     ensure_today_quran(record)
+    ensure_medal_defaults(record)
 
     cups_goal = record.get("cups_goal")
     today_cups = record.get("today_cups", 0)
@@ -4636,6 +4677,9 @@ def handle_stats(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
+    medal_lines = build_medals_overview_lines(record)
+    update.message.reply_text("\n".join(medal_lines), reply_markup=user_main_keyboard(user_id))
+
 
 def open_medals_overview(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -4644,45 +4688,11 @@ def open_medals_overview(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
 
-    ensure_medal_defaults(record)
-
     user_id = user.id
-    medals = record.get("medals", [])
-    level = record.get("level", 0)
-    total_full_days = record.get("daily_full_count", 0) or 0
-    streak = record.get("daily_full_streak", 0) or 0
-
-    lines = ["🏵️ لوحة الميداليات:\n"]
-
-    if medals:
-        lines.append("ميدالياتك الحالية:")
-        lines.extend(f"- {medal}" for medal in medals)
-    else:
-        lines.append("لا توجد ميداليات حالياً. اجمع النقاط لتبدأ رحلتك 🤍")
-
-    lines.append("\nالشروط الحالية:")
-    lines.append("• ميداليات المستوى:")
-    for lvl, name in LEVEL_MEDAL_RULES:
-        status = "✅" if name in medals else "⏳" if level >= lvl else "⌛"
-        lines.append(f"  {status} {name} — تبدأ من المستوى {lvl}.")
-
-    daily_status = "✅" if MEDAL_DAILY_ACTIVITY in medals else "⏳"
-    lines.append(
-        f"• {daily_status} {MEDAL_DAILY_ACTIVITY}: بعد {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة (أنجزت {total_full_days})."
-    )
-
-    streak_status = "✅" if MEDAL_STREAK in medals else "⏳"
-    lines.append(
-        f"• {streak_status} {MEDAL_STREAK}: تتطلب {DAILY_STREAK_MEDAL_THRESHOLD} يومًا متتاليًا (سلسلتك الحالية {streak})."
-    )
-
-    benefit_status = "✅" if MEDAL_TOP_BENEFIT in medals else "⏳"
-    lines.append(
-        f"• {benefit_status} {MEDAL_TOP_BENEFIT}: حافظ على فائدة ضمن أفضل 10 بالإعجابات."
-    )
+    medal_lines = build_medals_overview_lines(record)
 
     update.message.reply_text(
-        "\n".join(lines),
+        "\n".join(medal_lines),
         reply_markup=user_main_keyboard(user_id),
     )
 
@@ -7312,7 +7322,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_MEDALS:
-        open_medals_overview(update, context)
+        handle_stats(update, context)
         return
 
     if text == BTN_LETTER_MAIN:
@@ -7805,9 +7815,14 @@ def extract_hashtags(text: str) -> List[str]:
 
 def _match_audio_section(hashtags: List[str]) -> str:
     normalized = {_normalize_hashtag(tag) for tag in hashtags}
-    for key, cfg in AUDIO_SECTIONS.items():
-        if _normalize_hashtag(cfg["hashtag"]) in normalized:
-            return key
+    matched_sections = [
+        key
+        for key, cfg in AUDIO_SECTIONS.items()
+        if _normalize_hashtag(cfg["hashtag"]) in normalized
+    ]
+
+    if len(matched_sections) == 1:
+        return matched_sections[0]
     return ""
 
 
