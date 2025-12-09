@@ -39,6 +39,7 @@ DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 AUDIO_STORAGE_CHANNEL_ID = str(os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721"))
+ALLOWED_UPDATES = ["message", "callback_query", "channel_post"]
 
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
@@ -86,7 +87,22 @@ def webhook_handler():
     """معالجة تحديثات الـ Webhook من Telegram"""
     if request.method == "POST":
         try:
-            update = Update.de_json(request.get_json(force=True), dispatcher.bot)
+            payload = request.get_json(force=True)
+            update = Update.de_json(payload, dispatcher.bot)
+            update_type = (
+                "channel_post"
+                if update.channel_post
+                else "callback_query"
+                if update.callback_query
+                else "message"
+                if update.message
+                else "unknown"
+            )
+            logger.info(
+                "📥 Webhook update received | type=%s | update_id=%s",
+                update_type,
+                getattr(update, "update_id", ""),
+            )
             dispatcher.process_update(update)
             return "ok", 200
         except Exception as e:
@@ -8242,6 +8258,7 @@ if __name__ == "__main__":
                 WEBHOOK_URL + BOT_TOKEN,
                 max_connections=WEBHOOK_MAX_CONNECTIONS,
                 timeout=WEBHOOK_TIMEOUT,
+                allowed_updates=ALLOWED_UPDATES,
             )
             logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN} بعدد اتصالات {WEBHOOK_MAX_CONNECTIONS}")
             
@@ -8261,9 +8278,9 @@ if __name__ == "__main__":
             
             # تهيئة البوت
             start_bot()
-            
+
             # بدء Polling
-            updater.start_polling()
+            updater.start_polling(allowed_updates=ALLOWED_UPDATES)
             logger.info("✅ تم بدء Polling بنجاح")
             updater.idle()
             
