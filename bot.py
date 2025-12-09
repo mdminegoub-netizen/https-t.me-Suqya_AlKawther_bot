@@ -7876,12 +7876,15 @@ def _audio_title_from_message(message) -> str:
 def _extract_audio_file(message):
     file_id = None
     file_type = ""
+    file_unique_id = None
 
     if message.audio:
         file_id = message.audio.file_id
+        file_unique_id = getattr(message.audio, "file_unique_id", None)
         file_type = "audio"
     elif message.voice:
         file_id = message.voice.file_id
+        file_unique_id = getattr(message.voice, "file_unique_id", None)
         file_type = "voice"
     elif message.document:
         doc = message.document
@@ -7889,9 +7892,10 @@ def _extract_audio_file(message):
         mime_type = (doc.mime_type or "").lower()
         if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
             file_id = doc.file_id
+            file_unique_id = getattr(doc, "file_unique_id", None)
             file_type = "document"
 
-    return file_id, file_type
+    return file_id, file_type, file_unique_id
 
 
 def _is_audio_storage_channel(message) -> bool:
@@ -7921,20 +7925,45 @@ def delete_audio_clip_by_message_id(message_id: int):
     LOCAL_AUDIO_LIBRARY = [clip for clip in LOCAL_AUDIO_LIBRARY if clip.get("message_id") != message_id]
 
 
+def _cleanup_audio_duplicates(record: Dict):
+    if not firestore_available():
+        return
+
+    message_id = record.get("message_id")
+    file_id = record.get("file_id")
+    file_unique_id = record.get("file_unique_id")
+    doc_id = str(message_id)
+
+    try:
+        # إزالة أي نسخ بنفس message_id حتى لو كانت محفوظة بمعرف آخر
+        message_duplicates = db.collection(AUDIO_LIBRARY_COLLECTION).where("message_id", "==", message_id).stream()
+        for doc in message_duplicates:
+            if doc.id != doc_id:
+                doc.reference.delete()
+
+        duplicate_query = None
+        if file_unique_id:
+            duplicate_query = db.collection(AUDIO_LIBRARY_COLLECTION).where("file_unique_id", "==", file_unique_id)
+        elif file_id:
+            duplicate_query = db.collection(AUDIO_LIBRARY_COLLECTION).where("file_id", "==", file_id)
+
+        if duplicate_query:
+            duplicates = duplicate_query.stream()
+            for doc in duplicates:
+                if doc.id != doc_id:
+                    doc.reference.delete()
+    except Exception as e:
+        logger.error(f"❌ خطأ في تنظيف التكرار للمقطع الصوتي: {e}")
+
+
 def save_audio_clip_record(record: Dict):
     message_id = record.get("message_id")
     file_id = record.get("file_id")
+    file_unique_id = record.get("file_unique_id")
     delete_audio_clip_by_message_id(message_id)
 
-    if firestore_available() and file_id:
-        try:
-            # إزالة أي نسخة قديمة من نفس الملف (مثلاً بعد تغيير الهاشتاق وإعادة الرفع)
-            duplicate_docs = db.collection(AUDIO_LIBRARY_COLLECTION).where("file_id", "==", file_id).stream()
-            for doc in duplicate_docs:
-                if doc.id != str(message_id):
-                    doc.reference.delete()
-        except Exception as e:
-            logger.error(f"❌ خطأ في تنظيف المقطع الصوتي المكرر: {e}")
+    if firestore_available() and (file_id or file_unique_id):
+        _cleanup_audio_duplicates(record)
 
     if firestore_available():
         try:
@@ -7978,6 +8007,79 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
     return clips
 
 
+def _parse_audio_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except Exception:
+            return None
+    return None
+
+
+def _is_newer_audio_record(candidate: Dict, reference: Dict) -> bool:
+    cand_dt = _parse_audio_datetime(candidate.get("created_at"))
+    ref_dt = _parse_audio_datetime(reference.get("created_at"))
+
+    if cand_dt and ref_dt:
+        return cand_dt >= ref_dt
+    try:
+        return int(candidate.get("message_id") or 0) >= int(reference.get("message_id") or 0)
+    except Exception:
+        return True
+
+
+def reconcile_audio_library_uniqueness():
+    """تنظيف التكرارات في مكتبة الصوتيات لضمان ارتباط كل مقطع بهوية واحدة"""
+
+    if not firestore_available():
+        return
+
+    try:
+        docs = list(db.collection(AUDIO_LIBRARY_COLLECTION).stream())
+        entries = []
+
+        for doc in docs:
+            data = doc.to_dict() or {}
+            data.setdefault("message_id", int(doc.id) if str(doc.id).isdigit() else doc.id)
+            data.setdefault("file_unique_id", data.get("file_unique_id"))
+            data.setdefault("file_id", data.get("file_id"))
+            entries.append({"id": doc.id, "ref": doc.reference, "data": data})
+
+        latest_by_message: Dict[str, Dict] = {}
+        latest_by_unique: Dict[str, Dict] = {}
+
+        def consider(target: Dict[str, Dict], key: str, entry: Dict):
+            if not key:
+                return
+            current = target.get(key)
+            if not current or _is_newer_audio_record(entry["data"], current["data"]):
+                target[key] = entry
+
+        for entry in entries:
+            consider(latest_by_message, str(entry["data"].get("message_id")), entry)
+            unique_key = entry["data"].get("file_unique_id") or entry["data"].get("file_id")
+            consider(latest_by_unique, unique_key, entry)
+
+        keep_ids = set()
+        for entry in latest_by_message.values():
+            keep_ids.add(entry["id"])
+        for entry in latest_by_unique.values():
+            keep_ids.add(entry["id"])
+
+        removed = 0
+        for entry in entries:
+            if entry["id"] not in keep_ids:
+                entry["ref"].delete()
+                removed += 1
+
+        if removed:
+            logger.info("🧹 تم تنظيف %s من المقاطع الصوتية المكررة", removed)
+    except Exception as e:
+        logger.error(f"❌ خطأ في تنظيف مكتبة الصوتيات: {e}")
+
+
 def handle_channel_post(update: Update, context: CallbackContext):
     message = update.channel_post
     process_channel_audio_message(message)
@@ -8011,7 +8113,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
     hashtags = extract_hashtags_from_message(message)
     section_key = _match_audio_section(hashtags)
 
-    file_id, file_type = _extract_audio_file(message)
+    file_id, file_type, file_unique_id = _extract_audio_file(message)
 
     if not section_key or not file_id:
         delete_audio_clip_by_message_id(message.message_id)
@@ -8037,6 +8139,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
         "title": _audio_title_from_message(message),
         "file_id": file_id,
         "file_type": file_type,
+        "file_unique_id": file_unique_id,
         "message_id": message.message_id,
         "created_at": (message.date or datetime.now(timezone.utc)).isoformat(),
     }
@@ -8215,7 +8318,13 @@ def start_bot():
                 migrate_data_to_firestore()
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في الترحيل: {e}")
-        
+
+        # تنظيف مكتبة الصوتيات لضمان عدم تكرار نفس المقطع في أكثر من قسم
+        try:
+            reconcile_audio_library_uniqueness()
+        except Exception as e:
+            logger.warning(f"⚠️ تعذر تنظيف مكتبة الصوتيات: {e}")
+
         logger.info("جاري تسجيل المعالجات...")
         dispatcher.add_handler(CommandHandler("start", start_command))
         dispatcher.add_handler(CommandHandler("help", help_command))
