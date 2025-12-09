@@ -39,7 +39,13 @@ DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 AUDIO_STORAGE_CHANNEL_ID = str(os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721"))
-ALLOWED_UPDATES = ["message", "callback_query", "channel_post", "edited_channel_post"]
+ALLOWED_UPDATES = [
+    "message",
+    "edited_message",
+    "channel_post",
+    "edited_channel_post",
+    "callback_query",
+]
 
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
@@ -8221,8 +8227,8 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
-        dispatcher.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
-        dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_posts, handle_edited_channel_post))
+        dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
+        dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.status_update & Filters.chat_type.channel, handle_deleted_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
         
