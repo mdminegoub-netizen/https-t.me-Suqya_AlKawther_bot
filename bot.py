@@ -1633,6 +1633,9 @@ BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
+BTN_STATS_ONLY = "📊 إحصائياتي"
+BTN_MEDALS_ONLY = "🏅 ميدالياتي"
+BTN_STATS_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 BTN_MEDALS = "ميدالياتي 🏵️"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
@@ -1647,7 +1650,7 @@ BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
 BTN_AUDIO_PREV = "⬅️ السابق"
 
-AUDIO_PAGE_SIZE = 6
+AUDIO_PAGE_SIZE = 10
 AUDIO_SECTIONS = {
     "fatawa": {"button": "📌 فتاوى", "hashtag": "#فتاوى", "title": "فتاوى 🎧"},
     "mawaedh": {"button": "📌 مواعظ", "hashtag": "#مواعظ", "title": "مواعظ 🎧"},
@@ -1751,12 +1754,12 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب ميدالياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
-        # السطر الخامس: فوائد ونصائح
-        [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: مكتبة الصوتيات
+        # السطر الرابع: احصائياتي
+        [KeyboardButton(BTN_STATS)],
+        # السطر الخامس: مكتبة الصوتيات
         [KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر السادس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السابع: المنافسات والمجتمع
         [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الثامن: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -1773,12 +1776,12 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب ميدالياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
-        # السطر الخامس: فوائد ونصائح
-        [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: مكتبة الصوتيات
+        # السطر الرابع: احصائياتي
+        [KeyboardButton(BTN_STATS)],
+        # السطر الخامس: مكتبة الصوتيات
         [KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر السادس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السابع: المنافسات والمجتمع
         [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الثامن: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -1797,12 +1800,12 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: مذكرات قلبي بجانب رسالة إلى نفسي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: احصائياتي بجانب ميدالياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_MEDALS)],
-        # السطر الخامس: فوائد ونصائح
-        [KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: مكتبة الصوتيات
+        # السطر الرابع: احصائياتي
+        [KeyboardButton(BTN_STATS)],
+        # السطر الخامس: مكتبة الصوتيات
         [KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر السادس: فوائد ونصائح
+        [KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السابع: المنافسات والمجتمع
         [KeyboardButton(BTN_COMP_MAIN)],
         # السطر الثامن: الاشعارات على اليسار، التواصل مع الدعم على اليمين
@@ -1823,6 +1826,14 @@ AUDIO_LIBRARY_KB = ReplyKeyboardMarkup(
         [KeyboardButton(AUDIO_SECTIONS["fatawa"]["button"]), KeyboardButton(AUDIO_SECTIONS["mawaedh"]["button"])],
         [KeyboardButton(AUDIO_SECTIONS["aqeeda"]["button"]), KeyboardButton(AUDIO_SECTIONS["faith_trip"]["button"])],
         [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+STATS_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_STATS_ONLY), KeyboardButton(BTN_MEDALS_ONLY)],
+        [KeyboardButton(BTN_STATS_BACK_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -4616,15 +4627,26 @@ def build_medals_overview_lines(record: dict) -> List[str]:
     return lines
 
 
-def handle_stats(update: Update, context: CallbackContext):
+def open_stats_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
 
-    # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
 
-    user_id = user.id
+    update.message.reply_text(
+        "من فضلك اختر:\n- إحصائياتي\n- ميدالياتي",
+        reply_markup=STATS_MENU_KB,
+    )
+
+
+def send_stats_overview(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
     record = get_user_record(user)
 
     ensure_today_water(record)
@@ -4645,7 +4667,6 @@ def handle_stats(update: Update, context: CallbackContext):
 
     points = record.get("points", 0)
     level = record.get("level", 0)
-    medals = record.get("medals", [])
 
     text_lines = ["احصائياتك لليوم 📊:\n"]
 
@@ -4669,16 +4690,11 @@ def handle_stats(update: Update, context: CallbackContext):
         text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
     else:
         text_lines.append(f"- المستوى الحالي: {level}.")
-    if medals:
-        text_lines.append("- ميدالياتك: " + "، ".join(medals))
 
     update.message.reply_text(
         "\n".join(text_lines),
-        reply_markup=user_main_keyboard(user_id),
+        reply_markup=STATS_MENU_KB,
     )
-
-    medal_lines = build_medals_overview_lines(record)
-    update.message.reply_text("\n".join(medal_lines), reply_markup=user_main_keyboard(user_id))
 
 
 def open_medals_overview(update: Update, context: CallbackContext):
@@ -4693,7 +4709,7 @@ def open_medals_overview(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         "\n".join(medal_lines),
-        reply_markup=user_main_keyboard(user_id),
+        reply_markup=STATS_MENU_KB,
     )
 
 # =================== قسم الفوائد والنصائح ===================
@@ -7285,17 +7301,6 @@ def handle_text(update: Update, context: CallbackContext):
         open_audio_library_menu(update, context)
         return
 
-    if text == BTN_AUDIO_NEXT:
-        _handle_audio_navigation(update, context, 1)
-        return
-
-    if text == BTN_AUDIO_PREV:
-        _handle_audio_navigation(update, context, -1)
-        return
-
-    if try_handle_audio_selection(update, context):
-        return
-
     # الأزرار الرئيسية
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
@@ -7318,11 +7323,22 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_STATS:
-        handle_stats(update, context)
+        open_stats_menu(update, context)
         return
 
-    if text == BTN_MEDALS:
-        handle_stats(update, context)
+    if text == BTN_STATS_ONLY:
+        send_stats_overview(update, context)
+        return
+
+    if text == BTN_MEDALS_ONLY or text == BTN_MEDALS:
+        open_medals_overview(update, context)
+        return
+
+    if text == BTN_STATS_BACK_MAIN:
+        msg.reply_text(
+            "عدنا إلى القائمة الرئيسية.",
+            reply_markup=user_main_keyboard(user_id),
+        )
         return
 
     if text == BTN_LETTER_MAIN:
@@ -7873,7 +7889,7 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
     else:
         clips.extend([c for c in LOCAL_AUDIO_LIBRARY if c.get("section") == section_key])
 
-    clips.sort(key=lambda c: c.get("created_at") or "")
+    clips.sort(key=lambda c: c.get("created_at") or "", reverse=True)
     return clips
 
 
@@ -7913,26 +7929,43 @@ def handle_channel_post(update: Update, context: CallbackContext):
     save_audio_clip_record(record)
 
 
-def _audio_section_keyboard(clips: List[Dict], page: int) -> ReplyKeyboardMarkup:
+def _audio_section_inline_keyboard(section_key: str, clips: List[Dict], page: int) -> InlineKeyboardMarkup:
     start = max(page, 0) * AUDIO_PAGE_SIZE
     end = start + AUDIO_PAGE_SIZE
     sliced = clips[start:end]
 
-    rows = []
-    for idx, clip in enumerate(sliced, start=start):
+    rows: List[List[InlineKeyboardButton]] = []
+    for clip in sliced:
         title = clip.get("title") or "مقطع صوتي"
-        rows.append([KeyboardButton(f"{idx + 1}. {title}")])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"🔹 {title}",
+                    callback_data=f"audio_play:{section_key}:{clip.get('message_id')}",
+                )
+            ]
+        )
 
-    nav_row = []
+    nav_row: List[InlineKeyboardButton] = []
     if start > 0:
-        nav_row.append(KeyboardButton(BTN_AUDIO_PREV))
+        nav_row.append(
+            InlineKeyboardButton(
+                "⏮ السابق",
+                callback_data=f"audio_page:{section_key}:{max(page - 1, 0)}",
+            )
+        )
     if end < len(clips):
-        nav_row.append(KeyboardButton(BTN_AUDIO_NEXT))
+        nav_row.append(
+            InlineKeyboardButton(
+                "التالي ▶️",
+                callback_data=f"audio_page:{section_key}:{page + 1}",
+            )
+        )
     if nav_row:
         rows.append(nav_row)
 
-    rows.append([KeyboardButton(BTN_AUDIO_BACK)])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+    rows.append([InlineKeyboardButton("↩️ رجوع إلى الأقسام", callback_data="audio_back_sections")])
+    return InlineKeyboardMarkup(rows)
 
 
 def open_audio_library_menu(update: Update, context: CallbackContext):
@@ -7943,60 +7976,98 @@ def open_audio_library_menu(update: Update, context: CallbackContext):
     )
 
 
-def open_audio_section(update: Update, context: CallbackContext, section_key: str, page: int = 0):
+def _send_audio_section_page(
+    update: Update,
+    context: CallbackContext,
+    section_key: str,
+    page: int = 0,
+    from_callback: bool = False,
+):
+    user_id = update.effective_user.id
     clips = fetch_audio_clips(section_key)
     total = len(clips)
     safe_page = max(min(page, (total - 1) // AUDIO_PAGE_SIZE if total else 0), 0)
-    AUDIO_USER_STATE[update.effective_user.id] = {
+    AUDIO_USER_STATE[user_id] = {
         "section": section_key,
         "clips": clips,
         "page": safe_page,
     }
 
     header = f"{AUDIO_SECTIONS[section_key]['title']}\n\nعدد المقاطع المتوفرة: {total}"
-    update.message.reply_text(
-        header,
-        reply_markup=_audio_section_keyboard(clips, safe_page),
-    )
+    if total:
+        header += "\n\n🎧 قائمة المقاطع المتاحة:"
+
+    keyboard = _audio_section_inline_keyboard(section_key, clips, safe_page)
+
+    if from_callback and update.callback_query:
+        try:
+            update.callback_query.edit_message_text(header, reply_markup=keyboard)
+            return
+        except Exception:
+            pass
+
+    update.message.reply_text(header, reply_markup=keyboard)
 
 
-def _handle_audio_navigation(update: Update, context: CallbackContext, direction: int):
-    state = AUDIO_USER_STATE.get(update.effective_user.id)
-    if not state:
+def open_audio_section(update: Update, context: CallbackContext, section_key: str, page: int = 0):
+    _send_audio_section_page(update, context, section_key, page)
+
+
+def handle_audio_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if not query:
         return
 
-    new_page = state.get("page", 0) + direction
-    open_audio_section(update, context, state["section"], new_page)
+    data = query.data or ""
+    user_id = query.from_user.id
 
+    if data == "audio_back_sections":
+        query.answer()
+        AUDIO_USER_STATE.pop(user_id, None)
+        query.message.reply_text(
+            "اختر قسمًا من المكتبة الصوتية:",
+            reply_markup=AUDIO_LIBRARY_KB,
+        )
+        return
 
-def try_handle_audio_selection(update: Update, context: CallbackContext) -> bool:
-    state = AUDIO_USER_STATE.get(update.effective_user.id)
-    if not state:
-        return False
+    if data.startswith("audio_page:"):
+        query.answer()
+        try:
+            _, section_key, page_str = data.split(":", 2)
+            page = int(page_str)
+        except ValueError:
+            return
+        _send_audio_section_page(update, context, section_key, page, from_callback=True)
+        return
 
-    text = (update.message.text or "").strip()
-    match = re.match(r"(\d+)\.\s", text)
-    if not match:
-        return False
+    if data.startswith("audio_play:"):
+        query.answer()
+        try:
+            _, section_key, clip_id = data.split(":", 2)
+        except ValueError:
+            return
 
-    index = int(match.group(1)) - 1
-    clips = state.get("clips", [])
-    if index < 0 or index >= len(clips):
-        return False
+        state = AUDIO_USER_STATE.get(user_id, {})
+        clips = state.get("clips", []) if state.get("section") == section_key else []
+        if not clips:
+            clips = fetch_audio_clips(section_key)
 
-    clip = clips[index]
-    title = clip.get("title") or "مقطع صوتي"
-    try:
-        if clip.get("file_type") == "voice":
-            context.bot.send_voice(update.effective_chat.id, clip.get("file_id"), caption=title)
-        else:
-            context.bot.send_audio(update.effective_chat.id, clip.get("file_id"), caption=title)
-    except Exception as e:
-        logger.error(f"❌ خطأ في إرسال المقطع الصوتي: {e}")
-        update.message.reply_text("تعذر إرسال المقطع الآن. حاول مرة أخرى لاحقًا.")
-        return True
+        clip = next((c for c in clips if str(c.get("message_id")) == clip_id), None)
+        if not clip:
+            return
 
-    return True
+        title = clip.get("title") or "مقطع صوتي"
+        try:
+            if clip.get("file_type") == "voice":
+                context.bot.send_voice(update.effective_chat.id, clip.get("file_id"), caption=title)
+            else:
+                context.bot.send_audio(update.effective_chat.id, clip.get("file_id"), caption=title)
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال المقطع الصوتي: {e}")
+            query.message.reply_text("تعذر إرسال المقطع الآن. حاول مرة أخرى لاحقًا.")
+        return
+
+    query.answer()
 
 def start_bot():
     """بدء البوت"""
@@ -8036,6 +8107,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
