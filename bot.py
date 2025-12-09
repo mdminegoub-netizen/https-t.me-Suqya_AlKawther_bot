@@ -39,7 +39,7 @@ DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 AUDIO_STORAGE_CHANNEL_ID = str(os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721"))
-ALLOWED_UPDATES = ["message", "callback_query", "channel_post"]
+ALLOWED_UPDATES = ["message", "callback_query", "channel_post", "edited_channel_post"]
 
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
@@ -7867,10 +7867,58 @@ def _audio_title_from_message(message) -> str:
     return caption.strip() or "مقطع صوتي"
 
 
-def save_audio_clip_record(record: Dict):
+def _extract_audio_file(message):
+    file_id = None
+    file_type = ""
+
+    if message.audio:
+        file_id = message.audio.file_id
+        file_type = "audio"
+    elif message.voice:
+        file_id = message.voice.file_id
+        file_type = "voice"
+    elif message.document:
+        doc = message.document
+        file_name = (doc.file_name or "").lower()
+        mime_type = (doc.mime_type or "").lower()
+        if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+            file_id = doc.file_id
+            file_type = "document"
+
+    return file_id, file_type
+
+
+def _is_audio_storage_channel(message) -> bool:
+    try:
+        return AUDIO_STORAGE_CHANNEL_ID and str(message.chat.id) == AUDIO_STORAGE_CHANNEL_ID
+    except Exception:
+        return False
+
+
+def delete_audio_clip_by_message_id(message_id: int):
+    global LOCAL_AUDIO_LIBRARY
+
+    if not message_id:
+        return
+
     if firestore_available():
         try:
-            doc_id = f"{record.get('section')}_{record.get('message_id')}"
+            docs = db.collection(AUDIO_LIBRARY_COLLECTION).where("message_id", "==", message_id).stream()
+            for doc in docs:
+                doc.reference.delete()
+        except Exception as e:
+            logger.error(f"❌ خطأ في حذف المقطع الصوتي: {e}")
+
+    LOCAL_AUDIO_LIBRARY = [clip for clip in LOCAL_AUDIO_LIBRARY if clip.get("message_id") != message_id]
+
+
+def save_audio_clip_record(record: Dict):
+    message_id = record.get("message_id")
+    delete_audio_clip_by_message_id(message_id)
+
+    if firestore_available():
+        try:
+            doc_id = str(message_id)
             db.collection(AUDIO_LIBRARY_COLLECTION).document(doc_id).set(record, merge=True)
             return
         except Exception as e:
@@ -7878,14 +7926,6 @@ def save_audio_clip_record(record: Dict):
 
     # fallback محلي
     global LOCAL_AUDIO_LIBRARY
-    LOCAL_AUDIO_LIBRARY = [
-        clip
-        for clip in LOCAL_AUDIO_LIBRARY
-        if not (
-            clip.get("section") == record.get("section")
-            and clip.get("message_id") == record.get("message_id")
-        )
-    ]
     LOCAL_AUDIO_LIBRARY.append(record)
 
 
@@ -7901,7 +7941,7 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
             )
             for doc in docs:
                 clip_data = doc.to_dict() or {}
-                clip_data.setdefault("message_id", doc.id)
+                clip_data.setdefault("message_id", int(doc.id) if str(doc.id).isdigit() else doc.id)
                 clips.append(clip_data)
         except Exception as e:
             logger.error(f"❌ خطأ في قراءة مكتبة الصوتيات: {e}")
@@ -7914,10 +7954,29 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
 
 def handle_channel_post(update: Update, context: CallbackContext):
     message = update.channel_post
-    if not message:
+    process_channel_audio_message(message)
+
+
+def handle_edited_channel_post(update: Update, context: CallbackContext):
+    message = update.edited_channel_post
+    process_channel_audio_message(message, is_edit=True)
+
+
+def handle_deleted_channel_post(update: Update, context: CallbackContext):
+    message = update.effective_message
+    if not message or not _is_audio_storage_channel(message):
         return
 
-    if AUDIO_STORAGE_CHANNEL_ID and str(message.chat.id) != AUDIO_STORAGE_CHANNEL_ID:
+    delete_audio_clip_by_message_id(message.message_id)
+    logger.info(
+        "🗑️ تم حذف منشور من قناة التخزين | chat_id=%s | msg_id=%s",
+        message.chat.id,
+        message.message_id,
+    )
+
+
+def process_channel_audio_message(message, is_edit: bool = False):
+    if not message or not _is_audio_storage_channel(message):
         return
 
     if getattr(message, "is_automatic_forward", False) or message.forward_from_chat:
@@ -7925,41 +7984,27 @@ def handle_channel_post(update: Update, context: CallbackContext):
 
     hashtags = extract_hashtags_from_message(message)
     section_key = _match_audio_section(hashtags)
-    if not section_key:
+
+    file_id, file_type = _extract_audio_file(message)
+
+    if not section_key or not file_id:
+        delete_audio_clip_by_message_id(message.message_id)
         logger.info(
-            "📥 تم رصد رسالة قناة بدون قسم مطابق | chat_id=%s | msg_id=%s | hashtags=%s",
+            "📥 تم إزالة المقطع لعدم وجود هاشتاق مطابق أو ملف صوتي | chat_id=%s | msg_id=%s | hashtags=%s",
             message.chat.id,
             message.message_id,
             hashtags,
         )
         return
 
-    file_id = None
-    file_type = ""
-    if message.audio:
-        file_id = message.audio.file_id
-        file_type = "audio"
-    elif message.voice:
-        file_id = message.voice.file_id
-        file_type = "voice"
-    elif message.document:
-        doc = message.document
-        file_name = (doc.file_name or "").lower()
-        mime_type = (doc.mime_type or "").lower()
-        if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
-            file_id = doc.file_id
-            file_type = "document"
-
     logger.info(
-        "🎧 رسالة قناة التخزين | chat_id=%s | msg_id=%s | file_type=%s | hashtags=%s",
+        "🎧 %s قناة التخزين | chat_id=%s | msg_id=%s | file_type=%s | hashtags=%s",
+        "تعديل" if is_edit else "رسالة",
         message.chat.id,
         message.message_id,
         file_type or "unknown",
         hashtags,
     )
-
-    if not file_id:
-        return
 
     record = {
         "section": section_key,
@@ -8157,6 +8202,8 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_posts, handle_channel_post))
+        dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_posts, handle_edited_channel_post))
+        dispatcher.add_handler(MessageHandler(Filters.status_update & Filters.chat_type.channel, handle_deleted_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
         
         logger.info("✅ تم تسجيل جميع المعالجات")
