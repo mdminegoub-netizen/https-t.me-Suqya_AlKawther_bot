@@ -7903,6 +7903,9 @@ def delete_audio_clip_by_message_id(message_id: int):
 
     if firestore_available():
         try:
+            doc_id = str(message_id)
+            db.collection(AUDIO_LIBRARY_COLLECTION).document(doc_id).delete()
+
             docs = db.collection(AUDIO_LIBRARY_COLLECTION).where("message_id", "==", message_id).stream()
             for doc in docs:
                 doc.reference.delete()
@@ -7914,7 +7917,18 @@ def delete_audio_clip_by_message_id(message_id: int):
 
 def save_audio_clip_record(record: Dict):
     message_id = record.get("message_id")
+    file_id = record.get("file_id")
     delete_audio_clip_by_message_id(message_id)
+
+    if firestore_available() and file_id:
+        try:
+            # إزالة أي نسخة قديمة من نفس الملف (مثلاً بعد تغيير الهاشتاق وإعادة الرفع)
+            duplicate_docs = db.collection(AUDIO_LIBRARY_COLLECTION).where("file_id", "==", file_id).stream()
+            for doc in duplicate_docs:
+                if doc.id != str(message_id):
+                    doc.reference.delete()
+        except Exception as e:
+            logger.error(f"❌ خطأ في تنظيف المقطع الصوتي المكرر: {e}")
 
     if firestore_available():
         try:
@@ -7948,7 +7962,13 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
     else:
         clips.extend([c for c in LOCAL_AUDIO_LIBRARY if c.get("section") == section_key])
 
-    clips.sort(key=lambda c: c.get("created_at") or "", reverse=True)
+    clips.sort(
+        key=lambda c: (
+            c.get("created_at") or "",
+            c.get("message_id") or 0,
+        ),
+        reverse=True,
+    )
     return clips
 
 
