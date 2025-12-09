@@ -7813,8 +7813,23 @@ def _normalize_hashtag(tag: str) -> str:
     return (tag or "").strip().lower().rstrip(".,،؛؛")
 
 
-def extract_hashtags(text: str) -> List[str]:
-    return [_normalize_hashtag(tag) for tag in re.findall(r"#\S+", text or "")]
+def extract_hashtags_from_message(message) -> List[str]:
+    hashtags: List[str] = []
+
+    caption_entities = getattr(message, "caption_entities", None) or []
+    caption_text = message.caption or ""
+    for entity in caption_entities:
+        if getattr(entity, "type", "") == "hashtag":
+            try:
+                tag_text = caption_text[entity.offset : entity.offset + entity.length]
+                hashtags.append(tag_text)
+            except Exception:
+                continue
+
+    text_based_hashtags = re.findall(r"#\S+", (message.caption or message.text or ""))
+    hashtags.extend(text_based_hashtags)
+
+    return [_normalize_hashtag(tag) for tag in hashtags]
 
 
 def _match_audio_section(hashtags: List[str]) -> str:
@@ -7892,13 +7907,19 @@ def handle_channel_post(update: Update, context: CallbackContext):
     if getattr(message, "is_automatic_forward", False) or message.forward_from_chat:
         return
 
-    hashtags = extract_hashtags(message.caption or message.text or "")
+    hashtags = extract_hashtags_from_message(message)
     section_key = _match_audio_section(hashtags)
     if not section_key:
+        logger.info(
+            "📥 تم رصد رسالة قناة بدون قسم مطابق | chat_id=%s | msg_id=%s | hashtags=%s",
+            message.chat.id,
+            message.message_id,
+            hashtags,
+        )
         return
 
     file_id = None
-    file_type = None
+    file_type = ""
     if message.audio:
         file_id = message.audio.file_id
         file_type = "audio"
@@ -7912,6 +7933,14 @@ def handle_channel_post(update: Update, context: CallbackContext):
         if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
             file_id = doc.file_id
             file_type = "document"
+
+    logger.info(
+        "🎧 رسالة قناة التخزين | chat_id=%s | msg_id=%s | file_type=%s | hashtags=%s",
+        message.chat.id,
+        message.message_id,
+        file_type or "unknown",
+        hashtags,
+    )
 
     if not file_id:
         return
