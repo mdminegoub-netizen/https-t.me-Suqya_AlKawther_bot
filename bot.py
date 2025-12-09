@@ -38,7 +38,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-AUDIO_STORAGE_CHANNEL_ID = os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721")
+AUDIO_STORAGE_CHANNEL_ID = str(os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721"))
 
 # معرف الأدمن (أنت)
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
@@ -1749,17 +1749,17 @@ MEDAL_RENAMES = {
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_TASBIH_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
         # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
 )
@@ -1767,17 +1767,17 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_TASBIH_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
         # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -1787,17 +1787,17 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_TASBIH_MAIN)],
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_STATS)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
         # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -7886,7 +7886,10 @@ def handle_channel_post(update: Update, context: CallbackContext):
     if not message:
         return
 
-    if AUDIO_STORAGE_CHANNEL_ID and str(message.chat_id) != str(AUDIO_STORAGE_CHANNEL_ID):
+    if AUDIO_STORAGE_CHANNEL_ID and str(message.chat.id) != AUDIO_STORAGE_CHANNEL_ID:
+        return
+
+    if getattr(message, "is_automatic_forward", False) or message.forward_from_chat:
         return
 
     hashtags = extract_hashtags(message.caption or message.text or "")
@@ -7902,6 +7905,13 @@ def handle_channel_post(update: Update, context: CallbackContext):
     elif message.voice:
         file_id = message.voice.file_id
         file_type = "voice"
+    elif message.document:
+        doc = message.document
+        file_name = (doc.file_name or "").lower()
+        mime_type = (doc.mime_type or "").lower()
+        if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+            file_id = doc.file_id
+            file_type = "document"
 
     if not file_id:
         return
@@ -8046,10 +8056,14 @@ def handle_audio_callback(update: Update, context: CallbackContext):
 
         title = clip.get("title") or "مقطع صوتي"
         try:
-            if clip.get("file_type") == "voice":
-                context.bot.send_voice(update.effective_chat.id, clip.get("file_id"), caption=title)
+            file_type = clip.get("file_type")
+            file_id = clip.get("file_id")
+            if file_type == "voice":
+                context.bot.send_voice(update.effective_chat.id, file_id, caption=title)
+            elif file_type == "document":
+                context.bot.send_document(update.effective_chat.id, file_id, caption=title)
             else:
-                context.bot.send_audio(update.effective_chat.id, clip.get("file_id"), caption=title)
+                context.bot.send_audio(update.effective_chat.id, file_id, caption=title)
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال المقطع الصوتي: {e}")
             query.message.reply_text("تعذر إرسال المقطع الآن. حاول مرة أخرى لاحقًا.")
