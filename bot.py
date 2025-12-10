@@ -1887,7 +1887,6 @@ WATER_MENU_KB_ADMIN = ReplyKeyboardMarkup(
 WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
-        [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
         [KeyboardButton(BTN_WATER_RESET)],
         [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
@@ -1898,7 +1897,6 @@ WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
 WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_WATER_NEED)],
-        [KeyboardButton(BTN_WATER_REM_ON), KeyboardButton(BTN_WATER_REM_OFF)],
         [KeyboardButton(BTN_WATER_RESET)],
         [KeyboardButton(BTN_WATER_BACK_MENU)],
         [KeyboardButton(BTN_BACK_MAIN)],
@@ -2121,25 +2119,23 @@ COMP_MENU_KB = ReplyKeyboardMarkup(
 )
 
 # ---- الاشعارات / الجرعة التحفيزية (للمستخدم) ----
-def notifications_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+def notifications_menu_keyboard(user_id: int, record: Dict = None) -> ReplyKeyboardMarkup:
+    record = record or get_user_record_by_id(user_id) or {}
+    reminders_on = bool(record.get("reminders_on"))
+    water_button = KeyboardButton(BTN_WATER_REM_OFF if reminders_on else BTN_WATER_REM_ON)
+
+    rows = [
+        [KeyboardButton(BTN_MOTIVATION_ON)],
+        [KeyboardButton(BTN_MOTIVATION_OFF)],
+        [water_button],
+    ]
+
     if is_admin(user_id):
-        return ReplyKeyboardMarkup(
-            [
-                [KeyboardButton(BTN_MOTIVATION_ON)],
-                [KeyboardButton(BTN_MOTIVATION_OFF)],
-                [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
-            ],
-            resize_keyboard=True,
-        )
+        rows.append([KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)])
     else:
-        return ReplyKeyboardMarkup(
-            [
-                [KeyboardButton(BTN_MOTIVATION_ON)],
-                [KeyboardButton(BTN_MOTIVATION_OFF)],
-                [KeyboardButton(BTN_BACK_MAIN)],
-            ],
-            resize_keyboard=True,
-        )
+        rows.append([KeyboardButton(BTN_BACK_MAIN)])
+
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 # =================== نظام النقاط ===================
 
@@ -3228,6 +3224,7 @@ def handle_custom_date_input(update: Update, context: CallbackContext):
         # إضافة نقاط
         add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
         save_data()
+        update_user_record(user_id, letters_to_self=letters)
 
         # جدولة التذكير
         if context.job_queue:
@@ -3451,7 +3448,7 @@ def open_water_menu(update: Update, context: CallbackContext):
         "منبّه الماء 💧:\n"
         "• سجّل ما تشربه من أكواب.\n"
         "• شاهد مستواك اليوم.\n"
-        "• عدّل إعداداتك وتشغيل التذكير.\n"
+        "• عدّل إعداداتك وتابع احتياجك اليومي.\n"
         "كل كوب يزيد نقاطك ويرفع مستواك 🎯",
         reply_markup=kb,
     )
@@ -3469,8 +3466,7 @@ def open_water_settings(update: Update, context: CallbackContext):
     update.message.reply_text(
         "إعدادات الماء ⚙️:\n"
         "1) حساب احتياجك اليومي من الماء بناءً على الجنس والعمر والوزن.\n"
-        "2) تشغيل أو إيقاف التذكير الدوري بالماء.\n"
-        "3) الرجوع إلى منبّه الماء مباشرة.",
+        "2) تصفير العداد والرجوع إلى منبّه الماء مباشرة.",
         reply_markup=kb,
     )
 
@@ -3781,7 +3777,7 @@ def handle_reminders_on(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
         "ستصلك رسائل خلال اليوم لتذكيرك بالشرب.",
-        reply_markup=water_settings_keyboard(user.id),
+        reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
 
@@ -3803,7 +3799,7 @@ def handle_reminders_off(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
         "يمكنك تشغيلها مرة أخرى وقتما شئت.",
-        reply_markup=water_settings_keyboard(user.id),
+        reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
 
@@ -5527,17 +5523,18 @@ def open_notifications_menu(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
-    kb = notifications_menu_keyboard(user.id)
+    kb = notifications_menu_keyboard(user.id, record)
 
     status = "مفعّلة ✅" if record.get("motivation_on", True) else "موقفة ⛔️"
+    water_status = "مفعّل ✅" if record.get("reminders_on") else "متوقف ⛔️"
 
     update.message.reply_text(
         "الاشعارات 🔔:\n"
         f"• حالة الجرعة التحفيزية الحالية: {status}\n\n"
+        f"• حالة تذكير الماء: {water_status}\n\n"
         "الجرعة التحفيزية هي رسائل قصيرة ولطيفة خلال اليوم تشرح القلب "
         "وتعينك على الاستمرار في الماء والقرآن والذكر 🤍\n\n"
-        "يمكنك تشغيلها أو إيقافها من الأزرار بالأسفل.",
+        "يمكنك التحكم في الجرعة والتحكم في تذكير الماء من الأزرار بالأسفل.",
         reply_markup=kb,
     )
 
@@ -5560,7 +5557,7 @@ def handle_motivation_on(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم تشغيل الجرعة التحفيزية ✨\n"
         "ستصلك رسائل تحفيزية في أوقات مختلفة من اليوم 🤍",
-        reply_markup=notifications_menu_keyboard(user.id),
+        reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
 
@@ -5582,7 +5579,7 @@ def handle_motivation_off(update: Update, context: CallbackContext):
     update.message.reply_text(
         "تم إيقاف الجرعة التحفيزية 😴\n"
         "يمكنك تشغيلها مرة أخرى من نفس المكان متى أحببت.",
-        reply_markup=notifications_menu_keyboard(user.id),
+        reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
 # =================== تذكيرات الماء ===================
