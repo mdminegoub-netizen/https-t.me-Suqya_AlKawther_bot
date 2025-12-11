@@ -1673,7 +1673,7 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
-BTN_COURSES_MAIN = "🎓 الدورات المتاحة"
+BTN_COURSES_MAIN = "قسم الدورات 🎓"
 BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
@@ -1800,15 +1800,18 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        # السطر الثاني: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        # السطر الثالث: منبّه الماء بجانب مجموعة الصوتيات، قسم الدورات، ومجتمع الفوائد
+        [
+            KeyboardButton(BTN_WATER_MAIN),
+            KeyboardButton(BTN_AUDIO_LIBRARY),
+            KeyboardButton(BTN_COURSES_MAIN),
+            KeyboardButton(BTN_BENEFITS_MAIN),
+        ],
+        # السطر الرابع: المنافسات والمجتمع بجانب احصائياتي (مكان مجتمع الفوائد السابق)
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر الخامس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -1818,17 +1821,20 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        # السطر الثاني: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        # السطر الثالث: منبّه الماء بجانب مجموعة الصوتيات، قسم الدورات، ومجتمع الفوائد
+        [
+            KeyboardButton(BTN_WATER_MAIN),
+            KeyboardButton(BTN_AUDIO_LIBRARY),
+            KeyboardButton(BTN_COURSES_MAIN),
+            KeyboardButton(BTN_BENEFITS_MAIN),
+        ],
+        # السطر الرابع: المنافسات والمجتمع بجانب احصائياتي (مكان مجتمع الفوائد السابق)
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر الخامس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (فقط للمدير)
+        # السطر السادس: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1838,17 +1844,20 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        # السطر الثاني: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        # السطر الثالث: منبّه الماء بجانب مجموعة الصوتيات، قسم الدورات، ومجتمع الفوائد
+        [
+            KeyboardButton(BTN_WATER_MAIN),
+            KeyboardButton(BTN_AUDIO_LIBRARY),
+            KeyboardButton(BTN_COURSES_MAIN),
+            KeyboardButton(BTN_BENEFITS_MAIN),
+        ],
+        # السطر الرابع: المنافسات والمجتمع بجانب احصائياتي (مكان مجتمع الفوائد السابق)
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر الخامس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (للمشرفة)
+        # السطر السادس: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
