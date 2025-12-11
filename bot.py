@@ -1801,7 +1801,7 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         # السطر الثاني: مذكّرات قلبي بجانب رسالة إلى نفسي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         # السطر الثالث: مكتبة صوتية بجانب قسم الدورات
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_MAIN)],
         # السطر الرابع: مجتمع الفوائد بجانب المنافسات والمجتمع
@@ -1809,7 +1809,7 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         # السطر الخامس: منبّه الماء بجانب احصائياتي
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
         # السطر السادس: الاشعارات بجانب تواصل مع الدعم
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
     ],
     resize_keyboard=True,
 )
@@ -1819,7 +1819,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         # السطر الثاني: مذكّرات قلبي بجانب رسالة إلى نفسي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         # السطر الثالث: مكتبة صوتية بجانب قسم الدورات
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_MAIN)],
         # السطر الرابع: مجتمع الفوائد بجانب المنافسات والمجتمع
@@ -1827,7 +1827,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         # السطر الخامس: منبّه الماء بجانب احصائياتي
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
         # السطر السادس: الاشعارات بجانب تواصل مع الدعم
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -1839,7 +1839,7 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         # السطر الثاني: مذكّرات قلبي بجانب رسالة إلى نفسي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
         # السطر الثالث: مكتبة صوتية بجانب قسم الدورات
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_MAIN)],
         # السطر الرابع: مجتمع الفوائد بجانب المنافسات والمجتمع
@@ -1847,7 +1847,7 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         # السطر الخامس: منبّه الماء بجانب احصائياتي
         [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
         # السطر السادس: الاشعارات بجانب تواصل مع الدعم
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
