@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import random
+import uuid
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
 from typing import List, Dict
@@ -296,6 +297,7 @@ COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
 COMPETITION_POINTS_COLLECTION = "competition_points"
 COMMUNITY_MEDALS_COLLECTION = "community_medals"
 AUDIO_LIBRARY_COLLECTION = "audio_library"
+COURSES_COLLECTION = "courses"
 
 
 # =================== نهاية Firebase ===================
@@ -1621,6 +1623,26 @@ WAITING_BENEFIT_EDIT_TEXT = set()
 WAITING_BENEFIT_DELETE_CONFIRM = set()
 BENEFIT_EDIT_ID = {} # user_id -> benefit_id
 
+# إدارة الدورات
+WAITING_COURSE_NAME = set()
+WAITING_COURSE_DESCRIPTION = set()
+WAITING_SELECTED_COURSE = {}
+WAITING_LESSON_TITLE = set()
+WAITING_LESSON_DESCRIPTION = set()
+WAITING_LESSON_AUDIO = set()
+WAITING_LESSON_NOTIFY = set()
+PENDING_LESSON_DATA = {}
+WAITING_EXAM_NAME = set()
+WAITING_EXAM_DESCRIPTION = set()
+WAITING_EXAM_QUESTION = set()
+WAITING_EXAM_OPTIONS = set()
+WAITING_EXAM_ADD_MORE = set()
+PENDING_EXAM_DATA = {}
+PENDING_EXAM_QUESTIONS = {}
+WAITING_COURSE_BROADCAST = set()
+PENDING_COURSE_DATA = {}
+
+
 # أذكار النوم
 SLEEP_ADHKAR_STATE = {}  # user_id -> current_index
 
@@ -1651,6 +1673,7 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
+BTN_COURSES_MAIN = "🎓 الدورات المتاحة"
 BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
@@ -1664,6 +1687,7 @@ BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
 BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
+BTN_COURSES_BACK_MAIN = "الرجوع إلى الدورات 🎓"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
@@ -1706,6 +1730,10 @@ BTN_ADMIN_RANKINGS = "ترتيب المنافسة (تفصيلي) 📊"
 BTN_ADMIN_BAN_USER = "حظر مستخدم ⚠️"
 BTN_ADMIN_UNBAN_USER = "فك حظر مستخدم ✅"
 BTN_ADMIN_BANNED_LIST = "قائمة المحظورين 🚫"
+BTN_ADMIN_COURSES = "🎓 إدارة الدورات"
+BTN_ADMIN_COURSE_ARCHIVE = "🗂 أرشيف الدورات"
+BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
+BTN_ADMIN_ACTIVE_COURSES = "📋 قائمة الدورات النشطة"
 
 # إعدادات الجرعة التحفيزية (داخل لوحة التحكم)
 BTN_ADMIN_MOTIVATION_MENU = "إعدادات الجرعة التحفيزية 💡"
@@ -1772,8 +1800,8 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثاني: منبه الماء بجانب الدورات
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -1790,8 +1818,8 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثاني: منبه الماء بجانب الدورات
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -1810,8 +1838,8 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثاني: منبه الماء بجانب الدورات
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -2069,6 +2097,7 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
+        [KeyboardButton(BTN_ADMIN_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2081,6 +2110,7 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
+        [KeyboardButton(BTN_ADMIN_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2102,6 +2132,16 @@ ADMIN_MOTIVATION_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_MOTIVATION_ADD)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_DELETE)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_TIMES)],
+        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSES_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_COURSE)],
+        [KeyboardButton(BTN_ADMIN_ACTIVE_COURSES)],
+        [KeyboardButton(BTN_ADMIN_COURSE_ARCHIVE)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -2178,6 +2218,378 @@ def user_main_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     if is_supervisor(user_id):
         return MAIN_KEYBOARD_SUPERVISOR
     return MAIN_KEYBOARD_USER
+
+
+# =================== نظام الدورات ===================
+
+
+def _course_ref(course_id: str):
+    if not firestore_available():
+        return None
+    return db.collection(COURSES_COLLECTION).document(course_id)
+
+
+def list_courses(status: str = None):
+    if not firestore_available():
+        return []
+    query = db.collection(COURSES_COLLECTION)
+    if status:
+        query = query.where("status", "==", status)
+    try:
+        return list(query.stream())
+    except Exception as e:
+        logger.error(f"خطأ في قراءة الدورات: {e}")
+        return []
+
+
+def create_course_in_firestore(name: str, description: str = "") -> str:
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح")
+    new_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    db.collection(COURSES_COLLECTION).document(new_id).set(
+        {
+            "name": name,
+            "description": description,
+            "status": "active",
+            "created_at": now,
+            "archived_at": None,
+        }
+    )
+    return new_id
+
+
+def course_participant_ref(course_id: str, user_id: int):
+    course = _course_ref(course_id)
+    if not course:
+        return None
+    return course.collection("participants").document(str(user_id))
+
+
+def get_course_participant(course_id: str, user_id: int):
+    ref = course_participant_ref(course_id, user_id)
+    if not ref:
+        return None
+    try:
+        snap = ref.get()
+        return snap.to_dict() if snap.exists else None
+    except Exception as e:
+        logger.error(f"خطأ في قراءة مشاركة المستخدم في الدورة: {e}")
+        return None
+
+
+def ensure_course_participant(course_id: str, user: User):
+    ref = course_participant_ref(course_id, user.id)
+    if not ref:
+        raise RuntimeError("Firestore غير متاح")
+    participant = get_course_participant(course_id, user.id)
+    if participant:
+        return participant
+    now = datetime.now(timezone.utc).isoformat()
+    participant = {
+        "attendance_points": 0,
+        "exam_points": 0,
+        "total_course_points": 0,
+        "attended_days": [],
+        "streak_info": {"current": 0, "last_attended": None, "bonuses": []},
+        "answers": [],
+    }
+    ref.set(participant)
+    return participant
+
+
+def update_course_points(course_id: str, user_id: int, attendance_delta: int = 0, exam_delta: int = 0):
+    ref = course_participant_ref(course_id, user_id)
+    if not ref:
+        return
+    try:
+        db.run_transaction(
+            lambda tx: _apply_course_points_transaction(
+                tx, ref, attendance_delta, exam_delta
+            )
+        )
+    except Exception as e:
+        logger.error(f"خطأ في تحديث نقاط الدورة: {e}")
+
+
+def _apply_course_points_transaction(tx, ref, attendance_delta: int, exam_delta: int):
+    snap = ref.get(transaction=tx)
+    data_doc = snap.to_dict() if snap.exists else {}
+    attendance_points = int(data_doc.get("attendance_points", 0)) + attendance_delta
+    exam_points = int(data_doc.get("exam_points", 0)) + exam_delta
+    total_points = attendance_points + exam_points
+    updates = {
+        "attendance_points": attendance_points,
+        "exam_points": exam_points,
+        "total_course_points": total_points,
+    }
+    tx.set(ref, updates, merge=True)
+
+
+def add_lesson_to_course(course_id: str, title: str, description: str, file_id: str):
+    course = _course_ref(course_id)
+    if not course:
+        raise RuntimeError("Firestore غير متاح")
+    lesson_id = str(uuid.uuid4())
+    course.collection("lessons").document(lesson_id).set(
+        {
+            "title": title,
+            "description": description,
+            "file_id": file_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    return lesson_id
+
+
+def add_exam_to_course(course_id: str, name: str, description: str, questions: List[Dict]):
+    course = _course_ref(course_id)
+    if not course:
+        raise RuntimeError("Firestore غير متاح")
+    exam_id = str(uuid.uuid4())
+    exam_ref = course.collection("exams").document(exam_id)
+    exam_ref.set({"name": name, "description": description})
+    for q in questions:
+        question_id = str(uuid.uuid4())
+        exam_ref.collection("questions").document(question_id).set(
+            {
+                "text": q.get("text"),
+                "options": q.get("options", []),
+                "points": q.get("points", []),
+                "order": q.get("order", 0),
+            }
+        )
+    return exam_id
+
+
+def record_exam_answer(course_id: str, exam_id: str, question_id: str, question_text: str, option_text: str, earned_points: int, user: User):
+    participant = ensure_course_participant(course_id, user)
+    ref = course_participant_ref(course_id, user.id)
+    if not ref:
+        return
+    answer_record = {
+        "question_id": question_id,
+        "question_text": question_text,
+        "chosen_option_text": option_text,
+        "earned_points": earned_points,
+        "answered_at": datetime.now(timezone.utc).isoformat(),
+        "exam_id": exam_id,
+    }
+    try:
+        db.run_transaction(
+            lambda tx: _append_answer_and_score(tx, ref, answer_record, earned_points)
+        )
+    except Exception as e:
+        logger.error(f"خطأ في حفظ إجابة الاختبار: {e}")
+
+
+def _append_answer_and_score(tx, ref, answer_record: Dict, earned_points: int):
+    snap = ref.get(transaction=tx)
+    data_doc = snap.to_dict() if snap.exists else {}
+    answers = data_doc.get("answers", [])
+    answers.append(answer_record)
+    exam_points = int(data_doc.get("exam_points", 0)) + earned_points
+    attendance_points = int(data_doc.get("attendance_points", 0))
+    total_points = exam_points + attendance_points
+    tx.set(
+        ref,
+        {
+            "answers": answers,
+            "exam_points": exam_points,
+            "total_course_points": total_points,
+        },
+        merge=True,
+    )
+
+
+def record_daily_attendance(course_id: str, user: User):
+    ref = course_participant_ref(course_id, user.id)
+    if not ref:
+        raise RuntimeError("Firestore غير متاح")
+
+    def _txn(tx):
+        snap = ref.get(transaction=tx)
+        data_doc = snap.to_dict() if snap.exists else ensure_course_participant(course_id, user)
+        today = datetime.now(timezone.utc).date()
+        attended_days = data_doc.get("attended_days", [])
+        streak_info = data_doc.get("streak_info", {"current": 0, "last_attended": None, "bonuses": []})
+        last_attended_str = streak_info.get("last_attended")
+        last_attended = (
+            datetime.fromisoformat(last_attended_str).date() if last_attended_str else None
+        )
+
+        if str(today) in attended_days:
+            return False, data_doc
+
+        if last_attended and (today - last_attended).days == 1:
+            streak_info["current"] = streak_info.get("current", 0) + 1
+        else:
+            streak_info["current"] = 1
+
+        streak_info["last_attended"] = today.isoformat()
+        attendance_points = int(data_doc.get("attendance_points", 0)) + 1
+        bonuses = streak_info.get("bonuses", [])
+        for milestone in (3, 7, 15):
+            if streak_info["current"] >= milestone and milestone not in bonuses:
+                bonuses.append(milestone)
+                attendance_points += 2
+        streak_info["bonuses"] = bonuses
+        attendance_points = max(attendance_points, 0)
+        exam_points = int(data_doc.get("exam_points", 0))
+        total_points = attendance_points + exam_points
+        attended_days.append(today.isoformat())
+        tx.set(
+            ref,
+            {
+                "attendance_points": attendance_points,
+                "exam_points": exam_points,
+                "total_course_points": total_points,
+                "attended_days": attended_days,
+                "streak_info": streak_info,
+            },
+            merge=True,
+        )
+        return True, {
+            "attendance_points": attendance_points,
+            "exam_points": exam_points,
+            "total_course_points": total_points,
+            "streak_info": streak_info,
+        }
+
+    try:
+        success, payload = db.run_transaction(lambda tx: _txn(tx))
+        return success, payload
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل الحضور: {e}")
+        return False, None
+
+
+def get_course_data(course_id: str):
+    ref = _course_ref(course_id)
+    if not ref:
+        return None
+    try:
+        snap = ref.get()
+        if not snap.exists:
+            return None
+        data_doc = snap.to_dict() or {}
+        data_doc["id"] = course_id
+        return data_doc
+    except Exception as e:
+        logger.error(f"خطأ في قراءة بيانات الدورة: {e}")
+        return None
+
+
+def list_lessons(course_id: str):
+    ref = _course_ref(course_id)
+    if not ref:
+        return []
+    try:
+        lessons = list(ref.collection("lessons").stream())
+        lessons.sort(key=lambda s: s.to_dict().get("created_at", ""), reverse=True)
+        return lessons
+    except Exception as e:
+        logger.error(f"خطأ في قراءة دروس الدورة: {e}")
+        return []
+
+
+def list_exams(course_id: str):
+    ref = _course_ref(course_id)
+    if not ref:
+        return []
+    try:
+        exams = list(ref.collection("exams").stream())
+        return exams
+    except Exception as e:
+        logger.error(f"خطأ في قراءة اختبارات الدورة: {e}")
+        return []
+
+
+def list_questions(course_id: str, exam_id: str):
+    ref = _course_ref(course_id)
+    if not ref:
+        return []
+    try:
+        questions = list(
+            ref.collection("exams").document(exam_id).collection("questions").stream()
+        )
+        questions.sort(key=lambda q: q.to_dict().get("order", 0))
+        return questions
+    except Exception as e:
+        logger.error(f"خطأ في قراءة أسئلة الاختبار: {e}")
+        return []
+
+
+def build_course_inline(course_doc) -> InlineKeyboardButton:
+    data_doc = course_doc.to_dict() if hasattr(course_doc, "to_dict") else course_doc
+    course_id = getattr(course_doc, "id", None) or getattr(course_doc, "id", "") or course_doc.id
+    return InlineKeyboardButton(
+        f"{data_doc.get('name', 'دورة')} ({data_doc.get('status', 'active')})",
+        callback_data=f"course_view_{course_id}",
+    )
+
+
+def send_courses_menu(update: Update, context: CallbackContext):
+    chat_id = update.effective_chat.id
+    if not firestore_available():
+        context.bot.send_message(chat_id=chat_id, text="⚠️ خدمة الدورات غير متاحة حاليًا.")
+        return
+
+    active_courses = list_courses(status="active")
+    buttons = [[build_course_inline(c)] for c in active_courses]
+    buttons.append([InlineKeyboardButton("📂 أرشيف دوراتي", callback_data="course_archives_me")])
+    if not buttons or len(buttons) == 1:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="لا توجد دورات نشطة حاليًا.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 أرشيف دوراتي", callback_data="course_archives_me")]]),
+        )
+        return
+
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="اختر الدورة التي تريد متابعتها:",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+def send_course_page(chat_id: int, user: User, course_id: str, context: CallbackContext):
+    data_doc = get_course_data(course_id)
+    if not data_doc:
+        context.bot.send_message(chat_id=chat_id, text="تعذر العثور على الدورة.")
+        return
+    participant = get_course_participant(course_id, user.id)
+    status = data_doc.get("status", "active")
+    base_text = f"🎓 {data_doc.get('name')}\n\n{data_doc.get('description','') or 'لا يوجد وصف.'}\nالحالة: {status}"
+    if participant:
+        base_text += (
+            f"\n\nنقاط الحضور: {participant.get('attendance_points',0)}"
+            f"\nنقاط الاختبارات: {participant.get('exam_points',0)}"
+            f"\nالمجموع: {participant.get('total_course_points',0)}"
+        )
+
+    buttons = []
+    if status == "active":
+        if participant:
+            buttons.append([InlineKeyboardButton("📘 إلغاء التسجيل", callback_data=f"course_unreg_{course_id}")])
+        else:
+            buttons.append([InlineKeyboardButton("📘 تسجيل في الدورة", callback_data=f"course_reg_{course_id}")])
+    else:
+        buttons.append([InlineKeyboardButton("هذه الدورة غير متاحة للتسجيل", callback_data="noop")])
+
+    buttons.extend(
+        [
+            [InlineKeyboardButton("🎧 درس اليوم", callback_data=f"course_today_{course_id}")],
+            [InlineKeyboardButton("📚 جميع الدروس", callback_data=f"course_lessons_{course_id}")],
+            [InlineKeyboardButton("📝 الاختبارات", callback_data=f"course_exams_{course_id}")],
+            [InlineKeyboardButton("📊 إحصائياتي", callback_data=f"course_stats_{course_id}")],
+        ]
+    )
+    context.bot.send_message(
+        chat_id=chat_id,
+        text=base_text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 
 def admin_panel_keyboard_for(user_id: int) -> ReplyKeyboardMarkup:
@@ -7102,6 +7514,23 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_MOTIVATION_ADD.discard(user_id)
         WAITING_MOTIVATION_DELETE.discard(user_id)
         WAITING_MOTIVATION_TIMES.discard(user_id)
+        WAITING_COURSE_NAME.discard(user_id)
+        WAITING_COURSE_DESCRIPTION.discard(user_id)
+        WAITING_LESSON_TITLE.discard(user_id)
+        WAITING_LESSON_DESCRIPTION.discard(user_id)
+        WAITING_LESSON_AUDIO.discard(user_id)
+        WAITING_LESSON_NOTIFY.discard(user_id)
+        WAITING_EXAM_NAME.discard(user_id)
+        WAITING_EXAM_DESCRIPTION.discard(user_id)
+        WAITING_EXAM_QUESTION.discard(user_id)
+        WAITING_EXAM_OPTIONS.discard(user_id)
+        WAITING_EXAM_ADD_MORE.discard(user_id)
+        WAITING_COURSE_BROADCAST.discard(user_id)
+        WAITING_SELECTED_COURSE.pop(user_id, None)
+        PENDING_LESSON_DATA.pop(user_id, None)
+        PENDING_EXAM_DATA.pop(user_id, None)
+        PENDING_EXAM_QUESTIONS.pop(user_id, None)
+        PENDING_COURSE_DATA.pop(user_id, None)
         WAITING_BAN_USER.discard(user_id)
         WAITING_UNBAN_USER.discard(user_id)
         WAITING_BAN_REASON.discard(user_id)
@@ -7144,6 +7573,10 @@ def handle_text(update: Update, context: CallbackContext):
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
             reply_markup=main_kb,
         )
+        return
+
+    if text == BTN_COURSES_MAIN:
+        send_courses_menu(update, context)
         return
 
     # حالات إدخال الماء
@@ -7275,6 +7708,181 @@ def handle_text(update: Update, context: CallbackContext):
     # رسالة جماعية
     if user_id in WAITING_BROADCAST:
         handle_admin_broadcast_input(update, context)
+        return
+
+    if user_id in WAITING_COURSE_BROADCAST:
+        course_id = WAITING_SELECTED_COURSE.pop(user_id, None)
+        WAITING_COURSE_BROADCAST.discard(user_id)
+        if not course_id:
+            msg.reply_text("لم يتم تحديد دورة للتنبيه.", reply_markup=main_kb)
+            return
+        sent = _course_broadcast(course_id, context, text)
+        msg.reply_text(f"تم إرسال التنبيه إلى {sent} مشترك.", reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb)
+        return
+
+    if user_id in WAITING_COURSE_NAME:
+        PENDING_COURSE_DATA[user_id] = {"name": text}
+        WAITING_COURSE_NAME.discard(user_id)
+        WAITING_COURSE_DESCRIPTION.add(user_id)
+        msg.reply_text("أرسل وصف الدورة (اختياري).", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_COURSE_DESCRIPTION:
+        course_info = PENDING_COURSE_DATA.pop(user_id, {})
+        WAITING_COURSE_DESCRIPTION.discard(user_id)
+        name = course_info.get("name", "دورة")
+        description = text if text.lower() != "تخطي" else ""
+        try:
+            course_id = create_course_in_firestore(name, description)
+            msg.reply_text(
+                f"تم إنشاء دورة جديدة: {name}",
+                reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb,
+            )
+            context.bot.send_message(
+                chat_id=user_id,
+                text="يمكنك إدارة الدورة من قائمة الدورات النشطة.",
+                reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb,
+            )
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الدورة: {e}")
+            msg.reply_text("تعذر إنشاء الدورة. تأكد من تفعيل Firestore.")
+        return
+
+    if user_id in WAITING_LESSON_TITLE:
+        PENDING_LESSON_DATA[user_id] = {"title": text}
+        WAITING_LESSON_TITLE.discard(user_id)
+        WAITING_LESSON_DESCRIPTION.add(user_id)
+        msg.reply_text("أرسل وصف الدرس.", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_LESSON_DESCRIPTION:
+        data_l = PENDING_LESSON_DATA.get(user_id, {})
+        data_l["description"] = text
+        PENDING_LESSON_DATA[user_id] = data_l
+        WAITING_LESSON_DESCRIPTION.discard(user_id)
+        WAITING_LESSON_AUDIO.add(user_id)
+        msg.reply_text("أرسل الملف الصوتي (file_id أو رابط).", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_LESSON_AUDIO:
+        data_l = PENDING_LESSON_DATA.get(user_id, {})
+        file_id = text
+        if msg.audio:
+            file_id = msg.audio.file_id
+        elif msg.voice:
+            file_id = msg.voice.file_id
+        data_l["file_id"] = file_id
+        PENDING_LESSON_DATA[user_id] = data_l
+        WAITING_LESSON_AUDIO.discard(user_id)
+        WAITING_LESSON_NOTIFY.add(user_id)
+        msg.reply_text("هل تريد إرسال إشعار للمشتركين؟ (نعم/لا)", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_LESSON_NOTIFY:
+        course_id = WAITING_SELECTED_COURSE.get(user_id)
+        lesson_data = PENDING_LESSON_DATA.pop(user_id, {})
+        WAITING_LESSON_NOTIFY.discard(user_id)
+        if not course_id:
+            msg.reply_text("لم يتم تحديد دورة.", reply_markup=main_kb)
+            return
+        course_info = get_course_data(course_id)
+        if not course_info or course_info.get("status") in ["paused", "archived"]:
+            msg.reply_text("لا يمكن إضافة درس لأن الدورة غير نشطة.", reply_markup=ADMIN_COURSES_KB)
+            return
+        try:
+            add_lesson_to_course(course_id, lesson_data.get("title", "درس"), lesson_data.get("description", ""), lesson_data.get("file_id", ""))
+            notify = text.strip().lower().startswith("نعم")
+            if notify:
+                _course_broadcast(
+                    course_id,
+                    context,
+                    f"🔔 تم نشر درس جديد في دورة: {get_course_data(course_id).get('name', '')}\nالعنوان: {lesson_data.get('title','')}",
+                )
+            msg.reply_text("تمت إضافة الدرس بنجاح.", reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb)
+        except Exception as e:
+            logger.error(f"خطأ في إضافة الدرس: {e}")
+            msg.reply_text("تعذر إضافة الدرس.")
+        return
+
+    if user_id in WAITING_EXAM_NAME:
+        PENDING_EXAM_DATA[user_id] = {"name": text}
+        WAITING_EXAM_NAME.discard(user_id)
+        WAITING_EXAM_DESCRIPTION.add(user_id)
+        msg.reply_text("أرسل وصف الاختبار.", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_EXAM_DESCRIPTION:
+        exam_data = PENDING_EXAM_DATA.get(user_id, {})
+        exam_data["description"] = text
+        PENDING_EXAM_DATA[user_id] = exam_data
+        WAITING_EXAM_DESCRIPTION.discard(user_id)
+        WAITING_EXAM_QUESTION.add(user_id)
+        PENDING_EXAM_QUESTIONS[user_id] = []
+        msg.reply_text("أرسل نص السؤال الأول.", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_EXAM_QUESTION:
+        exam_data = PENDING_EXAM_DATA.get(user_id, {})
+        exam_data["current_question"] = text
+        PENDING_EXAM_DATA[user_id] = exam_data
+        WAITING_EXAM_QUESTION.discard(user_id)
+        WAITING_EXAM_OPTIONS.add(user_id)
+        msg.reply_text("أرسل الخيارات مع النقاط (سطر لكل خيار بشكل: النص | النقاط).", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_EXAM_OPTIONS:
+        exam_data = PENDING_EXAM_DATA.get(user_id, {})
+        lines = text.split("\n")
+        options = []
+        points = []
+        for line in lines:
+            if "|" in line:
+                opt, pts = line.split("|", 1)
+                options.append(opt.strip())
+                try:
+                    points.append(int(pts.strip()))
+                except ValueError:
+                    points.append(0)
+        PENDING_EXAM_QUESTIONS.setdefault(user_id, []).append(
+            {
+                "text": exam_data.get("current_question"),
+                "options": options,
+                "points": points,
+                "order": len(PENDING_EXAM_QUESTIONS.get(user_id, [])),
+            }
+        )
+        exam_data.pop("current_question", None)
+        PENDING_EXAM_DATA[user_id] = exam_data
+        WAITING_EXAM_OPTIONS.discard(user_id)
+        WAITING_EXAM_ADD_MORE.add(user_id)
+        msg.reply_text("هل تريد إضافة سؤال آخر؟ (نعم/لا)", reply_markup=CANCEL_KB)
+        return
+
+    if user_id in WAITING_EXAM_ADD_MORE:
+        WAITING_EXAM_ADD_MORE.discard(user_id)
+        if text.strip().lower().startswith("نعم"):
+            WAITING_EXAM_QUESTION.add(user_id)
+            msg.reply_text("أرسل نص السؤال التالي.", reply_markup=CANCEL_KB)
+            return
+        course_id = WAITING_SELECTED_COURSE.get(user_id)
+        questions = PENDING_EXAM_QUESTIONS.pop(user_id, [])
+        exam_data = PENDING_EXAM_DATA.pop(user_id, {})
+        if not course_id:
+            msg.reply_text("لم يتم تحديد دورة للاختبار.", reply_markup=main_kb)
+            return
+        course_info = get_course_data(course_id)
+        if not course_info or course_info.get("status") in ["paused", "archived"]:
+            msg.reply_text("لا يمكن إضافة اختبار لأن الدورة غير نشطة.", reply_markup=ADMIN_COURSES_KB)
+            return
+        try:
+            add_exam_to_course(course_id, exam_data.get("name", "اختبار"), exam_data.get("description", ""), questions)
+            msg.reply_text(
+                "تم إنشاء الاختبار وإتاحته للمشتركين.",
+                reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb,
+            )
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الاختبار: {e}")
+            msg.reply_text("تعذر إنشاء الاختبار.")
         return
 
     # فوائد ونصائح
@@ -7596,6 +8204,39 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MOTIVATION_TIMES:
         handle_admin_motivation_times_start(update, context)
+        return
+    if text == BTN_ADMIN_COURSES:
+        msg.reply_text("🎓 إدارة الدورات", reply_markup=ADMIN_COURSES_KB)
+        return
+    if text == BTN_ADMIN_CREATE_COURSE:
+        WAITING_COURSE_NAME.add(user_id)
+        msg.reply_text("أرسل اسم الدورة الجديدة.", reply_markup=CANCEL_KB)
+        return
+    if text == BTN_ADMIN_ACTIVE_COURSES:
+        courses = list_courses(status="active")
+        if not courses:
+            msg.reply_text("لا توجد دورات نشطة.", reply_markup=ADMIN_COURSES_KB)
+            return
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(c.to_dict().get("name", "دورة"), callback_data=f"course_admin_manage_{c.id}")]
+                for c in courses
+            ]
+        )
+        msg.reply_text("اختر دورة لإدارتها:", reply_markup=kb)
+        return
+    if text == BTN_ADMIN_COURSE_ARCHIVE:
+        courses = list_courses(status="archived")
+        if not courses:
+            msg.reply_text("لا توجد دورات مؤرشفة.", reply_markup=ADMIN_COURSES_KB)
+            return
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton(c.to_dict().get("name", "دورة"), callback_data=f"course_admin_archiveview_{c.id}")]
+                for c in courses
+            ]
+        )
+        msg.reply_text("🗂 أرشيف الدورات", reply_markup=kb)
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
@@ -8100,6 +8741,345 @@ def handle_deleted_channel_post(update: Update, context: CallbackContext):
     )
 
 
+def _course_broadcast(course_id: str, context: CallbackContext, text: str):
+    course = _course_ref(course_id)
+    if not course:
+        return 0
+    try:
+        participants = course.collection("participants").stream()
+        count = 0
+        for p in participants:
+            uid = p.id
+            try:
+                context.bot.send_message(chat_id=int(uid), text=text)
+                count += 1
+            except Exception as e:
+                logger.debug(f"تعذر إرسال تنبيه للمستخدم {uid}: {e}")
+        return count
+    except Exception as e:
+        logger.error(f"خطأ أثناء إرسال التنبيه: {e}")
+        return 0
+
+
+def handle_course_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    data = query.data
+    user = update.effective_user
+    chat_id = query.message.chat_id
+
+    if data == "noop":
+        query.answer()
+        return
+
+    if data.startswith("course_view_"):
+        course_id = data.replace("course_view_", "", 1)
+        query.answer()
+        send_course_page(chat_id, user, course_id, context)
+        return
+
+    if data == "course_archives_me":
+        query.answer()
+        archived = list_courses(status="archived")
+        rows = []
+        for c in archived:
+            c_id = c.id
+            if get_course_participant(c_id, user.id):
+                rows.append([InlineKeyboardButton(c.to_dict().get("name", "دورة"), callback_data=f"course_view_{c_id}")])
+        if not rows:
+            query.edit_message_text("لا توجد دورات في الأرشيف تخصك حتى الآن.")
+            return
+        query.edit_message_text(
+            "📂 أرشيف دوراتي",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        return
+
+    if data.startswith("course_reg_"):
+        course_id = data.replace("course_reg_", "", 1)
+        course = get_course_data(course_id)
+        if not course or course.get("status") != "active":
+            query.answer("هذه الدورة غير متاحة للتسجيل الآن")
+            return
+        ensure_course_participant(course_id, user)
+        query.answer("تم تسجيلك في الدورة")
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=f"تم تسجيلك في {course.get('name')}.",
+        )
+        if ADMIN_ID:
+            try:
+                context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"🟢 تسجيل جديد في دورة: {course.get('name')}\nالاسم: {user.first_name}\nاليوزر: @{user.username}\nالتاريخ: {datetime.now(timezone.utc).isoformat()}",
+                )
+            except Exception:
+                pass
+        if SUPERVISOR_ID:
+            try:
+                context.bot.send_message(
+                    chat_id=SUPERVISOR_ID,
+                    text=f"🟢 تسجيل جديد في دورة: {course.get('name')}\nالاسم: {user.first_name}\nاليوزر: @{user.username}\nالتاريخ: {datetime.now(timezone.utc).isoformat()}",
+                )
+            except Exception:
+                pass
+        return
+
+    if data.startswith("course_unreg_"):
+        course_id = data.replace("course_unreg_", "", 1)
+        ref = course_participant_ref(course_id, user.id)
+        if ref:
+            try:
+                ref.delete()
+                query.answer("تم إلغاء التسجيل")
+            except Exception:
+                query.answer("تعذر الإلغاء")
+        return
+
+    if data.startswith("course_today_"):
+        course_id = data.replace("course_today_", "", 1)
+        query.answer()
+        course_info = get_course_data(course_id)
+        if course_info and course_info.get("status") in ["paused", "archived"]:
+            context.bot.send_message(chat_id=chat_id, text="هذه الدورة موقوفة حاليًا ولا يمكن تسجيل الحضور.")
+            return
+        lessons = list_lessons(course_id)
+        if not lessons:
+            context.bot.send_message(chat_id=chat_id, text="لا يوجد درس منشور بعد.")
+            return
+        latest = lessons[0]
+        ldata = latest.to_dict()
+        participant = get_course_participant(course_id, user.id)
+        if not participant:
+            context.bot.send_message(chat_id=chat_id, text="سجل أولًا في الدورة قبل احتساب الحضور.")
+        else:
+            success, payload = record_daily_attendance(course_id, user)
+            if success:
+                context.bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"تم تسجيل حضورك لدرس اليوم.\n"
+                        f"نقاط الحضور: {payload['attendance_points']}\n"
+                        f"المجموع الكلي: {payload['total_course_points']}"
+                    ),
+                )
+            else:
+                context.bot.send_message(chat_id=chat_id, text="لقد سجّلت حضور اليوم بالفعل.")
+        file_id = ldata.get("file_id")
+        caption = f"📚 {ldata.get('title')}\n{ldata.get('description','')}"
+        if file_id:
+            try:
+                context.bot.send_audio(chat_id=chat_id, audio=file_id, caption=caption)
+                return
+            except Exception:
+                pass
+        context.bot.send_message(chat_id=chat_id, text=caption)
+        return
+
+    if data.startswith("course_lessons_"):
+        course_id = data.replace("course_lessons_", "", 1)
+        query.answer()
+        lessons = list_lessons(course_id)
+        if not lessons:
+            context.bot.send_message(chat_id=chat_id, text="لا توجد دروس بعد.")
+            return
+        lines = ["📚 جميع الدروس:"]
+        for idx, l in enumerate(lessons, 1):
+            d = l.to_dict()
+            lines.append(f"{idx}. {d.get('title','درس')} - {d.get('description','')}")
+        context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        return
+
+    if data.startswith("course_exams_"):
+        course_id = data.replace("course_exams_", "", 1)
+        query.answer()
+        exams = list_exams(course_id)
+        if not exams:
+            context.bot.send_message(chat_id=chat_id, text="لا توجد اختبارات متاحة بعد.")
+            return
+        rows = [
+            [InlineKeyboardButton(e.to_dict().get("name", "اختبار"), callback_data=f"course_exam_{course_id}_{e.id}")]
+            for e in exams
+        ]
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="📝 اختر الاختبار:",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        return
+
+    if data.startswith("course_exam_"):
+        parts = data.split("_")
+        if len(parts) < 4:
+            query.answer()
+            return
+        course_id = parts[2]
+        exam_id = "_".join(parts[3:])
+        query.answer()
+        if not get_course_participant(course_id, user.id):
+            context.bot.send_message(chat_id=chat_id, text="سجل أولًا في الدورة قبل خوض الاختبار.")
+            return
+        questions = list_questions(course_id, exam_id)
+        if not questions:
+            context.bot.send_message(chat_id=chat_id, text="لا توجد أسئلة بعد.")
+            return
+        _send_question(chat_id, course_id, exam_id, questions[0], context)
+        return
+
+    if data.startswith("course_addlesson_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_addlesson_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        WAITING_LESSON_TITLE.add(user.id)
+        query.answer()
+        context.bot.send_message(chat_id=chat_id, text="أرسل عنوان الدرس الجديد.")
+        return
+
+    if data.startswith("course_addexam_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_addexam_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        WAITING_EXAM_NAME.add(user.id)
+        query.answer()
+        context.bot.send_message(chat_id=chat_id, text="أرسل اسم الاختبار الجديد.")
+        return
+
+    if data.startswith("course_question_"):
+        # unused placeholder for future navigation
+        query.answer()
+        return
+
+    if data.startswith("course_answer_"):
+        # course_answer_{course}_{exam}_{question}_{idx}
+        _, _, course_id, exam_id, question_id, idx = data.split("_", 5)
+        idx = int(idx)
+        question_ref = _course_ref(course_id).collection("exams").document(exam_id).collection("questions").document(question_id)
+        q_snap = question_ref.get()
+        if not q_snap.exists:
+            query.answer("السؤال غير متاح")
+            return
+        q_data = q_snap.to_dict() or {}
+        options = q_data.get("options", [])
+        points = q_data.get("points", [])
+        earned = int(points[idx]) if idx < len(points) else 0
+        chosen_text = options[idx] if idx < len(options) else "خيار"
+        participant = get_course_participant(course_id, user.id)
+        if participant and any(a.get("question_id") == question_id for a in participant.get("answers", [])):
+            query.answer("لقد أجبت على هذا السؤال مسبقًا")
+            return
+        record_exam_answer(course_id, exam_id, question_id, q_data.get("text"), chosen_text, earned, user)
+        updated = get_course_participant(course_id, user.id)
+        query.answer("تم تسجيل إجابتك")
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"تمت إضافة +{earned} نقطة إلى رصيدك في الدورة.\n"
+                f"مجموع نقاطك الحالي: {updated.get('total_course_points',0) if updated else earned}"
+            ),
+        )
+        return
+
+    if data.startswith("course_stats_"):
+        course_id = data.replace("course_stats_", "", 1)
+        query.answer()
+        participant = get_course_participant(course_id, user.id)
+        if not participant:
+            context.bot.send_message(chat_id=chat_id, text="سجل أولًا في الدورة لعرض إحصاءاتك.")
+            return
+        lines = [
+            "📊 إحصائياتك في الدورة:",
+            f"نقاط الحضور: {participant.get('attendance_points',0)}",
+            f"نقاط الاختبارات: {participant.get('exam_points',0)}",
+            f"المجموع: {participant.get('total_course_points',0)}",
+            f"عدد الأسئلة المجاب عنها: {len(participant.get('answers', []))}",
+        ]
+        context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        return
+
+    if data.startswith("course_admin_manage_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_admin_manage_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        _send_admin_course_controls(chat_id, course_id, context)
+        query.answer()
+        return
+
+    if data.startswith("course_pause_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_pause_", "", 1)
+        _course_ref(course_id).update({"status": "paused"})
+        query.answer("تم إيقاف الدورة")
+        return
+
+    if data.startswith("course_archive_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_archive_", "", 1)
+        _course_ref(course_id).update({"status": "archived", "archived_at": datetime.now(timezone.utc).isoformat()})
+        query.answer("تم أرشفة الدورة")
+        return
+
+    if data.startswith("course_notify_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_notify_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        WAITING_COURSE_BROADCAST.add(user.id)
+        query.answer()
+        context.bot.send_message(chat_id=chat_id, text="أرسل نص التنبيه لإرساله إلى المشتركين.")
+        return
+
+    if data.startswith("course_admin_archiveview_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_admin_archiveview_", "", 1)
+        query.answer()
+        send_course_page(chat_id, user, course_id, context)
+        return
+
+
+def _send_question(chat_id: int, course_id: str, exam_id: str, question_snap, context: CallbackContext):
+    q_data = question_snap.to_dict() if hasattr(question_snap, "to_dict") else question_snap
+    question_id = getattr(question_snap, "id", None) or question_snap.id
+    options = q_data.get("options", [])
+    buttons = [
+        [InlineKeyboardButton(opt, callback_data=f"course_answer_{course_id}_{exam_id}_{question_id}_{idx}")]
+        for idx, opt in enumerate(options)
+    ]
+    context.bot.send_message(
+        chat_id=chat_id,
+        text=f"❓ {q_data.get('text')}",
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
+
+
+def _send_admin_course_controls(chat_id: int, course_id: str, context: CallbackContext):
+    course = get_course_data(course_id)
+    if not course:
+        context.bot.send_message(chat_id=chat_id, text="لم يتم العثور على الدورة.")
+        return
+    text = f"إدارة دورة: {course.get('name')}"
+    buttons = [
+        [InlineKeyboardButton("➕ إضافة درس", callback_data=f"course_addlesson_{course_id}")],
+        [InlineKeyboardButton("📝 إضافة اختبار", callback_data=f"course_addexam_{course_id}")],
+        [InlineKeyboardButton("📊 إحصائيات الدورة", callback_data=f"course_stats_{course_id}")],
+        [InlineKeyboardButton("📤 إرسال تنبيه", callback_data=f"course_notify_{course_id}")],
+        [InlineKeyboardButton("⏹ إيقاف الدورة", callback_data=f"course_pause_{course_id}")],
+        [InlineKeyboardButton("🗂 أرشفة الدورة", callback_data=f"course_archive_{course_id}")],
+    ]
+    context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
 def process_channel_audio_message(message, is_edit: bool = False):
     if not message or not _is_audio_storage_channel(message):
         return
@@ -8332,6 +9312,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_callback, pattern=r"^course_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
