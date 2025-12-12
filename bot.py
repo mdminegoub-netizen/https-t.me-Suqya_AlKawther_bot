@@ -7336,9 +7336,7 @@ def handle_text(update: Update, context: CallbackContext):
         except Exception as e:
             logger.error(f"خطأ في معالجة رسالة الدورات: {e}")
     
-    if text == BTN_TASBIH_MAIN:
-        open_tasbih_menu(update, context)
-        return
+    # تم إزالة معالج السبحة القديم للسماح لقسم الدورات بالعمل
 
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
