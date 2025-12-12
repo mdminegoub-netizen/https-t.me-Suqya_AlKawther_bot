@@ -2856,7 +2856,14 @@ def _list_course_participants(course_id: str):
     if not ref:
         return []
     try:
-        return list(ref.collection("participants").stream())
+        participants = list(ref.collection("participants").stream())
+        logger.info(
+            "📊 قراءة المشاركين | course_id=%s | count=%s | sample_ids=%s",
+            course_id,
+            len(participants),
+            [p.id for p in participants[:3]],
+        )
+        return participants
     except Exception as e:
         logger.error(f"خطأ في جلب قائمة مشاركي الدورة: {e}")
         return []
@@ -2974,21 +2981,35 @@ def _format_exam_details(course_id: str, student_id: int, participant: Dict) -> 
 
 
 def _send_course_stats_course_picker(chat_id: int, context: CallbackContext):
+    logger.info("📊 فتح شاشة الإحصائيات | chat_id=%s", chat_id)
     courses = list_courses()
     rows = []
+    seen_ids = set()
     for c in courses:
-        participants = _list_course_participants(getattr(c, "id", None) or c.id)
-        if not participants:
+        course_id = getattr(c, "id", None) or c.id
+        if course_id in seen_ids:
             continue
         c_data = c.to_dict() if hasattr(c, "to_dict") else c
+        status = c_data.get("status", "active")
+        if status not in ("active", "paused"):
+            continue
+        participants = _list_course_participants(course_id)
+        if not participants:
+            continue
+        seen_ids.add(course_id)
         label = f"{c_data.get('name', 'دورة')} ({_format_course_status_label(c_data)})"
         rows.append(
             [
                 InlineKeyboardButton(
-                    label,
-                    callback_data=f"course_admin_stats_course_{getattr(c, 'id', None) or c.id}",
+                    label, callback_data=f"course_admin_stats_course_{course_id}"
                 )
             ]
+        )
+        logger.info(
+            "📊 إضافة دورة للإحصائيات | course_id=%s | status=%s | participants=%s",
+            course_id,
+            status,
+            len(participants),
         )
 
     rows.append([InlineKeyboardButton("↩️ رجوع", callback_data="course_admin_stats_back")])
@@ -3015,6 +3036,11 @@ def _send_course_participants_keyboard(
     if not participants:
         context.bot.send_message(chat_id=chat_id, text="لا يوجد طلاب مسجلون في هذه الدورة حتى الآن.")
         return
+    logger.info(
+        "📊 اختيار دورة للإحصائيات | course_id=%s | participants_count=%s",
+        course_id,
+        len(participants),
+    )
     rows = []
     for p in participants:
         uid = int(p.id)
@@ -3027,7 +3053,7 @@ def _send_course_participants_keyboard(
             [InlineKeyboardButton(label, callback_data=f"course_admin_stats_student_{course_id}_{uid}")]
         )
     back_callback_data = back_callback_data or f"course_admin_manage_{course_id}"
-    rows.append([InlineKeyboardButton("رجوع ↩️", callback_data=back_callback_data)])
+    rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=back_callback_data)])
     context.bot.send_message(
         chat_id=chat_id,
         text="اختر الطالب لعرض إحصاءاته:",
