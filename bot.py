@@ -6,7 +6,7 @@ import re
 import random
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import pytz
 from flask import Flask, request
@@ -51,7 +51,7 @@ ALLOWED_UPDATES = [
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -296,7 +296,6 @@ COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
 COMPETITION_POINTS_COLLECTION = "competition_points"
 COMMUNITY_MEDALS_COLLECTION = "community_medals"
 AUDIO_LIBRARY_COLLECTION = "audio_library"
-COURSES_COLLECTION = "courses"
 
 
 # =================== نهاية Firebase ===================
@@ -1647,43 +1646,12 @@ WAITING_DELETE_USER_MEDALS = set()
 WAITING_CONFIRM_RESET_POINTS = set()
 WAITING_CONFIRM_RESET_MEDALS = set()
 
-# قسم الدورات - مساحة مستقلة تمامًا
-COURSES_STATE: Dict[int, Dict] = {}
-COURSES_ADMIN_STATE: Dict[int, Dict] = {}
-
-
-def get_course_state(user_id: int) -> Dict:
-    return COURSES_STATE.setdefault(user_id, {})
-
-
-def get_admin_course_state(user_id: int) -> Dict:
-    return COURSES_ADMIN_STATE.setdefault(user_id, {})
-
-
-def reset_course_state(user_id: int):
-    COURSES_STATE.pop(user_id, None)
-
-
-def reset_admin_course_state(user_id: int):
-    COURSES_ADMIN_STATE.pop(user_id, None)
-
-
-def is_user_in_course_flow(user_id: int) -> bool:
-    """تحقق سريع إذا كان المستخدم داخل أي تدفق يخص الدورات فقط."""
-
-    return user_id in COURSES_STATE or user_id in COURSES_ADMIN_STATE
-
-
-def reset_audio_state(user_id: int):
-    """إعادة تهيئة جميع حالات المكتبة الصوتية للمستخدم فقط."""
-
-    AUDIO_USER_STATE.pop(user_id, None)
-
 # =================== الأزرار ===================
 
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
+BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
@@ -1692,19 +1660,6 @@ BTN_MEDALS_ONLY = "🏅 ميدالياتي"
 BTN_STATS_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 BTN_MEDALS = "ميدالياتي 🏵️"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
-BTN_COURSES_MAIN = "قسم الدورات 🎓"
-BTN_MY_COURSES = "📚 دوراتي"
-BTN_AVAILABLE_COURSES = "📚 الدورات المتاحة"
-BTN_ARCHIVED_COURSES = "🗂️ أرشيف دوراتي"
-BTN_COURSES_BACK = "⬅️ رجوع للقائمة الرئيسية"
-BTN_COURSE_REGISTER = "✅ تسجيل في الدورة"
-BTN_COURSE_BACK = "↩️ رجوع"
-BTN_COURSE_USER_MENU = "⬅️ رجوع للدورات"
-BTN_COURSE_LESSONS = "📘 الدروس"
-BTN_COURSE_TESTS = "📝 الاختبارات"
-BTN_COURSE_STATS = "📊 إحصائياتي"
-BTN_LESSON_OPEN = "▶️ فتح محتوى الدرس"
-BTN_LESSON_ATTENDANCE = "✅ تسجيل الحضور"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
@@ -1716,38 +1671,6 @@ BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
 BTN_AUDIO_PREV = "⬅️ السابق"
-
-BTN_ADMIN_COURSE_SETTINGS = "⚙️ إعداد الدورات"
-BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
-BTN_ADMIN_MANAGE_COURSES = "📋 إدارة الدورات"
-BTN_ADMIN_ARCHIVE_COURSE = "🗂️ أرشفة دورة"
-BTN_ADMIN_BACK = "⬅️ رجوع"
-BTN_ADMIN_EDIT_COURSE_NAME = "✏️ تعديل اسم الدورة"
-BTN_ADMIN_TOGGLE_STATUS = "⏸️ إيقاف الدورة / ▶️ تشغيل الدورة"
-BTN_ADMIN_COURSE_LESSONS = "📚 عرض الدروس"
-BTN_ADMIN_ADD_LESSON = "➕ إضافة درس"
-BTN_ADMIN_TESTS_PLACEHOLDER = "🧪 الاختبارات"
-BTN_ADMIN_COURSE_STATS_PLACEHOLDER = "📊 إحصائيات الدورة"
-BTN_ADMIN_MOVE_TO_ARCHIVE = "🗂️ نقل للأرشيف"
-BTN_ADMIN_CREATE_COURSE_NAME = "✍️ تسمية الدورة"
-BTN_ADMIN_COURSE_NAME_ADD = "➕ إضافة اسم الدورة"
-
-BTN_ADMIN_COURSE_CANCEL = "❌ إلغاء"
-BTN_ADMIN_COURSE_BACK = "⬅️ رجوع"
-BTN_ADMIN_COURSE_TESTS_MENU = "📝 إدارة الاختبارات"
-BTN_ADMIN_CREATE_EXAM = "➕ إنشاء اختبار جديد"
-BTN_ADMIN_LIST_EXAMS = "📋 عرض الاختبارات"
-BTN_ADMIN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
-BTN_ADMIN_EXAM_ADD_ANSWER = "➕ إضافة جواب"
-BTN_ADMIN_EXAM_PUBLISH = "✅ نشر الاختبار"
-BTN_ADMIN_EXAM_CANCEL = "❌ إلغاء وحذف المسودة"
-BTN_ADMIN_EXAM_BACK = "⬅️ رجوع"
-BTN_ADMIN_QUESTION_FINISH = "✅ إنهاء السؤال"
-BTN_ADMIN_QUESTION_CANCEL = "❌ إلغاء السؤال"
-
-BTN_ADMIN_ADD_LESSON_FROM_LINK = "🔗 إرسال رابط منشور من قناة التخزين"
-BTN_ADMIN_ADD_LESSON_FROM_HASHTAG = "#️⃣ إرسال هاشتاق/قسم (مثال: #الفقه) لجلب آخر ملف مطابق"
-BTN_ADMIN_ADD_LESSON_FROM_LATEST = "📌 اختيار من آخر الملفات في قناة التخزين"
 
 AUDIO_PAGE_SIZE = 10
 AUDIO_SECTIONS = {
@@ -1847,11 +1770,17 @@ MEDAL_RENAMES = {
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الأول: وردي القرآني بجانب أذكاري
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: منبه الماء بجانب السبحة
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -1859,12 +1788,19 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الأول: وردي القرآني بجانب أذكاري
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: منبه الماء بجانب السبحة
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1872,12 +1808,19 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الأول: وردي القرآني بجانب أذكاري
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: منبه الماء بجانب السبحة
+        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1901,107 +1844,6 @@ STATS_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_STATS_ONLY), KeyboardButton(BTN_MEDALS_ONLY)],
         [KeyboardButton(BTN_STATS_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
-
-COURSES_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_AVAILABLE_COURSES), KeyboardButton(BTN_MY_COURSES)],
-        [KeyboardButton(BTN_ARCHIVED_COURSES)],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
-
-COURSE_USER_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_COURSE_LESSONS)],
-        [KeyboardButton(BTN_COURSE_TESTS)],
-        [KeyboardButton(BTN_COURSE_STATS)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_COURSES_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_CREATE_COURSE)],
-        [KeyboardButton(BTN_ADMIN_MANAGE_COURSES)],
-        [KeyboardButton(BTN_ADMIN_ARCHIVE_COURSE)],
-        [KeyboardButton(BTN_ADMIN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_CREATE_COURSE_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_CREATE_COURSE_NAME)],
-        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
-        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_CREATE_COURSE_NAME_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_COURSE_NAME_ADD)],
-        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_COURSE_ACTIONS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_ADD_LESSON)],
-        [KeyboardButton(BTN_ADMIN_TESTS_PLACEHOLDER)],
-        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_COURSE_TESTS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_COURSE_TESTS_MENU)],
-        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_MANAGE_EXAMS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_CREATE_EXAM)],
-        [KeyboardButton(BTN_ADMIN_LIST_EXAMS)],
-        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_EXAM_ACTIONS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_EXAM_ADD_QUESTION)],
-        [KeyboardButton(BTN_ADMIN_EXAM_PUBLISH)],
-        [KeyboardButton(BTN_ADMIN_EXAM_CANCEL)],
-        [KeyboardButton(BTN_ADMIN_EXAM_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_QUESTION_ACTIONS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_EXAM_ADD_ANSWER)],
-        [KeyboardButton(BTN_ADMIN_QUESTION_FINISH)],
-        [KeyboardButton(BTN_ADMIN_QUESTION_CANCEL)],
-        [KeyboardButton(BTN_ADMIN_EXAM_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_LESSON_STORAGE_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_LINK)],
-        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_HASHTAG)],
-        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_LATEST)],
-        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
     ],
     resize_keyboard=True,
 )
@@ -2227,7 +2069,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
-        [KeyboardButton(BTN_ADMIN_COURSE_SETTINGS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2240,7 +2081,6 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
-        [KeyboardButton(BTN_ADMIN_COURSE_SETTINGS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -7042,819 +6882,31 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
         )
     return True
 
+# =================== دوال جديدة للميزات المطلوبة ===================
 
-# =================== قسم الدورات (إعادة بناء) ===================
-COURSES_COLLECTION = "courses"
-COURSES_CALLBACK_PREFIX = "COURSES"
-COURSE_STATUS_ACTIVE = "active"
-COURSE_STATUS_STOPPED = "stopped"
+# حالات الانتظار الجديدة
+WAITING_MANAGE_POINTS_USER_ID = set()
+WAITING_MANAGE_POINTS_ACTION = {}  # user_id -> target_user_id
+WAITING_MANAGE_POINTS_VALUE = set()
 
-COURSES_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_AVAILABLE_COURSES)],
-        [KeyboardButton(BTN_MY_COURSES)],
-        [KeyboardButton(BTN_ARCHIVED_COURSES)],
-        [KeyboardButton(BTN_COURSES_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_COURSES_MENU_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("⚙️ إعداد الدورات")],
-        [KeyboardButton(BTN_ADMIN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-ADMIN_COURSE_ACTIONS_KB = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton("➕ إنشاء دورة جديدة"), KeyboardButton("📋 إدارة الدورات")],
-        [KeyboardButton("🗃 أرشفة دورة")],
-        [KeyboardButton(BTN_ADMIN_BACK)],
-    ],
-    resize_keyboard=True,
-)
-
-COURSE_USER_INLINE_MENU = lambda course_id: InlineKeyboardMarkup(
-    [
-        [InlineKeyboardButton("📘 الدروس", callback_data=f"{COURSES_CALLBACK_PREFIX}:LESSONS:{course_id}")],
-        [InlineKeyboardButton("📝 الاختبارات", callback_data=f"{COURSES_CALLBACK_PREFIX}:EXAMS:{course_id}")],
-        [InlineKeyboardButton("📊 نتائجي", callback_data=f"{COURSES_CALLBACK_PREFIX}:RESULTS:{course_id}")],
-        [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")],
-    ]
-)
-
-def course_status_label(status: str) -> str:
-    return "نشطة" if status == COURSE_STATUS_ACTIVE else "متوقفة"
-
-
-def _course_back_markup(target: str, course_id: Optional[str] = None) -> InlineKeyboardMarkup:
-    callback = f"{COURSES_CALLBACK_PREFIX}:BACK:{target}"
-    if course_id:
-        callback = f"{callback}:{course_id}"
-    return InlineKeyboardMarkup([[InlineKeyboardButton("↩️ رجوع", callback_data=callback)]])
-
-
-def _notify_admins(context: CallbackContext, text: str):
-    for target in (ADMIN_ID, SUPERVISOR_ID):
-        if target:
-            try:
-                context.bot.send_message(chat_id=target, text=text)
-            except Exception:
-                logger.exception("فشل إرسال إشعار للدورات")
-
-
-def list_courses(include_archived: bool = False, active_only: bool = False):
+def get_user_record_by_id(user_id: int) -> Dict:
+    """الحصول على سجل المستخدم بناءً على المعرف"""
+    user_id_str = str(user_id)
     if not firestore_available():
-        logger.warning("Firestore غير متاح لقائمة الدورات")
-        return []
+        return data.get(user_id_str)
     try:
-        query = db.collection(COURSES_COLLECTION)
-        if not include_archived:
-            query = query.where("archived", "==", False)
-        if active_only:
-            query = query.where("status", "==", COURSE_STATUS_ACTIVE)
-        docs = query.stream()
-        return [dict(doc.to_dict() or {}, course_id=doc.id) for doc in docs]
-    except Exception as exc:
-        logger.error("خطأ في جلب الدورات: %s", exc)
-        return []
-
-
-def fetch_course(course_id: str):
-    if not firestore_available():
+        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+        doc = doc_ref.get()
+        if doc.exists:
+            record = doc.to_dict()
+            data[user_id_str] = record
+            ensure_medal_defaults(record)
+            return record
         return None
-    try:
-        doc = db.collection(COURSES_COLLECTION).document(course_id).get()
-        if not doc.exists:
-            return None
-        data = doc.to_dict() or {}
-        data["course_id"] = course_id
-        return data
-    except Exception as exc:
-        logger.error("فشل قراءة الدورة %s: %s", course_id, exc)
-        return None
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على سجل المستخدم {user_id}: {e}")
+        return data.get(user_id_str)
 
-
-def save_course(course_data: Dict) -> str:
-    if not firestore_available():
-        raise RuntimeError("Firestore غير متاح لحفظ الدورات")
-    doc_ref = db.collection(COURSES_COLLECTION).document()
-    payload = {
-        "name": course_data.get("name"),
-        "status": course_data.get("status", COURSE_STATUS_ACTIVE),
-        "archived": course_data.get("archived", False),
-        "created_at": course_data.get("created_at") or datetime.now(timezone.utc).isoformat(),
-        "created_by": course_data.get("created_by"),
-    }
-    doc_ref.set(payload)
-    return doc_ref.id
-
-
-def update_course(course_id: str, **fields):
-    if not firestore_available():
-        return
-    try:
-        db.collection(COURSES_COLLECTION).document(course_id).update(fields)
-    except Exception as exc:
-        logger.error("فشل تحديث الدورة %s: %s", course_id, exc)
-
-
-def _participant_ref(course_id: str, user_id: int):
-    return db.collection(COURSES_COLLECTION).document(course_id).collection("participants").document(str(user_id))
-
-
-def register_user_to_course(course_id: str, user: User):
-    if not firestore_available():
-        raise RuntimeError("Firestore غير متاح")
-    payload = {
-        "user_id": user.id,
-        "first_name": user.first_name,
-        "username": user.username,
-        "registered_at": datetime.now(timezone.utc).isoformat(),
-        "lessons_attended": [],
-        "exam_results": {},
-        "total_points": 0,
-    }
-    _participant_ref(course_id, user.id).set(payload, merge=True)
-
-
-def user_is_registered(course_id: str, user_id: int) -> bool:
-    if not firestore_available():
-        return False
-    try:
-        return _participant_ref(course_id, user_id).get().exists
-    except Exception:
-        return False
-
-
-def list_user_courses(user_id: int, include_archived: bool = False):
-    courses = list_courses(include_archived=include_archived)
-    registered = []
-    for course in courses:
-        if user_is_registered(course.get("course_id"), user_id):
-            registered.append(course)
-    return registered
-
-
-def fetch_lessons(course_id: str):
-    if not firestore_available():
-        return []
-    try:
-        ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons")
-        docs = ref.order_by("created_at").stream()
-        return [dict(doc.to_dict() or {}, lesson_id=doc.id) for doc in docs]
-    except Exception as exc:
-        logger.error("خطأ في قراءة الدروس: %s", exc)
-        return []
-
-
-def save_lesson(course_id: str, lesson_data: Dict) -> str:
-    if not firestore_available():
-        raise RuntimeError("Firestore غير متاح")
-    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document()
-    payload = {
-        "title": lesson_data.get("title"),
-        "description": lesson_data.get("description"),
-        "content_type": lesson_data.get("content_type"),
-        "content_ref": lesson_data.get("content_ref"),
-        "created_at": lesson_data.get("created_at") or datetime.now(timezone.utc).isoformat(),
-    }
-    doc_ref.set(payload)
-    return doc_ref.id
-
-
-def _exam_ref(course_id: str, exam_id: str):
-    return db.collection(COURSES_COLLECTION).document(course_id).collection("exams").document(exam_id)
-
-
-def create_exam(course_id: str, title: str, created_by: int) -> str:
-    if not firestore_available():
-        raise RuntimeError("Firestore غير متاح")
-    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("exams").document()
-    payload = {
-        "title": title,
-        "questions": [],
-        "created_by": created_by,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    doc_ref.set(payload)
-    return doc_ref.id
-
-
-def fetch_exams(course_id: str):
-    if not firestore_available():
-        return []
-    try:
-        docs = db.collection(COURSES_COLLECTION).document(course_id).collection("exams").stream()
-        return [dict(doc.to_dict() or {}, exam_id=doc.id) for doc in docs]
-    except Exception as exc:
-        logger.error("خطأ في قراءة الاختبارات: %s", exc)
-        return []
-
-
-def fetch_exam(course_id: str, exam_id: str):
-    if not firestore_available():
-        return None
-    try:
-        doc = _exam_ref(course_id, exam_id).get()
-        if not doc.exists:
-            return None
-        data = doc.to_dict() or {}
-        data["exam_id"] = exam_id
-        return data
-    except Exception as exc:
-        logger.error("فشل قراءة الاختبار: %s", exc)
-        return None
-
-
-def save_exam_questions(course_id: str, exam_id: str, questions: List[Dict]):
-    if not firestore_available():
-        return
-    _exam_ref(course_id, exam_id).update({"questions": questions})
-
-
-def record_exam_answer(course_id: str, user: User, exam_id: str, question_index: int, option_index: int, points: int):
-    if not firestore_available():
-        return
-    ref = _participant_ref(course_id, user.id)
-    snap = ref.get()
-    current = snap.to_dict() if snap.exists else {}
-    exam_results = current.get("exam_results", {})
-    answers = exam_results.get(exam_id, {}).get("answers", [])
-    while len(answers) <= question_index:
-        answers.append(None)
-    answers[question_index] = option_index
-    total_points = current.get("total_points", 0) + points
-    exam_results[exam_id] = {
-        "answers": answers,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "score": exam_results.get(exam_id, {}).get("score", 0) + points,
-    }
-    ref.set(
-        {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "username": user.username,
-            "exam_results": exam_results,
-            "total_points": total_points,
-        },
-        merge=True,
-    )
-
-
-def record_lesson_attendance(course_id: str, user: User, lesson_id: str):
-    if not firestore_available():
-        return
-    ref = _participant_ref(course_id, user.id)
-    snap = ref.get()
-    current = snap.to_dict() if snap.exists else {}
-    lessons = current.get("lessons_attended", [])
-    if lesson_id not in lessons:
-        lessons.append(lesson_id)
-    ref.set(
-        {
-            "user_id": user.id,
-            "first_name": user.first_name,
-            "username": user.username,
-            "lessons_attended": lessons,
-        },
-        merge=True,
-    )
-
-
-def get_course_participants(course_id: str):
-    if not firestore_available():
-        return []
-    try:
-        docs = db.collection(COURSES_COLLECTION).document(course_id).collection("participants").stream()
-        return [doc.to_dict() for doc in docs]
-    except Exception as exc:
-        logger.error("فشل قراءة المشاركين: %s", exc)
-        return []
-
-
-def courses_main_menu(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    reset_course_state(user_id)
-    message = update.effective_message
-    message.reply_text(
-        "قسم الدورات 🎓\n\nاختر أحد الخيارات التالية.",
-        reply_markup=COURSES_MENU_KB,
-    )
-
-
-def _courses_list_keyboard(courses: List[Dict], source: str) -> InlineKeyboardMarkup:
-    buttons = []
-    for course in courses:
-        cid = course.get("course_id")
-        name = course.get("name") or "دورة"
-        buttons.append([InlineKeyboardButton(name, callback_data=f"{COURSES_CALLBACK_PREFIX}:{source}:{cid}")])
-    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")])
-    return InlineKeyboardMarkup(buttons)
-
-
-def courses_open_available(update: Update, context: CallbackContext):
-    courses = list_courses(active_only=True)
-    if not courses:
-        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
-        return
-    update.message.reply_text(
-        "الدورات المتاحة حاليًا:",
-        reply_markup=_courses_list_keyboard(courses, "AVAILABLE"),
-    )
-
-
-def courses_open_my_courses(update: Update, context: CallbackContext, archived: bool = False):
-    courses = list_user_courses(update.effective_user.id, include_archived=archived)
-    courses = [c for c in courses if bool(c.get("archived")) == archived]
-    if not courses:
-        update.message.reply_text(
-            "لا توجد دورات في هذا القسم.",
-            reply_markup=COURSES_MENU_KB,
-        )
-        return
-    source = "ARCHIVED" if archived else "MY"
-    title = "أرشيف دوراتي" if archived else "دوراتي"
-    update.message.reply_text(title, reply_markup=_courses_list_keyboard(courses, source))
-
-
-def _set_selected_course(user_id: int, course: Dict, source: str):
-    state = get_course_state(user_id)
-    state["selected"] = {"id": course.get("course_id"), "name": course.get("name")}
-    state["source"] = source
-    state.pop("lessons", None)
-    state.pop("exams", None)
-    state.pop("exam_session", None)
-
-
-def courses_open_course_menu(update: Update, context: CallbackContext, course_id: str, source: str):
-    course = fetch_course(course_id)
-    if not course:
-        update.effective_message.reply_text("تعذر تحميل بيانات الدورة.", reply_markup=COURSES_MENU_KB)
-        return
-    user_id = update.effective_user.id
-    registered = user_is_registered(course_id, user_id)
-    _set_selected_course(user_id, course, source)
-    if source == "AVAILABLE" and not registered:
-        kb = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("✅ التسجيل في الدورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:REGISTER:{course_id}")],
-                [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")],
-            ]
-        )
-        update.effective_message.reply_text(
-            f"الدورة {course.get('name','دورة')} متاحة للتسجيل.", reply_markup=kb
-        )
-        return
-
-    update.effective_message.reply_text(
-        f"تم فتح دورة {course.get('name','دورة')}.",
-        reply_markup=COURSE_USER_INLINE_MENU(course_id),
-    )
-
-
-def courses_show_lessons(update: Update, context: CallbackContext, course_id: str):
-    lessons = fetch_lessons(course_id)
-    state = get_course_state(update.effective_user.id)
-    state["lessons"] = {l.get("title") or l.get("lesson_id"): l for l in lessons}
-    if not lessons:
-        update.effective_message.reply_text("لا توجد دروس بعد.", reply_markup=_course_back_markup("COURSE_MENU", course_id))
-        return
-    buttons = []
-    for lesson in lessons:
-        title = lesson.get("title") or "درس"
-        buttons.append([InlineKeyboardButton(title, callback_data=f"{COURSES_CALLBACK_PREFIX}:LESSON:{course_id}:{lesson.get('lesson_id')}" )])
-    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:COURSE_MENU:{course_id}")])
-    update.effective_message.reply_text("اختر الدرس:", reply_markup=InlineKeyboardMarkup(buttons))
-
-
-def courses_send_lesson(update: Update, context: CallbackContext, course_id: str, lesson_id: str):
-    lessons = fetch_lessons(course_id)
-    lesson = next((l for l in lessons if l.get("lesson_id") == lesson_id), None)
-    if not lesson:
-        update.effective_message.reply_text("الدرس غير موجود.")
-        return
-    text_parts = [f"📘 {lesson.get('title','درس')}\n\n"]
-    if lesson.get("description"):
-        text_parts.append(lesson.get("description"))
-    content_type = lesson.get("content_type")
-    content_ref = lesson.get("content_ref")
-    content_sent = False
-    if content_type == "audio" and content_ref:
-        try:
-            update.effective_message.reply_audio(audio=content_ref, caption="\n".join(text_parts) or None)
-            content_sent = True
-        except Exception:
-            logger.exception("تعذر إرسال ملف الصوت")
-    if not content_sent:
-        update.effective_message.reply_text("\n".join(text_parts))
-        if content_ref:
-            update.effective_message.reply_text(f"المحتوى: {content_ref}")
-    record_lesson_attendance(course_id, update.effective_user, lesson_id)
-    update.effective_message.reply_text("تم تسجيل حضورك لهذا الدرس.", reply_markup=_course_back_markup("LESSONS", course_id))
-
-
-def courses_show_exams(update: Update, context: CallbackContext, course_id: str):
-    exams = fetch_exams(course_id)
-    state = get_course_state(update.effective_user.id)
-    state["exams"] = {e.get("title") or e.get("exam_id"): e for e in exams}
-    if not exams:
-        update.effective_message.reply_text("لا توجد اختبارات بعد.", reply_markup=_course_back_markup("COURSE_MENU", course_id))
-        return
-    buttons = []
-    for exam in exams:
-        title = exam.get("title") or "اختبار"
-        buttons.append([InlineKeyboardButton(title, callback_data=f"{COURSES_CALLBACK_PREFIX}:EXAM_START:{course_id}:{exam.get('exam_id')}" )])
-    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:COURSE_MENU:{course_id}")])
-    update.effective_message.reply_text("اختر الاختبار:", reply_markup=InlineKeyboardMarkup(buttons))
-
-def _send_exam_question(update: Update, session: Dict):
-    questions = session.get("questions", [])
-    idx = session.get("index", 0)
-    if idx >= len(questions):
-        update.effective_message.reply_text("✅ انتهى الاختبار.", reply_markup=_course_back_markup("EXAMS", session.get("course_id")))
-        return False
-    question = questions[idx]
-    answers = question.get("answers", [])
-    buttons = []
-    for i, answer in enumerate(answers):
-        buttons.append([
-            InlineKeyboardButton(
-                answer.get("text", f"خيار {i+1}"),
-                callback_data=f"{COURSES_CALLBACK_PREFIX}:ANSWER:{session['course_id']}:{session['exam_id']}:{idx}:{i}",
-            )
-        ])
-    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:EXAMS:{session['course_id']}")])
-    update.effective_message.reply_text(question.get("text", "سؤال"), reply_markup=InlineKeyboardMarkup(buttons))
-    return True
-
-
-def courses_start_exam(update: Update, context: CallbackContext, course_id: str, exam_id: str):
-    exam = fetch_exam(course_id, exam_id) or {}
-    questions = exam.get("questions", [])
-    if not questions:
-        update.effective_message.reply_text("لا يحتوي الاختبار على أسئلة بعد.", reply_markup=_course_back_markup("EXAMS", course_id))
-        return
-    state = get_course_state(update.effective_user.id)
-    state["exam_session"] = {
-        "course_id": course_id,
-        "exam_id": exam_id,
-        "questions": questions,
-        "index": 0,
-    }
-    _send_exam_question(update, state["exam_session"])
-
-
-def courses_handle_answer(update: Update, context: CallbackContext, course_id: str, exam_id: str, question_idx: int, option_idx: int):
-    state = get_course_state(update.effective_user.id)
-    session = state.get("exam_session")
-    if not session or session.get("exam_id") != exam_id:
-        update.effective_message.reply_text("لا يوجد اختبار نشط.")
-        return
-    questions = session.get("questions", [])
-    if question_idx >= len(questions):
-        return
-    question = questions[question_idx]
-    answers = question.get("answers", [])
-    try:
-        selected = answers[option_idx]
-    except IndexError:
-        update.effective_message.reply_text("خيار غير صالح.")
-        return
-    points = int(selected.get("points", 0))
-    record_exam_answer(course_id, update.effective_user, exam_id, question_idx, option_idx, points)
-    session["index"] = question_idx + 1
-    if not _send_exam_question(update, session):
-        state.pop("exam_session", None)
-
-
-def courses_show_results(update: Update, context: CallbackContext, course_id: str):
-    if not firestore_available():
-        update.effective_message.reply_text("النتائج غير متاحة الآن.")
-        return
-    ref = _participant_ref(course_id, update.effective_user.id)
-    snap = ref.get()
-    if not snap.exists:
-        update.effective_message.reply_text("لم يتم تسجيلك في الدورة.")
-        return
-    data = snap.to_dict() or {}
-    total = data.get("total_points", 0)
-    lessons = len(data.get("lessons_attended", []))
-    update.effective_message.reply_text(
-        f"📊 نتائجي في الدورة\n- الدروس المحضورة: {lessons}\n- إجمالي النقاط: {total}",
-        reply_markup=_course_back_markup("COURSE_MENU", course_id),
-    )
-
-
-def courses_admin_menu(update: Update, context: CallbackContext):
-    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
-        return
-    reset_admin_course_state(update.effective_user.id)
-    update.effective_message.reply_text("⚙️ إعداد الدورات", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-
-
-def admin_start_course_creation(update: Update, context: CallbackContext):
-    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
-        return
-    state = get_admin_course_state(update.effective_user.id)
-    state.clear()
-    state["mode"] = "create_course"
-    state["awaiting"] = "name"
-    update.message.reply_text("أدخل اسم الدورة:", reply_markup=CANCEL_KB)
-
-
-def admin_handle_text(update: Update, context: CallbackContext) -> bool:
-    user_id = update.effective_user.id
-    state = COURSES_ADMIN_STATE.get(user_id)
-    if not state:
-        return False
-    awaiting = state.get("awaiting")
-    text = (update.message.text or "").strip()
-    if text == BTN_CANCEL:
-        reset_admin_course_state(user_id)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        return True
-    if state.get("mode") == "create_course" and awaiting == "name":
-        state["name"] = text
-        state["awaiting"] = None
-        kb = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("🟢 نشطة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATUS:{COURSE_STATUS_ACTIVE}")],
-                [InlineKeyboardButton("🔴 متوقفة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATUS:{COURSE_STATUS_STOPPED}")],
-            ]
-        )
-        update.message.reply_text("اختر حالة الدورة:", reply_markup=kb)
-        return True
-    if state.get("mode") == "rename" and awaiting == "name":
-        course_id = state.get("course_id")
-        update_course(course_id, name=text)
-        reset_admin_course_state(user_id)
-        update.message.reply_text("تم تحديث اسم الدورة.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        return True
-    if state.get("mode") == "lesson" and awaiting == "title":
-        state["title"] = text
-        state["awaiting"] = "description"
-        update.message.reply_text("أدخل وصف/سؤال الدرس (اختياري، اكتب - للتخطي):", reply_markup=CANCEL_KB)
-        return True
-    if state.get("mode") == "lesson" and awaiting == "description":
-        state["description"] = None if text == "-" else text
-        state["awaiting"] = "content_type"
-        kb = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("صوتي", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:LESSON_TYPE:audio")],
-                [InlineKeyboardButton("نصي", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:LESSON_TYPE:text")],
-            ]
-        )
-        update.message.reply_text("اختر نوع المحتوى:", reply_markup=kb)
-        return True
-    if state.get("mode") == "lesson" and awaiting == "content_ref":
-        state["content_ref"] = text
-        try:
-            lesson_id = save_lesson(state.get("course_id"), {
-                "title": state.get("title"),
-                "description": state.get("description"),
-                "content_type": state.get("content_type"),
-                "content_ref": state.get("content_ref"),
-            })
-            update.message.reply_text(
-                f"✅ تم إضافة الدرس '{state.get('title')}'.", reply_markup=ADMIN_COURSE_ACTIONS_KB
-            )
-        except Exception as exc:
-            logger.error("فشل حفظ الدرس: %s", exc)
-            update.message.reply_text("تعذر حفظ الدرس.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        reset_admin_course_state(user_id)
-        return True
-    if state.get("mode") == "exam" and awaiting == "title":
-        state["title"] = text
-        exam_id = create_exam(state.get("course_id"), text, user_id)
-        state["exam_id"] = exam_id
-        state["awaiting"] = "question_text"
-        state["questions"] = []
-        update.message.reply_text("أرسل نص السؤال الأول:", reply_markup=CANCEL_KB)
-        return True
-    if state.get("mode") == "exam" and awaiting == "question_text":
-        state["current_question"] = {"text": text, "answers": []}
-        state["awaiting"] = "answer_text"
-        state["answer_index"] = 0
-        update.message.reply_text("أرسل إجابة الخيار A:", reply_markup=CANCEL_KB)
-        return True
-    if state.get("mode") == "exam" and awaiting == "answer_text":
-        answers = state["current_question"].setdefault("answers", [])
-        labels = ["A", "B", "C", "D"]
-        idx = state.get("answer_index", 0)
-        answers.append({"text": text, "points": 0})
-        state["awaiting"] = "answer_points"
-        update.message.reply_text(f"حدد نقاط الإجابة {labels[idx]} (0/1/2/3...):", reply_markup=CANCEL_KB)
-        return True
-    if state.get("mode") == "exam" and awaiting == "answer_points":
-        try:
-            points = int(text)
-        except ValueError:
-            update.message.reply_text("أدخل رقمًا صحيحًا للنقاط.")
-            return True
-        labels = ["A", "B", "C", "D"]
-        idx = state.get("answer_index", 0)
-        state["current_question"]["answers"][idx]["points"] = points
-        state["answer_index"] = idx + 1
-        if state["answer_index"] >= 4:
-            state["questions"].append(state["current_question"])
-            save_exam_questions(state.get("course_id"), state.get("exam_id"), state["questions"])
-            state["awaiting"] = "add_next"
-            kb = InlineKeyboardMarkup(
-                [
-                    [InlineKeyboardButton("➕ إضافة سؤال آخر", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_QUESTION")],
-                    [InlineKeyboardButton("✅ إنهاء الاختبار", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:FINISH_EXAM")],
-                ]
-            )
-            update.message.reply_text("تم حفظ السؤال. اختر الإجراء التالي:", reply_markup=kb)
-        else:
-            state["awaiting"] = "answer_text"
-            update.message.reply_text(f"أرسل إجابة الخيار {labels[state['answer_index']] }:", reply_markup=CANCEL_KB)
-        return True
-    return False
-
-
-def admin_list_courses(update: Update, context: CallbackContext):
-    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
-        return
-    courses = list_courses(include_archived=True)
-    if not courses:
-        update.message.reply_text("لا توجد دورات حاليًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        return
-    buttons = []
-    for c in courses:
-        name = c.get("name") or "دورة"
-        cid = c.get("course_id")
-        buttons.append([InlineKeyboardButton(f"{name} ({course_status_label(c.get('status'))})", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:SELECT:{cid}")])
-    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:ADMIN")])
-    update.message.reply_text("اختر الدورة:", reply_markup=InlineKeyboardMarkup(buttons))
-
-
-def admin_open_course_actions(update: Update, context: CallbackContext, course_id: str):
-    course = fetch_course(course_id)
-    if not course:
-        update.effective_message.reply_text("تعذر العثور على الدورة.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        return
-    state = get_admin_course_state(update.effective_user.id)
-    state.clear()
-    state.update({"mode": "course_actions", "course_id": course_id})
-    buttons = [
-        [InlineKeyboardButton("➕ إضافة درس", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_LESSON:{course_id}")],
-        [InlineKeyboardButton("➕ إضافة اختبار", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_EXAM:{course_id}")],
-        [InlineKeyboardButton("👥 إحصائيات الدورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATS:{course_id}")],
-        [InlineKeyboardButton("✏️ إعادة تسمية", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:RENAME:{course_id}")],
-        [InlineKeyboardButton("🔁 تغيير الحالة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:TOGGLE:{course_id}")],
-        [InlineKeyboardButton("🗃 أرشفة دورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ARCHIVE:{course_id}")],
-        [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:ADMIN")],
-    ]
-    update.effective_message.reply_text(
-        f"لوحة إدارة: {course.get('name','دورة')}", reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-
-def admin_toggle_status(update: Update, context: CallbackContext, course_id: str):
-    course = fetch_course(course_id)
-    if not course:
-        update.effective_message.reply_text("الدورة غير موجودة.")
-        return
-    new_status = COURSE_STATUS_ACTIVE if course.get("status") != COURSE_STATUS_ACTIVE else COURSE_STATUS_STOPPED
-    update_course(course_id, status=new_status)
-    update.effective_message.reply_text(f"تم تحديث الحالة إلى {course_status_label(new_status)}.")
-
-
-def admin_archive_course(update: Update, context: CallbackContext, course_id: str):
-    update_course(course_id, archived=True)
-    update.effective_message.reply_text("تم نقل الدورة للأرشيف.")
-
-
-def admin_show_stats(update: Update, context: CallbackContext, course_id: str):
-    participants = get_course_participants(course_id)
-    if not participants:
-        update.effective_message.reply_text("لا يوجد مشاركون حتى الآن.")
-        return
-    lines = ["👥 إحصائيات المسجلين:"]
-    for p in participants:
-        lessons = len(p.get("lessons_attended", []))
-        total = p.get("total_points", 0)
-        name = p.get("first_name") or "مستخدم"
-        lines.append(f"- {name} | حضور: {lessons} | النقاط: {total}")
-    update.effective_message.reply_text("\n".join(lines), reply_markup=_course_back_markup("ADMIN", course_id))
-
-
-def courses_callback_handler(update: Update, context: CallbackContext):
-    query = update.callback_query
-    if not query:
-        return
-    data = query.data or ""
-    parts = data.split(":")
-    if len(parts) < 2 or parts[0] != COURSES_CALLBACK_PREFIX:
-        return
-    query.answer()
-    action = parts[1]
-    user_id = update.effective_user.id
-    if action == "BACK":
-        target = parts[2] if len(parts) > 2 else "MAIN"
-        if target == "MAIN":
-            courses_main_menu(update, context)
-        elif target == "COURSE_MENU" and len(parts) > 3:
-            courses_open_course_menu(update, context, parts[3], get_course_state(user_id).get("source", "MY"))
-        elif target == "LESSONS" and len(parts) > 3:
-            courses_show_lessons(update, context, parts[3])
-        elif target == "EXAMS" and len(parts) > 3:
-            courses_show_exams(update, context, parts[3])
-        elif target == "ADMIN":
-            courses_admin_menu(update, context)
-        return
-    if action in ("AVAILABLE", "MY", "ARCHIVED"):
-        source = action
-        course_id = parts[2]
-        courses_open_course_menu(update, context, course_id, source)
-        return
-    if action == "REGISTER":
-        course_id = parts[2]
-        course = fetch_course(course_id) or {"course_id": course_id}
-        try:
-            register_user_to_course(course_id, update.effective_user)
-            _set_selected_course(user_id, course, "MY")
-            record = get_user_record(update.effective_user)
-            update_user_record(update.effective_user.id, points=record.get("points", 0) + 1)
-            _notify_admins(context, f"مستخدم جديد سجل بالدورة ({course.get('name','')})")
-            update.effective_message.reply_text(
-                "✅ تم تسجيلك في الدورة وتم إضافة نقطة تسجيل لك.", reply_markup=COURSE_USER_INLINE_MENU(course_id)
-            )
-        except Exception:
-            logger.exception("فشل تسجيل المستخدم في الدورة")
-            update.effective_message.reply_text("تعذر إتمام التسجيل حاليًا.")
-        return
-    if action == "LESSONS":
-        course_id = parts[2]
-        courses_show_lessons(update, context, course_id)
-        return
-    if action == "LESSON":
-        course_id, lesson_id = parts[2], parts[3]
-        courses_send_lesson(update, context, course_id, lesson_id)
-        return
-    if action == "EXAMS":
-        course_id = parts[2]
-        courses_show_exams(update, context, course_id)
-        return
-    if action == "EXAM_START":
-        course_id, exam_id = parts[2], parts[3]
-        courses_start_exam(update, context, course_id, exam_id)
-        return
-    if action == "ANSWER":
-        course_id, exam_id, q_idx, ans_idx = parts[2], parts[3], int(parts[4]), int(parts[5])
-        courses_handle_answer(update, context, course_id, exam_id, q_idx, ans_idx)
-        return
-    if action == "RESULTS":
-        course_id = parts[2]
-        courses_show_results(update, context, course_id)
-        return
-    if action == "ADMIN":
-        sub = parts[2]
-        if sub == "STATUS":
-            state = get_admin_course_state(user_id)
-            state["status"] = parts[3]
-            course_id = save_course({"name": state.get("name"), "status": state.get("status"), "created_by": user_id})
-            reset_admin_course_state(user_id)
-            update.effective_message.reply_text(f"✅ تم إنشاء دورة جديدة: {fetch_course(course_id).get('name','')}", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        elif sub == "SELECT":
-            admin_open_course_actions(update, context, parts[3])
-        elif sub == "RENAME":
-            state = get_admin_course_state(user_id)
-            state.update({"mode": "rename", "awaiting": "name", "course_id": parts[3]})
-            update.effective_message.reply_text("أدخل الاسم الجديد:", reply_markup=CANCEL_KB)
-        elif sub == "TOGGLE":
-            admin_toggle_status(update, context, parts[3])
-        elif sub == "ARCHIVE":
-            admin_archive_course(update, context, parts[3])
-        elif sub == "ADD_LESSON":
-            state = get_admin_course_state(user_id)
-            state.clear(); state.update({"mode": "lesson", "awaiting": "title", "course_id": parts[3]})
-            update.effective_message.reply_text("أدخل عنوان الدرس:", reply_markup=CANCEL_KB)
-        elif sub == "LESSON_TYPE":
-            state = get_admin_course_state(user_id)
-            state["content_type"] = parts[3]
-            state["awaiting"] = "content_ref"
-            update.effective_message.reply_text("أرسل رابط المحتوى أو file_id:", reply_markup=CANCEL_KB)
-        elif sub == "ADD_EXAM":
-            state = get_admin_course_state(user_id)
-            state.clear(); state.update({"mode": "exam", "awaiting": "title", "course_id": parts[3]})
-            update.effective_message.reply_text("أدخل اسم الاختبار:", reply_markup=CANCEL_KB)
-        elif sub == "ADD_QUESTION":
-            state = get_admin_course_state(user_id)
-            state["awaiting"] = "question_text"
-            update.effective_message.reply_text("أرسل نص السؤال:", reply_markup=CANCEL_KB)
-        elif sub == "FINISH_EXAM":
-            reset_admin_course_state(user_id)
-            update.effective_message.reply_text("تم حفظ الاختبار.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-        elif sub == "STATS":
-            admin_show_stats(update, context, parts[3])
-    return
-
-# =================== نهاية قسم الدورات ===================
 
 def handle_supervisor_new_users(update: Update, context: CallbackContext):
     """عرض الحسابات الجديدة للمشرفة"""
@@ -7902,9 +6954,6 @@ def handle_text(update: Update, context: CallbackContext):
     text = (msg.text or "").strip()
 
     record = get_user_record(user)
-    in_course_flow = is_user_in_course_flow(user_id)
-    if admin_handle_text(update, context):
-        return
     
     # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
     if record.get("is_banned", False):
@@ -7922,9 +6971,6 @@ def handle_text(update: Update, context: CallbackContext):
         return
     
     main_kb = user_main_keyboard(user_id)
-
-    if handle_student_answer(update, context, text):
-        return
 
     # تحديد الجنس للدعم
     if user_id in WAITING_SUPPORT_GENDER:
@@ -8008,8 +7054,7 @@ def handle_text(update: Update, context: CallbackContext):
 
     # رد المستخدم على ردود الدعم
     if (
-        not in_course_flow
-        and not is_admin(user_id)
+        not is_admin(user_id)
         and not is_supervisor(user_id)
         and msg.reply_to_message
         and msg.reply_to_message.from_user.id == context.bot.id
@@ -8063,12 +7108,6 @@ def handle_text(update: Update, context: CallbackContext):
         BAN_TARGET_ID.pop(user_id, None)
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
-        WAITING_EXAM_TITLE.discard(user_id)
-        WAITING_EXAM_QUESTION_TEXT.discard(user_id)
-        WAITING_EXAM_ANSWER_TEXT.discard(user_id)
-        WAITING_EXAM_ANSWER_POINTS.discard(user_id)
-        EXAM_CREATION_STATE.pop(user_id, None)
-        STUDENT_EXAM_SESSIONS.pop(user_id, None)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
         if user_id in WAITING_BENEFIT_EDIT_TEXT:
@@ -8211,7 +7250,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # الدعم
-    if user_id in WAITING_SUPPORT and not in_course_flow:
+    if user_id in WAITING_SUPPORT:
         WAITING_SUPPORT.discard(user_id)
         forward_support_to_admin(user, text, context)
 
@@ -8278,8 +7317,8 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
-    if text == BTN_COURSES_MAIN:
-        courses_main_menu(update, context)
+    if text == BTN_TASBIH_MAIN:
+        open_tasbih_menu(update, context)
         return
 
     if text == BTN_MEMOS_MAIN:
@@ -8313,16 +7352,6 @@ def handle_text(update: Update, context: CallbackContext):
         open_letters_menu(update, context)
         return
 
-    if text == BTN_MY_COURSES:
-        courses_open_my_courses(update, context)
-        return
-    if text == BTN_AVAILABLE_COURSES:
-        courses_open_available(update, context)
-        return
-    if text == BTN_ARCHIVED_COURSES:
-        courses_open_my_courses(update, context, archived=True)
-        return
-
     if text == BTN_SUPPORT:
         handle_contact_support(update, context)
         return
@@ -8339,9 +7368,7 @@ def handle_text(update: Update, context: CallbackContext):
         open_notifications_menu(update, context)
         return
 
-    if text in (BTN_BACK_MAIN, BTN_COURSES_BACK):
-        reset_course_state(user_id)
-        reset_admin_course_state(user_id)
+    if text == BTN_BACK_MAIN:
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=main_kb,
@@ -8569,29 +7596,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MOTIVATION_TIMES:
         handle_admin_motivation_times_start(update, context)
-        return
-
-    if text == BTN_ADMIN_COURSE_SETTINGS:
-        courses_admin_menu(update, context)
-        return
-
-    if text == "⚙️ إعداد الدورات":
-        courses_admin_menu(update, context)
-        return
-
-    if text == "➕ إنشاء دورة جديدة":
-        admin_start_course_creation(update, context)
-        return
-
-    if text == "📋 إدارة الدورات":
-        admin_list_courses(update, context)
-        return
-
-    if text == "🗃 أرشفة دورة":
-        admin_list_courses(update, context)
-        return
-
-    if admin_handle_text(update, context):
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
@@ -9179,7 +8183,7 @@ def _audio_section_inline_keyboard(section_key: str, clips: List[Dict], page: in
 
 
 def open_audio_library_menu(update: Update, context: CallbackContext):
-    reset_audio_state(update.effective_user.id)
+    AUDIO_USER_STATE.pop(update.effective_user.id, None)
     update.message.reply_text(
         "اختر قسمًا من المكتبة الصوتية:",
         reply_markup=AUDIO_LIBRARY_KB,
@@ -9327,7 +8331,6 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
-        dispatcher.add_handler(CallbackQueryHandler(courses_callback_handler, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
