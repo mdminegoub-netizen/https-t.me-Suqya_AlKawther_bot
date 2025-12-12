@@ -1641,6 +1641,9 @@ PENDING_EXAM_DATA = {}
 PENDING_EXAM_QUESTIONS = {}
 WAITING_COURSE_BROADCAST = set()
 PENDING_COURSE_DATA = {}
+WAITING_COURSE_SELECTION = set()
+COURSE_SELECTION_MAP: Dict[int, Dict[str, str]] = {}
+COURSE_SELECTION_ACTION: Dict[int, str] = {}
 
 
 # أذكار النوم
@@ -1688,6 +1691,12 @@ BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
 BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 BTN_COURSES_BACK_MAIN = "الرجوع إلى الدورات 🎓"
+BTN_COURSES_MY = "📚 دوراتي"
+BTN_COURSES_LESSONS = "📝 الدروس"
+BTN_COURSES_EXAMS = "❓ الاختبارات"
+BTN_COURSES_STATS_VIEW = "📊 إحصائياتي"
+BTN_COURSES_ARCHIVE = "🗂 أرشيف دوراتي"
+BTN_COURSES_BACK_HOME = "⬅️ رجوع للقائمة الرئيسية"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
@@ -2099,6 +2108,22 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
         [KeyboardButton(BTN_ADMIN_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSES_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [
+            KeyboardButton(BTN_COURSES_MY),
+            KeyboardButton(BTN_COURSES_LESSONS),
+        ],
+        [
+            KeyboardButton(BTN_COURSES_EXAMS),
+            KeyboardButton(BTN_COURSES_STATS_VIEW),
+        ],
+        [KeyboardButton(BTN_COURSES_ARCHIVE)],
+        [KeyboardButton(BTN_COURSES_BACK_HOME)],
     ],
     resize_keyboard=True,
 )
@@ -2529,27 +2554,52 @@ def build_course_inline(course_doc) -> InlineKeyboardButton:
     )
 
 
+def course_status_label(status: str) -> str:
+    if status == "active":
+        return "نشطة"
+    return "متوقفة"
+
+
+def _build_course_keyboard_for_user(
+    user_id: int,
+    courses,
+    action: str,
+    prompt: str,
+    context: CallbackContext,
+    allow_empty_text: str,
+):
+    chat_id = user_id
+    if not courses:
+        context.bot.send_message(chat_id=chat_id, text=allow_empty_text, reply_markup=COURSES_MENU_KB)
+        return
+    labels_map = {}
+    rows = []
+    for c in courses:
+        c_data = c.to_dict() if hasattr(c, "to_dict") else c
+        label = f"{c_data.get('name', 'دورة')} – {course_status_label(c_data.get('status', 'active'))}"
+        labels_map[label] = getattr(c, "id", None) or c.get("id") or c.id
+        rows.append([KeyboardButton(label)])
+    rows.append([KeyboardButton(BTN_COURSES_BACK_MAIN)])
+    COURSE_SELECTION_MAP[user_id] = labels_map
+    COURSE_SELECTION_ACTION[user_id] = action
+    WAITING_COURSE_SELECTION.add(user_id)
+    context.bot.send_message(
+        chat_id=chat_id,
+        text=prompt,
+        reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True),
+    )
+
+
 def send_courses_menu(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     if not firestore_available():
         context.bot.send_message(chat_id=chat_id, text="⚠️ خدمة الدورات غير متاحة حاليًا.")
         return
 
-    active_courses = list_courses(status="active")
-    buttons = [[build_course_inline(c)] for c in active_courses]
-    buttons.append([InlineKeyboardButton("📂 أرشيف دوراتي", callback_data="course_archives_me")])
-    if not buttons or len(buttons) == 1:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text="لا توجد دورات نشطة حاليًا.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 أرشيف دوراتي", callback_data="course_archives_me")]]),
-        )
-        return
-
     context.bot.send_message(
         chat_id=chat_id,
-        text="اختر الدورة التي تريد متابعتها:",
-        reply_markup=InlineKeyboardMarkup(buttons),
+        text="اختر ما يناسبك من خيارات قسم الدورات:",
+        reply_markup=COURSES_MENU_KB,
     )
 
 
@@ -2560,7 +2610,7 @@ def send_course_page(chat_id: int, user: User, course_id: str, context: Callback
         return
     participant = get_course_participant(course_id, user.id)
     status = data_doc.get("status", "active")
-    base_text = f"🎓 {data_doc.get('name')}\n\n{data_doc.get('description','') or 'لا يوجد وصف.'}\nالحالة: {status}"
+    base_text = f"🎓 {data_doc.get('name')}\n\n{data_doc.get('description','') or 'لا يوجد وصف.'}\nالحالة: {course_status_label(status)}"
     if participant:
         base_text += (
             f"\n\nنقاط الحضور: {participant.get('attendance_points',0)}"
@@ -2590,6 +2640,97 @@ def send_course_page(chat_id: int, user: User, course_id: str, context: Callback
         text=base_text,
         reply_markup=InlineKeyboardMarkup(buttons),
     )
+
+
+def _prompt_course_list(user_id: int, action: str, context: CallbackContext, include_status: str = "active"):
+    if not firestore_available():
+        context.bot.send_message(chat_id=user_id, text="⚠️ خدمة الدورات غير متاحة حاليًا.")
+        return
+    courses = list_courses(status=include_status) if include_status else list_courses()
+    prompt = "اختر الدورة التي تريد متابعتها:" if action == "open" else "اختر الدورة المطلوبة:" 
+    empty_text = "لا توجد دورات متاحة حاليًا." if include_status == "active" else "لا توجد دورات في الأرشيف بعد."
+    _build_course_keyboard_for_user(user_id, courses, action, prompt, context, empty_text)
+
+
+def send_lessons_overview(chat_id: int, course_id: str, context: CallbackContext):
+    lessons = list_lessons(course_id)
+    if not lessons:
+        context.bot.send_message(chat_id=chat_id, text="لا توجد دروس بعد.", reply_markup=COURSES_MENU_KB)
+        return
+    lines = ["📚 جميع الدروس (الأحدث أولًا):"]
+    for idx, l in enumerate(lessons, 1):
+        d = l.to_dict()
+        created_at = d.get("created_at", "")
+        lines.append(
+            f"{idx}. {d.get('title','درس')}\nنُشر في: {created_at}\n{d.get('description','')}"
+        )
+    context.bot.send_message(chat_id=chat_id, text="\n\n".join(lines), reply_markup=COURSES_MENU_KB)
+
+
+def send_course_stats_to_user(chat_id: int, user: User, course_id: str, context: CallbackContext):
+    participant = get_course_participant(course_id, user.id)
+    if not participant:
+        context.bot.send_message(chat_id=chat_id, text="سجل أولًا في الدورة لعرض إحصاءاتك.", reply_markup=COURSES_MENU_KB)
+        return
+    lines = [
+        "📊 إحصائياتي في الدورة:",
+        f"نقاط الحضور: {participant.get('attendance_points',0)}",
+        f"نقاط الاختبارات: {participant.get('exam_points',0)}",
+        f"المجموع: {participant.get('total_course_points',0)}",
+        f"عدد الدروس التي حضرتها: {len(participant.get('attended_days', []))}",
+        f"عدد الأسئلة التي أجبْت عنها: {len(participant.get('answers', []))}",
+    ]
+    context.bot.send_message(chat_id=chat_id, text="\n".join(lines), reply_markup=COURSES_MENU_KB)
+
+
+def handle_course_selection_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    text = update.message.text
+    if text == BTN_COURSES_BACK_MAIN:
+        WAITING_COURSE_SELECTION.discard(user.id)
+        COURSE_SELECTION_MAP.pop(user.id, None)
+        COURSE_SELECTION_ACTION.pop(user.id, None)
+        send_courses_menu(update, context)
+        return
+
+    mapping = COURSE_SELECTION_MAP.get(user.id, {})
+    if text not in mapping:
+        update.message.reply_text("رجاءً اختر دورة من القائمة بالأزرار.", reply_markup=COURSES_MENU_KB)
+        return
+
+    course_id = mapping.get(text)
+    action = COURSE_SELECTION_ACTION.get(user.id, "open")
+    WAITING_COURSE_SELECTION.discard(user.id)
+    COURSE_SELECTION_MAP.pop(user.id, None)
+    COURSE_SELECTION_ACTION.pop(user.id, None)
+
+    if action == "open":
+        send_course_page(update.effective_chat.id, user, course_id, context)
+        return
+    if action == "lessons":
+        send_lessons_overview(update.effective_chat.id, course_id, context)
+        return
+    if action == "exams":
+        exams = list_exams(course_id)
+        if not exams:
+            context.bot.send_message(chat_id=update.effective_chat.id, text="لا توجد اختبارات متاحة بعد.", reply_markup=COURSES_MENU_KB)
+            return
+        rows = [
+            [InlineKeyboardButton(e.to_dict().get("name", "اختبار"), callback_data=f"course_exam_{course_id}_{e.id}")]
+            for e in exams
+        ]
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="📝 اختر الاختبار:",
+            reply_markup=InlineKeyboardMarkup(rows),
+        )
+        return
+    if action == "stats":
+        send_course_stats_to_user(update.effective_chat.id, user, course_id, context)
+        return
+    if action == "archive":
+        send_course_page(update.effective_chat.id, user, course_id, context)
+        return
 
 
 def admin_panel_keyboard_for(user_id: int) -> ReplyKeyboardMarkup:
@@ -7527,6 +7668,9 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_EXAM_ADD_MORE.discard(user_id)
         WAITING_COURSE_BROADCAST.discard(user_id)
         WAITING_SELECTED_COURSE.pop(user_id, None)
+        WAITING_COURSE_SELECTION.discard(user_id)
+        COURSE_SELECTION_MAP.pop(user_id, None)
+        COURSE_SELECTION_ACTION.pop(user_id, None)
         PENDING_LESSON_DATA.pop(user_id, None)
         PENDING_EXAM_DATA.pop(user_id, None)
         PENDING_EXAM_QUESTIONS.pop(user_id, None)
@@ -7575,8 +7719,39 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
+    if user_id in WAITING_COURSE_SELECTION:
+        handle_course_selection_input(update, context)
+        return
+
     if text == BTN_COURSES_MAIN:
         send_courses_menu(update, context)
+        return
+    if text == BTN_COURSES_BACK_HOME:
+        msg.reply_text("تم الرجوع للقائمة الرئيسية.", reply_markup=main_kb)
+        return
+    if text == BTN_COURSES_MY:
+        _prompt_course_list(user_id, "open", context, include_status="active")
+        return
+    if text == BTN_COURSES_LESSONS:
+        _prompt_course_list(user_id, "lessons", context, include_status="active")
+        return
+    if text == BTN_COURSES_EXAMS:
+        _prompt_course_list(user_id, "exams", context, include_status="active")
+        return
+    if text == BTN_COURSES_STATS_VIEW:
+        _prompt_course_list(user_id, "stats", context, include_status=None)
+        return
+    if text == BTN_COURSES_ARCHIVE:
+        all_courses = list_courses()
+        archived_courses = [c for c in all_courses if (c.to_dict() if hasattr(c, "to_dict") else c).get("status") != "active"]
+        _build_course_keyboard_for_user(
+            user_id,
+            archived_courses,
+            "archive",
+            "اختر دورة من الأرشيف:",
+            context,
+            "لا توجد دورات في الأرشيف بعد.",
+        )
         return
 
     # حالات إدخال الماء
@@ -8799,6 +8974,12 @@ def handle_course_callback(update: Update, context: CallbackContext):
         course = get_course_data(course_id)
         if not course or course.get("status") != "active":
             query.answer("هذه الدورة غير متاحة للتسجيل الآن")
+            context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "هذه الدورة غير متاحة حاليًا، سيتم إعلامكم عند فتح دورات جديدة بإذن الله."
+                ),
+            )
             return
         ensure_course_participant(course_id, user)
         query.answer("تم تسجيلك في الدورة")
