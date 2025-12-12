@@ -1662,6 +1662,14 @@ COURSE_SELECTION_STATE: Dict[int, Dict] = {}
 ADMIN_COURSE_CONTEXT: Dict[int, Dict] = {}
 LESSON_CREATION_STATE: Dict[int, Dict] = {}
 
+# اختبارات الدورات
+WAITING_EXAM_TITLE = set()
+WAITING_EXAM_QUESTION_TEXT = set()
+WAITING_EXAM_ANSWER_TEXT = set()
+WAITING_EXAM_ANSWER_POINTS = set()
+EXAM_CREATION_STATE: Dict[int, Dict] = {}
+STUDENT_EXAM_SESSIONS: Dict[int, Dict] = {}
+
 
 def is_user_in_course_flow(user_id: int) -> bool:
     """التحقق مما إذا كان المستخدم داخل أي حالة تخص الدورات."""
@@ -1675,6 +1683,12 @@ def is_user_in_course_flow(user_id: int) -> bool:
             user_id in WAITING_LESSON_TITLE,
             user_id in WAITING_LESSON_DESCRIPTION,
             user_id in WAITING_LESSON_SELECTION,
+            user_id in WAITING_EXAM_TITLE,
+            user_id in WAITING_EXAM_QUESTION_TEXT,
+            user_id in WAITING_EXAM_ANSWER_TEXT,
+            user_id in WAITING_EXAM_ANSWER_POINTS,
+            user_id in EXAM_CREATION_STATE,
+            user_id in STUDENT_EXAM_SESSIONS,
         )
     )
 
@@ -1733,6 +1747,16 @@ BTN_ADMIN_COURSE_NAME_ADD = "➕ إضافة اسم الدورة"
 
 BTN_ADMIN_COURSE_CANCEL = "❌ إلغاء"
 BTN_ADMIN_COURSE_BACK = "⬅️ رجوع"
+BTN_ADMIN_COURSE_TESTS_MENU = "📝 إدارة الاختبارات"
+BTN_ADMIN_CREATE_EXAM = "➕ إنشاء اختبار جديد"
+BTN_ADMIN_LIST_EXAMS = "📋 عرض الاختبارات"
+BTN_ADMIN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
+BTN_ADMIN_EXAM_ADD_ANSWER = "➕ إضافة جواب"
+BTN_ADMIN_EXAM_PUBLISH = "✅ نشر الاختبار"
+BTN_ADMIN_EXAM_CANCEL = "❌ إلغاء وحذف المسودة"
+BTN_ADMIN_EXAM_BACK = "⬅️ رجوع"
+BTN_ADMIN_QUESTION_FINISH = "✅ إنهاء السؤال"
+BTN_ADMIN_QUESTION_CANCEL = "❌ إلغاء السؤال"
 
 BTN_ADMIN_ADD_LESSON_FROM_LINK = "🔗 إرسال رابط منشور من قناة التخزين"
 BTN_ADMIN_ADD_LESSON_FROM_HASHTAG = "#️⃣ إرسال هاشتاق/قسم (مثال: #الفقه) لجلب آخر ملف مطابق"
@@ -1943,7 +1967,45 @@ ADMIN_CREATE_COURSE_NAME_KB = ReplyKeyboardMarkup(
 ADMIN_COURSE_ACTIONS_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_ADD_LESSON)],
+        [KeyboardButton(BTN_ADMIN_TESTS_PLACEHOLDER)],
         [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSE_TESTS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_COURSE_TESTS_MENU)],
+        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_MANAGE_EXAMS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_EXAM)],
+        [KeyboardButton(BTN_ADMIN_LIST_EXAMS)],
+        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_EXAM_ACTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_EXAM_ADD_QUESTION)],
+        [KeyboardButton(BTN_ADMIN_EXAM_PUBLISH)],
+        [KeyboardButton(BTN_ADMIN_EXAM_CANCEL)],
+        [KeyboardButton(BTN_ADMIN_EXAM_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_QUESTION_ACTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_EXAM_ADD_ANSWER)],
+        [KeyboardButton(BTN_ADMIN_QUESTION_FINISH)],
+        [KeyboardButton(BTN_ADMIN_QUESTION_CANCEL)],
+        [KeyboardButton(BTN_ADMIN_EXAM_BACK)],
     ],
     resize_keyboard=True,
 )
@@ -7211,6 +7273,79 @@ def mark_lesson_published(course_id: str, lesson_id: str):
         logger.error(f"❌ خطأ في نشر الدرس {lesson_id}: {e}")
 
 
+def _exam_ref(course_id: str, exam_id: str):
+    return db.collection(COURSES_COLLECTION).document(course_id).collection("exams").document(exam_id)
+
+
+def create_exam(course_id: str, title: str, created_by: int) -> str:
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح لحفظ الاختبارات")
+    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("exams").document()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "exam_id": doc_ref.id,
+        "course_id": course_id,
+        "exam_title": title,
+        "status": "draft",
+        "published": False,
+        "published_at": None,
+        "questions": [],
+        "created_at": now_iso,
+        "created_by": created_by,
+        "updated_at": now_iso,
+    }
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def update_exam(course_id: str, exam_id: str, **fields):
+    if not firestore_available():
+        return
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _exam_ref(course_id, exam_id).update(fields)
+    except Exception as e:
+        logger.error(f"❌ خطأ في تحديث الاختبار {exam_id}: {e}")
+
+
+def delete_exam(course_id: str, exam_id: str):
+    if not firestore_available():
+        return
+    try:
+        _exam_ref(course_id, exam_id).delete()
+    except Exception as e:
+        logger.error(f"❌ خطأ في حذف الاختبار {exam_id}: {e}")
+
+
+def fetch_exams(course_id: str, published_only: bool = False):
+    if not firestore_available():
+        return []
+    try:
+        ref = db.collection(COURSES_COLLECTION).document(course_id).collection("exams")
+        if published_only:
+            ref = ref.where("published", "==", True)
+        return [dict(doc.to_dict() or {}, exam_id=doc.id) for doc in ref.stream()]
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة الاختبارات للدورة {course_id}: {e}")
+        return []
+
+
+def fetch_exam(course_id: str, exam_id: str):
+    if not firestore_available():
+        return None
+    try:
+        doc = _exam_ref(course_id, exam_id).get()
+        if doc.exists:
+            return dict(doc.to_dict() or {}, exam_id=doc.id)
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة الاختبار {exam_id}: {e}")
+    return None
+
+
+def _save_questions(course_id: str, exam_id: str, questions: List[Dict]):
+    update_exam(course_id, exam_id, questions=questions)
+
+
 def notify_course_participants(course_id: str, text: str, context: CallbackContext):
     if not firestore_available():
         return
@@ -7290,6 +7425,11 @@ def _set_lesson_selection_state(user_id: int, lessons_map: Dict[str, Dict]):
     state["lessons"] = lessons_map
 
 
+def _set_exam_selection_state(user_id: int, exams_map: Dict[str, Dict]):
+    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
+    state["exams"] = exams_map
+
+
 def _clear_course_flow_state(user_id: int):
     COURSE_SELECTION_STATE.pop(user_id, None)
     WAITING_COURSE_SELECTION.discard(user_id)
@@ -7302,8 +7442,13 @@ def _reset_admin_course_states(user_id: int):
     WAITING_LESSON_STORAGE.discard(user_id)
     WAITING_LESSON_PUBLISH_DECISION.discard(user_id)
     WAITING_LESSON_SELECTION.discard(user_id)
+    WAITING_EXAM_TITLE.discard(user_id)
+    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
+    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
+    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
     COURSE_CREATION_STATE.pop(user_id, None)
     LESSON_CREATION_STATE.pop(user_id, None)
+    EXAM_CREATION_STATE.pop(user_id, None)
     ADMIN_COURSE_CONTEXT.pop(user_id, None)
 
 
@@ -7405,6 +7550,165 @@ def _send_lesson_to_user(update: Update, context: CallbackContext, lesson: Dict,
 
     back_btn = ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True)
     context.bot.send_message(chat_id, "⬅️ رجوع", reply_markup=back_btn)
+
+
+def _course_exams_keyboard(exams: List[Dict]):
+    buttons: List[List[KeyboardButton]] = []
+    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("published_at", ""))):
+        title = exam.get("exam_title") or "اختبار"
+        buttons.append([KeyboardButton(f"🧪 اختبار {idx + 1}: {title}")])
+    buttons.append([KeyboardButton(BTN_COURSE_BACK)])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+
+def open_course_tests(update: Update, context: CallbackContext, course_id: str, course_name: str):
+    user_id = update.effective_user.id
+    exams = fetch_exams(course_id, published_only=True)
+    if not exams:
+        _set_exam_selection_state(user_id, {})
+        update.message.reply_text(
+            f"لا توجد اختبارات منشورة حاليًا لدورة {course_name}.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True),
+        )
+        return
+    exams_map = {}
+    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("published_at", ""))):
+        title = exam.get("exam_title") or "اختبار"
+        btn_text = f"🧪 اختبار {idx + 1}: {title}"
+        exams_map[btn_text] = exam
+    _set_exam_selection_state(user_id, exams_map)
+    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
+    state["selected_course"] = {"id": course_id, "name": course_name}
+    update.message.reply_text(
+        f"اختر الاختبار من دورة {course_name}:",
+        reply_markup=_course_exams_keyboard(exams),
+    )
+
+
+def _start_exam_session(update: Update, context: CallbackContext, exam: Dict, course_name: str):
+    user_id = update.effective_user.id
+    questions = exam.get("questions") or []
+    if not questions:
+        update.message.reply_text("هذا الاختبار لا يحتوي على أسئلة حالياً.")
+        return
+    STUDENT_EXAM_SESSIONS[user_id] = {
+        "course_id": exam.get("course_id"),
+        "exam_id": exam.get("exam_id"),
+        "exam_title": exam.get("exam_title"),
+        "course_name": course_name,
+        "questions": questions,
+        "current_index": 0,
+        "total_points": 0,
+    }
+    _send_next_question(update, context, user_id)
+
+
+def _send_next_question(update: Update, context: CallbackContext, user_id: int):
+    session = STUDENT_EXAM_SESSIONS.get(user_id)
+    if not session:
+        return
+    questions = session.get("questions", [])
+    idx = session.get("current_index", 0)
+    if idx >= len(questions):
+        total = session.get("total_points", 0)
+        context.bot.send_message(
+            chat_id=user_id,
+            text=f"تم إنهاء الاختبار. مجموع نقاطك: {total}.",
+            reply_markup=COURSE_USER_KB,
+        )
+        STUDENT_EXAM_SESSIONS.pop(user_id, None)
+        return
+    question = questions[idx]
+    answers = question.get("answers") or []
+    if not answers:
+        context.bot.send_message(chat_id=user_id, text="لا توجد إجابات لهذا السؤال.")
+        STUDENT_EXAM_SESSIONS.pop(user_id, None)
+        return
+    answer_buttons = []
+    answers_map = {}
+    for a_idx, ans in enumerate(answers):
+        label = f"{a_idx + 1}️⃣ {ans.get('text', '')}"
+        answer_buttons.append([KeyboardButton(label)])
+        answers_map[label] = {"text": ans.get("text", ""), "points": ans.get("points", 0)}
+    session["answers_map"] = answers_map
+    question_text = question.get("text") or "سؤال"
+    context.bot.send_message(
+        chat_id=user_id,
+        text=f"{question_text}",
+        reply_markup=ReplyKeyboardMarkup(answer_buttons, resize_keyboard=True),
+    )
+
+
+def handle_student_answer(update: Update, context: CallbackContext, text: str):
+    user_id = update.effective_user.id
+    session = STUDENT_EXAM_SESSIONS.get(user_id)
+    if not session:
+        return False
+    answers_map = session.get("answers_map") or {}
+    if text not in answers_map:
+        return False
+    answer = answers_map[text]
+    questions = session.get("questions", [])
+    idx = session.get("current_index", 0)
+    if idx >= len(questions):
+        return True
+    question = questions[idx]
+    course_id = session.get("course_id")
+    exam_id = session.get("exam_id")
+
+    if not firestore_available():
+        update.message.reply_text("الخدمة غير متاحة حاليًا، حاول لاحقًا.")
+        return True
+
+    attempt_ref = (
+        db.collection(COURSES_COLLECTION)
+        .document(course_id)
+        .collection("exams")
+        .document(exam_id)
+        .collection("attempts")
+        .document(str(user_id))
+    )
+    attempt_data = {
+        "user_id": user_id,
+        "exam_id": exam_id,
+        "course_id": course_id,
+        "exam_title": session.get("exam_title"),
+        "answers_chosen": [],
+        "total_points": 0,
+    }
+    try:
+        existing = attempt_ref.get()
+        if existing.exists:
+            attempt_data = existing.to_dict() or attempt_data
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب محاولة الاختبار للمستخدم {user_id}: {e}")
+
+    answers_chosen = attempt_data.get("answers_chosen") or []
+    if any(a.get("question_index") == idx for a in answers_chosen):
+        update.message.reply_text("تم تسجيل إجابتك على هذا السؤال سابقًا.")
+        return True
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    answers_chosen.append(
+        {
+            "question_index": idx,
+            "question_text": question.get("text"),
+            "answer_text": answer.get("text"),
+            "points": answer.get("points", 0),
+            "answered_at": now_iso,
+        }
+    )
+    total_points = attempt_data.get("total_points", 0) + answer.get("points", 0)
+    attempt_data.update({"answers_chosen": answers_chosen, "total_points": total_points, "updated_at": now_iso})
+    try:
+        attempt_ref.set(attempt_data)
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ إجابة الاختبار للمستخدم {user_id}: {e}")
+
+    session["total_points"] = total_points
+    session["current_index"] = idx + 1
+    _send_next_question(update, context, user_id)
+    return True
 
 
 def open_admin_courses_menu(update: Update, context: CallbackContext):
@@ -7511,6 +7815,237 @@ def handle_admin_course_selection(update: Update, context: CallbackContext, text
     )
     return True
 
+
+def open_admin_course_tests(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
+    if not selected:
+        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    update.message.reply_text(
+        "إدارة الاختبارات ضمن هذه الدورة:", reply_markup=ADMIN_COURSE_TESTS_KB
+    )
+
+
+def open_admin_manage_exams(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
+    if not selected:
+        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    update.message.reply_text("اختر الإجراء:", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+
+
+def start_exam_creation(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
+    if not selected:
+        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    EXAM_CREATION_STATE[user_id] = {
+        "course_id": selected.get("id"),
+        "course_name": selected.get("name"),
+    }
+    WAITING_EXAM_TITLE.add(user_id)
+    update.message.reply_text("أرسل اسم الاختبار", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+
+
+def handle_exam_title_input(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_EXAM_TITLE:
+        return False
+    state = EXAM_CREATION_STATE.setdefault(user_id, {})
+    title = (update.message.text or "").strip()
+    if not title:
+        update.message.reply_text("يرجى إرسال اسم صحيح للاختبار.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return True
+    WAITING_EXAM_TITLE.discard(user_id)
+    try:
+        exam_id = create_exam(state.get("course_id"), title, user_id)
+        state.update({"exam_id": exam_id, "exam_title": title, "current_question": None})
+        update.message.reply_text(
+            f"✅ تم إنشاء مسودة الاختبار '{title}'.", reply_markup=ADMIN_EXAM_ACTIONS_KB
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في إنشاء الاختبار: {e}")
+        update.message.reply_text("تعذر إنشاء الاختبار، حاول مرة أخرى.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+    return True
+
+
+def start_question_creation(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    state = EXAM_CREATION_STATE.get(user_id)
+    if not state or not state.get("exam_id"):
+        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return
+    state["current_question"] = {"answers": []}
+    WAITING_EXAM_QUESTION_TEXT.add(user_id)
+    update.message.reply_text("أرسل نص السؤال", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+
+
+def handle_question_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_EXAM_QUESTION_TEXT:
+        return False
+    question_text = (update.message.text or "").strip()
+    if not question_text:
+        update.message.reply_text("يرجى إرسال نص صحيح للسؤال.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+        return True
+    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
+    state = EXAM_CREATION_STATE.setdefault(user_id, {})
+    question = state.get("current_question") or {}
+    question.update({"text": question_text, "answers": question.get("answers") or []})
+    state["current_question"] = question
+    update.message.reply_text(
+        "تم حفظ نص السؤال. أضف الأجوبة والنقاط:", reply_markup=ADMIN_QUESTION_ACTIONS_KB
+    )
+    return True
+
+
+def prompt_answer_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    state = EXAM_CREATION_STATE.get(user_id)
+    if not state or not state.get("current_question"):
+        update.message.reply_text("يرجى إنشاء سؤال أولاً.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+        return
+    WAITING_EXAM_ANSWER_TEXT.add(user_id)
+    update.message.reply_text("أرسل نص الجواب", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+
+
+def handle_answer_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_EXAM_ANSWER_TEXT:
+        return False
+    answer_text = (update.message.text or "").strip()
+    if not answer_text:
+        update.message.reply_text("يرجى إرسال نص صحيح للجواب.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+        return True
+    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
+    state = EXAM_CREATION_STATE.setdefault(user_id, {})
+    state["pending_answer_text"] = answer_text
+    WAITING_EXAM_ANSWER_POINTS.add(user_id)
+    update.message.reply_text("أرسل نقاط هذا الجواب (رقم فقط مثل 0/1/2/3…)", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+    return True
+
+
+def handle_answer_points(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_EXAM_ANSWER_POINTS:
+        return False
+    state = EXAM_CREATION_STATE.setdefault(user_id, {})
+    text = (update.message.text or "").strip()
+    try:
+        points = int(text)
+    except Exception:
+        update.message.reply_text("أرسل رقمًا صحيحًا للنقاط.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+        return True
+    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
+    answer_text = state.pop("pending_answer_text", None)
+    if not answer_text:
+        update.message.reply_text("يرجى إرسال نص الجواب أولاً.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+        return True
+    question = state.get("current_question") or {}
+    answers = question.get("answers") or []
+    answers.append({"text": answer_text, "points": points})
+    question["answers"] = answers
+    state["current_question"] = question
+    update.message.reply_text("تم حفظ الجواب مع النقاط. يمكنك إضافة المزيد أو إنهاء السؤال.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+    return True
+
+
+def finalize_question(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    state = EXAM_CREATION_STATE.get(user_id)
+    if not state or not state.get("exam_id"):
+        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return
+    question = state.get("current_question") or {}
+    if not question.get("text") or not (question.get("answers") or []):
+        update.message.reply_text("يرجى إضافة نص السؤال وإجابة واحدة على الأقل.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
+        return
+    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
+    questions = exam.get("questions") or []
+    questions.append({"text": question.get("text"), "answers": question.get("answers")})
+    _save_questions(state.get("course_id"), state.get("exam_id"), questions)
+    state["current_question"] = None
+    update.message.reply_text("تم حفظ السؤال داخل الاختبار.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+
+
+def cancel_question(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
+    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
+    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
+    state = EXAM_CREATION_STATE.get(user_id)
+    if state:
+        state["current_question"] = None
+        state.pop("pending_answer_text", None)
+    update.message.reply_text("تم إلغاء السؤال الحالي.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+
+
+def publish_exam(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    state = EXAM_CREATION_STATE.get(user_id)
+    if not state or not state.get("exam_id"):
+        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return
+    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
+    questions = exam.get("questions") or []
+    if not questions or any(not (q.get("answers") or []) for q in questions):
+        update.message.reply_text("لا يمكن النشر بدون أسئلة وأجوبة.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+        return
+    if exam.get("published"):
+        update.message.reply_text("تم نشر الاختبار مسبقًا.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+        return
+    publish_time = datetime.now(timezone.utc).isoformat()
+    update_exam(
+        state.get("course_id"),
+        state.get("exam_id"),
+        published=True,
+        published_at=publish_time,
+        status="published",
+    )
+    update.message.reply_text(f"✅ تم نشر الاختبار '{exam.get('exam_title')}'.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+
+
+def cancel_exam_draft(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    state = EXAM_CREATION_STATE.get(user_id)
+    if not state or not state.get("exam_id"):
+        update.message.reply_text("لا توجد مسودة لحذفها.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return
+    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
+    if exam.get("published"):
+        update.message.reply_text("لا يمكن حذف اختبار منشور.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
+        return
+    delete_exam(state.get("course_id"), state.get("exam_id"))
+    EXAM_CREATION_STATE.pop(user_id, None)
+    update.message.reply_text("تم حذف مسودة الاختبار.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+
+
+def list_exams_for_admin(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
+    if not selected:
+        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    exams = fetch_exams(selected.get("id"))
+    if not exams:
+        update.message.reply_text("لا توجد اختبارات لهذه الدورة.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
+        return
+    lines = ["قائمة الاختبارات:"]
+    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("created_at", "")), 1):
+        status = "منشور" if exam.get("published") else "مسودة"
+        lines.append(f"{idx}. {exam.get('exam_title', '-')}: {status}")
+    update.message.reply_text("\n".join(lines), reply_markup=ADMIN_MANAGE_EXAMS_KB)
 
 def start_lesson_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
@@ -7783,6 +8318,9 @@ def handle_text(update: Update, context: CallbackContext):
     
     main_kb = user_main_keyboard(user_id)
 
+    if handle_student_answer(update, context, text):
+        return
+
     # تحديد الجنس للدعم
     if user_id in WAITING_SUPPORT_GENDER:
         if text == BTN_GENDER_MALE:
@@ -7920,6 +8458,12 @@ def handle_text(update: Update, context: CallbackContext):
         BAN_TARGET_ID.pop(user_id, None)
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
+        WAITING_EXAM_TITLE.discard(user_id)
+        WAITING_EXAM_QUESTION_TEXT.discard(user_id)
+        WAITING_EXAM_ANSWER_TEXT.discard(user_id)
+        WAITING_EXAM_ANSWER_POINTS.discard(user_id)
+        EXAM_CREATION_STATE.pop(user_id, None)
+        STUDENT_EXAM_SESSIONS.pop(user_id, None)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
         if user_id in WAITING_BENEFIT_EDIT_TEXT:
@@ -8452,6 +8996,39 @@ def handle_text(update: Update, context: CallbackContext):
     if text == BTN_ADMIN_ARCHIVE_COURSE:
         list_courses_for_archive(update, context)
         return
+    if text == BTN_ADMIN_TESTS_PLACEHOLDER:
+        open_admin_course_tests(update, context)
+        return
+    if text == BTN_ADMIN_COURSE_TESTS_MENU:
+        open_admin_manage_exams(update, context)
+        return
+    if text == BTN_ADMIN_CREATE_EXAM:
+        start_exam_creation(update, context)
+        return
+    if text == BTN_ADMIN_LIST_EXAMS:
+        list_exams_for_admin(update, context)
+        return
+    if text == BTN_ADMIN_EXAM_ADD_QUESTION:
+        start_question_creation(update, context)
+        return
+    if text == BTN_ADMIN_EXAM_ADD_ANSWER:
+        prompt_answer_text(update, context)
+        return
+    if text == BTN_ADMIN_QUESTION_FINISH:
+        finalize_question(update, context)
+        return
+    if text == BTN_ADMIN_QUESTION_CANCEL:
+        cancel_question(update, context)
+        return
+    if text == BTN_ADMIN_EXAM_PUBLISH:
+        publish_exam(update, context)
+        return
+    if text == BTN_ADMIN_EXAM_CANCEL:
+        cancel_exam_draft(update, context)
+        return
+    if text == BTN_ADMIN_EXAM_BACK:
+        open_admin_manage_exams(update, context)
+        return
     if text == BTN_ADMIN_ADD_LESSON:
         start_lesson_creation(update, context)
         return
@@ -8463,6 +9040,18 @@ def handle_text(update: Update, context: CallbackContext):
         save_new_course(update, context)
         return
 
+    if handle_exam_title_input(update, context):
+        return
+
+    if handle_question_text(update, context):
+        return
+
+    if handle_answer_text(update, context):
+        return
+
+    if handle_answer_points(update, context):
+        return
+
     if handle_lesson_title(update, context):
         return
 
@@ -8471,6 +9060,11 @@ def handle_text(update: Update, context: CallbackContext):
 
     # قوائم الدورات والدروس للمستخدمين
     course_state = COURSE_SELECTION_STATE.get(user_id, {})
+
+    if text == BTN_COURSE_USER_MENU:
+        _clear_course_flow_state(user_id)
+        open_courses_menu(update, context)
+        return
 
     if text == BTN_COURSE_REGISTER:
         selected_course = course_state.get("selected_course") or {}
@@ -8504,6 +9098,25 @@ def handle_text(update: Update, context: CallbackContext):
             open_courses_menu(update, context)
         return
 
+    if text == BTN_COURSE_LESSONS:
+        selected_course = course_state.get("selected_course") or {}
+        if not selected_course:
+            update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
+            return
+        open_course_lessons(update, context, selected_course.get("id"), selected_course.get("name", ""))
+        return
+
+    if text == BTN_COURSE_TESTS:
+        selected_course = course_state.get("selected_course") or {}
+        if not selected_course:
+            update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
+            return
+        if not user_is_registered(selected_course.get("id"), user_id):
+            update.message.reply_text("يرجى التسجيل في الدورة أولاً.", reply_markup=COURSES_MENU_KB)
+            return
+        open_course_tests(update, context, selected_course.get("id"), selected_course.get("name", ""))
+        return
+
     courses_map = course_state.get("courses") or {}
     if text in courses_map:
         course_id = courses_map[text]
@@ -8515,7 +9128,10 @@ def handle_text(update: Update, context: CallbackContext):
         if course_state.get("source") == "available":
             if user_is_registered(course_id, user.id):
                 COURSE_SELECTION_STATE[user_id]["source"] = "my"
-                open_course_lessons(update, context, course_id, course_data.get("name", text))
+                update.message.reply_text(
+                    f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
+                    reply_markup=COURSE_USER_KB,
+                )
                 return
             WAITING_COURSE_SELECTION.add(user_id)
             update.message.reply_text(
@@ -8530,7 +9146,17 @@ def handle_text(update: Update, context: CallbackContext):
                 ),
             )
             return
-        open_course_lessons(update, context, course_id, course_data.get("name", text))
+        update.message.reply_text(
+            f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
+            reply_markup=COURSE_USER_KB,
+        )
+        return
+
+    exams_map = course_state.get("exams") or {}
+    if text in exams_map:
+        exam = exams_map[text]
+        course_info = course_state.get("selected_course") or {}
+        _start_exam_session(update, context, exam, course_info.get("name", ""))
         return
 
     lessons_map = course_state.get("lessons") or {}
