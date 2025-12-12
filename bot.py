@@ -1712,6 +1712,15 @@ BTN_ADMIN_ADD_LESSON = "➕ إضافة درس"
 BTN_ADMIN_TESTS_PLACEHOLDER = "🧪 الاختبارات"
 BTN_ADMIN_COURSE_STATS_PLACEHOLDER = "📊 إحصائيات الدورة"
 BTN_ADMIN_MOVE_TO_ARCHIVE = "🗂️ نقل للأرشيف"
+BTN_ADMIN_CREATE_COURSE_NAME = "✍️ تسمية الدورة"
+BTN_ADMIN_COURSE_NAME_ADD = "➕ إضافة اسم الدورة"
+
+BTN_ADMIN_COURSE_CANCEL = "❌ إلغاء"
+BTN_ADMIN_COURSE_BACK = "⬅️ رجوع"
+
+BTN_ADMIN_ADD_LESSON_FROM_LINK = "🔗 إرسال رابط منشور من قناة التخزين"
+BTN_ADMIN_ADD_LESSON_FROM_HASHTAG = "#️⃣ إرسال هاشتاق/قسم (مثال: #الفقه) لجلب آخر ملف مطابق"
+BTN_ADMIN_ADD_LESSON_FROM_LATEST = "📌 اختيار من آخر الملفات في قناة التخزين"
 
 AUDIO_PAGE_SIZE = 10
 AUDIO_SECTIONS = {
@@ -1894,6 +1903,41 @@ ADMIN_COURSES_MENU_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_MANAGE_COURSES)],
         [KeyboardButton(BTN_ADMIN_ARCHIVE_COURSE)],
         [KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_CREATE_COURSE_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_COURSE_NAME)],
+        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
+        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_CREATE_COURSE_NAME_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_COURSE_NAME_ADD)],
+        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSE_ACTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_ADD_LESSON)],
+        [KeyboardButton(BTN_ADMIN_COURSE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_LESSON_STORAGE_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_LINK)],
+        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_HASHTAG)],
+        [KeyboardButton(BTN_ADMIN_ADD_LESSON_FROM_LATEST)],
+        [KeyboardButton(BTN_ADMIN_COURSE_CANCEL)],
     ],
     resize_keyboard=True,
 )
@@ -7120,6 +7164,7 @@ def save_lesson(course_id: str, lesson_data: Dict) -> str:
     payload = {
         "title": lesson_data.get("title"),
         "description": lesson_data.get("description"),
+        "question_text": lesson_data.get("question_text") or lesson_data.get("description"),
         "storage_chat_id": lesson_data.get("storage_chat_id"),
         "storage_message_id": lesson_data.get("storage_message_id"),
         "storage_file_id": lesson_data.get("storage_file_id"),
@@ -7204,6 +7249,406 @@ def extract_storage_reference(msg) -> Dict:
             "title": title or msg.caption or msg.text,
         }
     return {}
+
+
+def _is_admin_or_supervisor(user_id: int) -> bool:
+    return is_admin(user_id) or is_supervisor(user_id)
+
+
+def _set_course_selection_state(user_id: int, mapping: Dict[str, str], source: str = ""):
+    COURSE_SELECTION_STATE[user_id] = {
+        "courses": mapping,
+        "source": source,
+        "lessons": {},
+        "selected_course": None,
+    }
+
+
+def _set_lesson_selection_state(user_id: int, lessons_map: Dict[str, Dict]):
+    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
+    state["lessons"] = lessons_map
+
+
+def _course_list_keyboard(courses: List[Dict], include_back: bool = True) -> ReplyKeyboardMarkup:
+    buttons: List[List[KeyboardButton]] = []
+    for course in courses:
+        name = course.get("name") or "-"
+        buttons.append([KeyboardButton(name)])
+    if include_back:
+        buttons.append([KeyboardButton(BTN_COURSE_BACK)])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+
+def open_available_courses(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    courses = list_courses(active_only=True)
+    if not courses:
+        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
+        return
+    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
+    _set_course_selection_state(user_id, mapping, source="available")
+    update.message.reply_text(
+        "اختر الدورة التي تود تصفحها:", reply_markup=_course_list_keyboard(courses)
+    )
+
+
+def open_my_courses(update: Update, context: CallbackContext, include_archived: bool = False):
+    user = update.effective_user
+    courses = list_user_courses(user.id, include_archived=include_archived)
+    if include_archived:
+        courses = [c for c in courses if c.get("archived")]
+    else:
+        courses = [c for c in courses if not c.get("archived")]
+    if not courses:
+        update.message.reply_text("لا توجد دورات مسجلة.", reply_markup=COURSES_MENU_KB)
+        return
+    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
+    source = "archived" if include_archived else "my"
+    _set_course_selection_state(user.id, mapping, source=source)
+    update.message.reply_text(
+        "اختر الدورة:", reply_markup=_course_list_keyboard(courses)
+    )
+
+
+def _course_lessons_keyboard(course_name: str, lessons: List[Dict]):
+    buttons: List[List[KeyboardButton]] = []
+    for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
+        title = lesson.get("title") or "دون عنوان"
+        buttons.append([KeyboardButton(f"📚 الدرس {idx + 1}: {title}")])
+    buttons.append([KeyboardButton(BTN_COURSE_BACK)])
+    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+
+def open_course_lessons(update: Update, context: CallbackContext, course_id: str, course_name: str):
+    user_id = update.effective_user.id
+    lessons = fetch_lessons(course_id, published_only=True)
+    if not lessons:
+        _set_lesson_selection_state(user_id, {})
+        update.message.reply_text(
+            f"لا توجد دروس مضافة بعد لدورة {course_name}.", reply_markup=COURSES_MENU_KB
+        )
+        return
+    lessons_map = {}
+    for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
+        title = lesson.get("title") or "دون عنوان"
+        btn_text = f"📚 الدرس {idx + 1}: {title}"
+        lessons_map[btn_text] = lesson
+    _set_lesson_selection_state(user_id, lessons_map)
+    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
+    state["selected_course"] = {"id": course_id, "name": course_name}
+    update.message.reply_text(
+        f"اختر الدرس من دورة {course_name}:",
+        reply_markup=_course_lessons_keyboard(course_name, lessons),
+    )
+
+
+def _send_lesson_to_user(update: Update, context: CallbackContext, lesson: Dict, course_name: str):
+    chat_id = update.effective_user.id
+    title = lesson.get("title") or "دون عنوان"
+    description = lesson.get("question_text") or lesson.get("description") or ""
+    context.bot.send_message(chat_id, f"{title}\n\n{description}")
+
+    storage_chat = lesson.get("storage_chat_id")
+    storage_msg = lesson.get("storage_message_id")
+    storage_file = lesson.get("storage_file_id")
+    if storage_chat and storage_msg:
+        try:
+            context.bot.copy_message(chat_id=chat_id, from_chat_id=storage_chat, message_id=storage_msg)
+        except Exception as e:
+            logger.error(f"❌ خطأ في نسخ ملف الدرس: {e}")
+    elif storage_file:
+        try:
+            context.bot.send_document(chat_id, storage_file)
+        except Exception as e:
+            logger.error(f"❌ خطأ في إرسال ملف الدرس: {e}")
+
+    back_btn = ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True)
+    context.bot.send_message(chat_id, "⬅️ رجوع", reply_markup=back_btn)
+
+
+def open_admin_courses_menu(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    update.message.reply_text("🛠️ إعداد الدورات", reply_markup=ADMIN_COURSES_MENU_KB)
+
+
+def start_course_creation(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    COURSE_CREATION_STATE[user_id] = {}
+    update.message.reply_text(
+        "اختر الإجراء لإنشاء دورة جديدة:", reply_markup=ADMIN_CREATE_COURSE_KB
+    )
+
+
+def prompt_course_name_input(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    update.message.reply_text(
+        "أرسل اسم الدورة (مثال: الفقه)", reply_markup=ADMIN_CREATE_COURSE_NAME_KB
+    )
+    WAITING_COURSE_NAME.add(user_id)
+
+
+def save_new_course(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    if user_id not in WAITING_COURSE_NAME:
+        return
+    name = (update.message.text or "").strip()
+    WAITING_COURSE_NAME.discard(user_id)
+    if not name:
+        update.message.reply_text("يرجى إرسال اسم صحيح للدورة.", reply_markup=ADMIN_CREATE_COURSE_NAME_KB)
+        return
+    try:
+        course_id = save_course({"name": name, "created_by": user_id})
+        logger.info("✅ تم إنشاء دورة جديدة %s | id=%s", name, course_id)
+        update.message.reply_text(
+            f"✅ تم حفظ دورة '{name}' بنجاح.", reply_markup=ADMIN_CREATE_COURSE_KB
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في إنشاء الدورة: {e}")
+        update.message.reply_text("تعذر حفظ الدورة. حاول مرة أخرى.", reply_markup=ADMIN_CREATE_COURSE_KB)
+
+
+def list_courses_for_admin(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    courses = list_courses(include_archived=True)
+    if not courses:
+        update.message.reply_text("لا توجد دورات حالياً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
+    ADMIN_COURSE_CONTEXT[user_id] = {"courses": mapping, "selected": None}
+    update.message.reply_text(
+        "اختر الدورة لإدارتها:", reply_markup=_course_list_keyboard(courses, include_back=True)
+    )
+
+
+def list_courses_for_archive(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return
+    courses = [c for c in list_courses(include_archived=False)]
+    if not courses:
+        update.message.reply_text("لا توجد دورات متاحة للأرشفة.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
+    ADMIN_COURSE_CONTEXT[user_id] = {"courses": mapping, "selected": None, "archive_mode": True}
+    update.message.reply_text(
+        "اختر الدورة لأرشفتها (سيتم إخفاؤها من الدورات المتاحة):",
+        reply_markup=_course_list_keyboard(courses, include_back=True),
+    )
+
+
+def handle_admin_course_selection(update: Update, context: CallbackContext, text: str):
+    user_id = update.effective_user.id
+    ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
+    course_id = (ctx.get("courses") or {}).get(text)
+    if not course_id:
+        return False
+    if ctx.get("archive_mode"):
+        update_course(course_id, archived=True)
+        update.message.reply_text(
+            f"✅ تم أرشفة دورة {text}.", reply_markup=ADMIN_COURSES_MENU_KB
+        )
+        ADMIN_COURSE_CONTEXT[user_id] = {}
+        return True
+    ADMIN_COURSE_CONTEXT[user_id]["selected"] = {"id": course_id, "name": text}
+    update.message.reply_text(
+        f"تم اختيار دورة {text}.",
+        reply_markup=ADMIN_COURSE_ACTIONS_KB,
+    )
+    return True
+
+
+def start_lesson_creation(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
+    selected = ctx.get("selected") or {}
+    if not selected:
+        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    course_name = selected.get("name")
+    LESSON_CREATION_STATE[user_id] = {
+        "course_id": selected.get("id"),
+        "course_name": course_name,
+    }
+    update.message.reply_text(
+        "أرسل عنوان الدرس", reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True)
+    )
+    WAITING_LESSON_TITLE.add(user_id)
+
+
+def handle_lesson_title(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_TITLE:
+        return False
+    title = (update.message.text or "").strip()
+    if not title:
+        update.message.reply_text("يرجى إرسال عنوان صحيح.")
+        return True
+    state = LESSON_CREATION_STATE.setdefault(user_id, {})
+    state["title"] = title
+    WAITING_LESSON_TITLE.discard(user_id)
+    WAITING_LESSON_DESCRIPTION.add(user_id)
+    update.message.reply_text(
+        "أرسل سؤال/وصف الدرس (نص)",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
+    )
+    return True
+
+
+def handle_lesson_description(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_DESCRIPTION:
+        return False
+    desc = (update.message.text or "").strip()
+    if not desc:
+        update.message.reply_text("يرجى إرسال وصف صحيح.")
+        return True
+    state = LESSON_CREATION_STATE.setdefault(user_id, {})
+    state["description"] = desc
+    state["question_text"] = desc
+    WAITING_LESSON_DESCRIPTION.discard(user_id)
+    WAITING_LESSON_STORAGE.add(user_id)
+    update.message.reply_text(
+        "اختر طريقة إضافة ملف الدرس:", reply_markup=ADMIN_LESSON_STORAGE_KB
+    )
+    return True
+
+
+def _fetch_latest_from_section(section_key: str) -> Dict:
+    clips = fetch_audio_clips(section_key)
+    if clips:
+        return clips[0]
+    return {}
+
+
+def _present_latest_storage_choices(update: Update, context: CallbackContext):
+    choices: List[Dict] = []
+    for section_key in AUDIO_SECTIONS.keys():
+        clip = _fetch_latest_from_section(section_key)
+        if clip:
+            choices.append(clip)
+    if not choices:
+        update.message.reply_text("لا توجد ملفات حديثة متاحة.", reply_markup=ADMIN_LESSON_STORAGE_KB)
+        return
+    buttons = []
+    for clip in choices:
+        title = clip.get("title") or "ملف مخزن"
+        label = f"📌 {title}"
+        buttons.append([KeyboardButton(label)])
+    buttons.append([KeyboardButton(BTN_ADMIN_COURSE_CANCEL)])
+    state = LESSON_CREATION_STATE.setdefault(update.effective_user.id, {})
+    state["latest_choices"] = {f"📌 {c.get('title') or 'ملف مخزن'}": c for c in choices}
+    update.message.reply_text("اختر من آخر الملفات:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+
+
+def _store_lesson_and_confirm(update: Update, context: CallbackContext, state: Dict):
+    course_id = state.get("course_id")
+    course_name = state.get("course_name") or ""
+    try:
+        lesson_id = save_lesson(
+            course_id,
+            {
+                "title": state.get("title"),
+                "description": state.get("description"),
+                "question_text": state.get("question_text"),
+                "storage_chat_id": state.get("storage_chat_id") or AUDIO_STORAGE_CHANNEL_ID,
+                "storage_message_id": state.get("storage_message_id"),
+                "storage_file_id": state.get("storage_file_id"),
+                "created_by": update.effective_user.id,
+                "published": True,
+                "publish_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        mark_lesson_published(course_id, lesson_id)
+        update.message.reply_text(
+            f"✅ تم إضافة الدرس '{state.get('title')}' لدورة {course_name}.",
+            reply_markup=ADMIN_COURSE_ACTIONS_KB,
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الدرس: {e}")
+        update.message.reply_text("تعذر حفظ الدرس، حاول مجددًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+    finally:
+        WAITING_LESSON_STORAGE.discard(update.effective_user.id)
+        LESSON_CREATION_STATE.pop(update.effective_user.id, None)
+
+
+def handle_lesson_storage(update: Update, context: CallbackContext, text: str):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_STORAGE:
+        return False
+    state = LESSON_CREATION_STATE.setdefault(user_id, {})
+    if text == BTN_ADMIN_ADD_LESSON_FROM_LINK:
+        state["storage_mode"] = "link"
+        update.message.reply_text(
+            "أرسل رابط المنشور من قناة التخزين أو قم بعمل إعادة توجيه للمنشور.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    if text == BTN_ADMIN_ADD_LESSON_FROM_HASHTAG:
+        state["storage_mode"] = "hashtag"
+        update.message.reply_text(
+            "أرسل الهاشتاق/القسم (مثال: #الفقه)",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    if text == BTN_ADMIN_ADD_LESSON_FROM_LATEST:
+        state["storage_mode"] = "latest"
+        _present_latest_storage_choices(update, context)
+        return True
+
+    if state.get("storage_mode") == "hashtag":
+        tag = _normalize_hashtag(text)
+        section = _match_audio_section([tag])
+        if not section:
+            update.message.reply_text("لم يتم العثور على ملفات لهذا الهاشتاق.", reply_markup=ADMIN_LESSON_STORAGE_KB)
+            return True
+        clip = _fetch_latest_from_section(section)
+        if not clip:
+            update.message.reply_text("لا توجد ملفات حديثة لهذا القسم.", reply_markup=ADMIN_LESSON_STORAGE_KB)
+            return True
+        state.update(
+            {
+                "storage_chat_id": AUDIO_STORAGE_CHANNEL_ID,
+                "storage_message_id": clip.get("message_id"),
+                "storage_file_id": clip.get("file_id"),
+            }
+        )
+        _store_lesson_and_confirm(update, context, state)
+        return True
+
+    if state.get("storage_mode") == "latest":
+        latest_map = state.get("latest_choices") or {}
+        clip = latest_map.get(text)
+        if not clip:
+            return False
+        state.update(
+            {
+                "storage_chat_id": AUDIO_STORAGE_CHANNEL_ID,
+                "storage_message_id": clip.get("message_id"),
+                "storage_file_id": clip.get("file_id"),
+            }
+        )
+        _store_lesson_and_confirm(update, context, state)
+        return True
+
+    if state.get("storage_mode") == "link":
+        ref = extract_storage_reference(update.message)
+        if not ref:
+            update.message.reply_text("تعذر قراءة الرابط، حاول مرة أخرى.", reply_markup=ADMIN_LESSON_STORAGE_KB)
+            return True
+        state.update(ref)
+        _store_lesson_and_confirm(update, context, state)
+        return True
+
+    return False
 
 # =================== نهاية وظائف الدورات المساعدة ===================
 
@@ -7651,8 +8096,14 @@ def handle_text(update: Update, context: CallbackContext):
         open_letters_menu(update, context)
         return
 
-    if text in {BTN_MY_COURSES, BTN_AVAILABLE_COURSES, BTN_ARCHIVED_COURSES}:
-        courses_feature_pending(update, context)
+    if text == BTN_MY_COURSES:
+        open_my_courses(update, context)
+        return
+    if text == BTN_AVAILABLE_COURSES:
+        open_available_courses(update, context)
+        return
+    if text == BTN_ARCHIVED_COURSES:
+        open_my_courses(update, context, include_archived=True)
         return
 
     if text == BTN_SUPPORT:
@@ -7902,28 +8353,92 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_ADMIN_COURSE_SETTINGS:
-        update.message.reply_text(
-            "🛠️ إعداد الدورات قيد التجهيز حاليًا. سيتم تفعيل كافة الخيارات قريبًا بإذن الله.",
-            reply_markup=ADMIN_COURSES_MENU_KB,
-        )
+        open_admin_courses_menu(update, context)
         return
 
-    if text in {
-        BTN_ADMIN_CREATE_COURSE,
-        BTN_ADMIN_MANAGE_COURSES,
-        BTN_ADMIN_ARCHIVE_COURSE,
-        BTN_ADMIN_EDIT_COURSE_NAME,
-        BTN_ADMIN_TOGGLE_STATUS,
-        BTN_ADMIN_COURSE_LESSONS,
-        BTN_ADMIN_ADD_LESSON,
-        BTN_ADMIN_TESTS_PLACEHOLDER,
-        BTN_ADMIN_COURSE_STATS_PLACEHOLDER,
-        BTN_ADMIN_MOVE_TO_ARCHIVE,
-    }:
+    if text == BTN_ADMIN_CREATE_COURSE:
+        start_course_creation(update, context)
+        return
+    if text == BTN_ADMIN_CREATE_COURSE_NAME:
         update.message.reply_text(
-            "🚧 مكونات إدارة الدورات لم تُفعّل بعد في هذه النسخة. سيتم إشعارك حال جاهزيتها.",
-            reply_markup=ADMIN_COURSES_MENU_KB,
+            "اختر إضافة اسم الدورة:", reply_markup=ADMIN_CREATE_COURSE_NAME_KB
         )
+        return
+    if text == BTN_ADMIN_COURSE_NAME_ADD:
+        prompt_course_name_input(update, context)
+        return
+    if text == BTN_ADMIN_COURSE_CANCEL:
+        WAITING_COURSE_NAME.discard(user_id)
+        WAITING_LESSON_TITLE.discard(user_id)
+        WAITING_LESSON_DESCRIPTION.discard(user_id)
+        WAITING_LESSON_STORAGE.discard(user_id)
+        LESSON_CREATION_STATE.pop(user_id, None)
+        ADMIN_COURSE_CONTEXT.pop(user_id, None)
+        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    if text == BTN_ADMIN_COURSE_BACK:
+        ADMIN_COURSE_CONTEXT.pop(user_id, None)
+        update.message.reply_text("رجوع لقائمة إعداد الدورات.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    if text == BTN_ADMIN_MANAGE_COURSES:
+        list_courses_for_admin(update, context)
+        return
+    if text == BTN_ADMIN_ARCHIVE_COURSE:
+        list_courses_for_archive(update, context)
+        return
+    if text == BTN_ADMIN_ADD_LESSON:
+        start_lesson_creation(update, context)
+        return
+
+    if handle_admin_course_selection(update, context, text):
+        return
+
+    if user_id in WAITING_COURSE_NAME:
+        save_new_course(update, context)
+        return
+
+    if handle_lesson_title(update, context):
+        return
+
+    if handle_lesson_description(update, context):
+        return
+
+    if handle_lesson_storage(update, context, text):
+        return
+
+    # قوائم الدورات والدروس للمستخدمين
+    course_state = COURSE_SELECTION_STATE.get(user_id, {})
+    if text == BTN_COURSE_BACK:
+        source = course_state.get("source")
+        COURSE_SELECTION_STATE[user_id] = {}
+        if source == "available":
+            open_available_courses(update, context)
+        elif source == "my":
+            open_my_courses(update, context)
+        elif source == "archived":
+            open_my_courses(update, context, include_archived=True)
+        else:
+            open_courses_menu(update, context)
+        return
+
+    courses_map = course_state.get("courses") or {}
+    if text in courses_map:
+        course_id = courses_map[text]
+        course_data = fetch_course(course_id) or {"course_id": course_id, "name": text}
+        if course_state.get("source") == "available":
+            register_user_to_course(course_id, user)
+        COURSE_SELECTION_STATE[user_id]["selected_course"] = {
+            "id": course_id,
+            "name": course_data.get("name", text),
+        }
+        open_course_lessons(update, context, course_id, course_data.get("name", text))
+        return
+
+    lessons_map = course_state.get("lessons") or {}
+    if text in lessons_map:
+        lesson = lessons_map[text]
+        course_info = course_state.get("selected_course") or {}
+        _send_lesson_to_user(update, context, lesson, course_info.get("name", ""))
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
