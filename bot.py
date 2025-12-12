@@ -1742,6 +1742,7 @@ BTN_ADMIN_COURSES = "🎓 إدارة الدورات"
 BTN_ADMIN_COURSE_ARCHIVE = "🗂 أرشيف الدورات"
 BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
 BTN_ADMIN_ACTIVE_COURSES = "📋 قائمة الدورات النشطة"
+BTN_ADMIN_COURSE_STATS = "📊 إحصاءات الدورات"
 BTN_ADMIN_MANAGE_EXAMS = "📝 إدارة الاختبارات"
 BTN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
 BTN_EXAM_FINISH_SETUP = "✅ إنهاء الاختبار"
@@ -2175,6 +2176,7 @@ ADMIN_COURSES_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_ADMIN_CREATE_COURSE)],
         [KeyboardButton(BTN_ADMIN_ACTIVE_COURSES)],
+        [KeyboardButton(BTN_ADMIN_COURSE_STATS)],
         [KeyboardButton(BTN_ADMIN_COURSE_ARCHIVE)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -2878,56 +2880,137 @@ def _format_admin_student_stats(course_id: str, student_id: int, participant: Di
     answers = participant.get("answers", [])
     exam_totals: Dict[str, Dict[str, int]] = {}
     exam_names: Dict[str, str] = {}
-    correct = 0
-    incorrect = 0
+    participated_exams = set()
     for ans in answers:
         exam_id = ans.get("exam_id", "")
+        participated_exams.add(exam_id)
         earned = int(ans.get("earned_points", 0))
-        is_correct = ans.get("is_correct")
-        if is_correct is None:
-            is_correct = earned > 0
-        correct += 1 if is_correct else 0
-        incorrect += 0 if is_correct else 1
         agg = exam_totals.setdefault(exam_id, {"points": 0, "count": 0})
         agg["points"] += earned
         agg["count"] += 1
         if exam_id and ans.get("exam_name"):
             exam_names[exam_id] = ans.get("exam_name")
 
-    exams_lines = []
-    for ex_id, meta in exam_totals.items():
-        ex_data = get_exam_data(course_id, ex_id) if ex_id else None
-        ex_name = ex_data.get("name") if ex_data else exam_names.get(ex_id)
-        exams_lines.append(f"- {ex_name or 'اختبار'}: {meta['points']} نقطة / {meta['count']} سؤال")
+    participated_exams = {eid for eid in participated_exams if eid}
 
     lines = [
-        "📑 إحصائيات الطالب في الدورة:",
-        f"👤 الاسم: {user_record.get('first_name', 'مستخدم')} (@{user_record.get('username', student_id)})",
-        f"📘 الدورة: {course_name}",
-        "\n📍 نقاط الحضور:",
-        f"- عدد الدروس المسجلة: {len(attended_days)}",
-        f"- مجموع نقاط الحضور: {participant.get('attendance_points', 0)}",
-        "\n📝 نقاط الاختبارات:",
-        f"- عدد الاختبارات المشاركة: {len(exam_totals)}",
-        f"- مجموع نقاط الاختبارات: {participant.get('exam_points', 0)}",
+        f"📌 إحصاءات الطالب: {user_record.get('first_name', 'مستخدم')} {user_record.get('last_name', '')}",
+        f"🎓 الدورة: {course_name}",
+        "",
+        f"✅ عدد الدروس التي سجّل حضورها: {len(attended_days)}",
+        f"🧪 عدد الاختبارات التي شارك فيها: {len(participated_exams)}",
+        f"⭐ مجموع نقاط الحضور: {participant.get('attendance_points', 0)}",
+        f"📝 مجموع نقاط الاختبارات: {participant.get('exam_points', 0)}",
+        f"🏅 المجموع النهائي لهذه الدورة: {participant.get('total_course_points', 0)}",
     ]
-    if attended_days:
-        recent_attendance = attended_days[-5:]
-        lines.append("- آخر تواريخ حضور: " + ", ".join(recent_attendance))
-    if exams_lines:
-        lines.append("- تفاصيل الاختبارات:")
-        lines.extend(exams_lines)
-    lines.extend(
-        [
-            "\n❓ الأسئلة المجاب عنها:",
-            f"- الصحيحة: {correct}",
-            f"- الخاطئة: {incorrect}",
-        ]
-    )
+
     return "\n".join(lines)
 
 
-def _send_course_participants_keyboard(chat_id: int, course_id: str, context: CallbackContext):
+def _format_course_status_label(course_data: Dict) -> str:
+    status = (course_data or {}).get("status", "active")
+    return {"active": "نشطة", "paused": "متوقفة", "archived": "مؤرشفة"}.get(status, status)
+
+
+def _student_stats_actions_keyboard(course_id: str, student_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📚 تفاصيل الحضور", callback_data=f"course_admin_stats_attendance_{course_id}_{student_id}")],
+            [InlineKeyboardButton("🧪 تفاصيل الاختبارات", callback_data=f"course_admin_stats_exams_{course_id}_{student_id}")],
+            [InlineKeyboardButton("↩️ رجوع", callback_data=f"course_admin_stats_course_{course_id}")],
+        ]
+    )
+
+
+def _format_attendance_details(course_id: str, participant: Dict) -> str:
+    course_data = get_course_data(course_id) or {}
+    course_name = course_data.get("name", "دورة")
+    attended_days = participant.get("attended_days", [])
+    if not attended_days:
+        return f"لا توجد سجلات حضور لهذه الدورة ({course_name})."
+
+    lines = [f"📚 تفاصيل حضور الدروس – {course_name}", ""]
+    for idx, day in enumerate(attended_days, 1):
+        try:
+            dt = datetime.fromisoformat(day)
+            formatted = dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            formatted = day
+        lines.append(f"• الدرس {idx}: ✅ حضر – ({formatted})")
+    return "\n".join(lines)
+
+
+def _format_exam_details(course_id: str, student_id: int, participant: Dict) -> str:
+    course_data = get_course_data(course_id) or {}
+    course_name = course_data.get("name", "دورة")
+    answers = participant.get("answers", [])
+    if not answers:
+        return f"لا توجد مشاركات في الاختبارات لهذه الدورة ({course_name})."
+
+    grouped: Dict[str, List[Dict]] = {}
+    for ans in answers:
+        grouped.setdefault(ans.get("exam_id", ""), []).append(ans)
+
+    lines = [f"🧪 تفاصيل الاختبارات – {course_name}", ""]
+    for idx, (exam_id, ans_list) in enumerate(grouped.items(), 1):
+        exam_data = get_exam_data(course_id, exam_id) if exam_id else None
+        exam_name = (exam_data or {}).get("name") or ans_list[0].get("exam_name") or f"اختبار {idx}"
+        total_points = sum(int(a.get("earned_points", 0)) for a in ans_list)
+        lines.append(f"• {exam_name}: ✔️ {total_points} نقطة / {len(ans_list)} سؤال")
+        for q in ans_list:
+            status_icon = "✅" if q.get("is_correct", q.get("earned_points", 0) > 0) else "❌"
+            lines.append(
+                "\n".join(
+                    [
+                        f"🔹 سؤال: {q.get('question_text', 'سؤال')}",
+                        f"• جواب الطالب: {q.get('chosen_option_text', '-')}",
+                        f"• الحالة: {status_icon} ({int(q.get('earned_points', 0))} نقطة)",
+                    ]
+                )
+            )
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _send_course_stats_course_picker(chat_id: int, context: CallbackContext):
+    courses = list_courses()
+    rows = []
+    for c in courses:
+        participants = _list_course_participants(getattr(c, "id", None) or c.id)
+        if not participants:
+            continue
+        c_data = c.to_dict() if hasattr(c, "to_dict") else c
+        label = f"{c_data.get('name', 'دورة')} ({_format_course_status_label(c_data)})"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=f"course_admin_stats_course_{getattr(c, 'id', None) or c.id}",
+                )
+            ]
+        )
+
+    rows.append([InlineKeyboardButton("↩️ رجوع", callback_data="course_admin_stats_back")])
+
+    if not rows or len(rows) == 1:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="لا توجد دورات تحتوي على مشاركين حتى الآن.",
+            reply_markup=ADMIN_COURSES_KB,
+        )
+        return
+
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="اختر الدورة لعرض إحصاءاتها:",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
+def _send_course_participants_keyboard(
+    chat_id: int, course_id: str, context: CallbackContext, back_callback_data: str = None
+):
     participants = _list_course_participants(course_id)
     if not participants:
         context.bot.send_message(chat_id=chat_id, text="لا يوجد طلاب مسجلون في هذه الدورة حتى الآن.")
@@ -2936,13 +3019,15 @@ def _send_course_participants_keyboard(chat_id: int, course_id: str, context: Ca
     for p in participants:
         uid = int(p.id)
         record = get_user_record_by_id(uid) or {}
-        label = record.get("first_name") or f"ID {uid}"
-        if record.get("username"):
-            label = record.get("username")
+        label_parts = [record.get("first_name") or f"ID {uid}"]
+        if record.get("last_name"):
+            label_parts.append(record.get("last_name"))
+        label = " ".join(label_parts).strip()
         rows.append(
             [InlineKeyboardButton(label, callback_data=f"course_admin_stats_student_{course_id}_{uid}")]
         )
-    rows.append([InlineKeyboardButton("رجوع ↩️", callback_data=f"course_admin_manage_{course_id}")])
+    back_callback_data = back_callback_data or f"course_admin_manage_{course_id}"
+    rows.append([InlineKeyboardButton("رجوع ↩️", callback_data=back_callback_data)])
     context.bot.send_message(
         chat_id=chat_id,
         text="اختر الطالب لعرض إحصاءاته:",
@@ -8725,6 +8810,9 @@ def handle_text(update: Update, context: CallbackContext):
         )
         msg.reply_text("اختر دورة لإدارتها:", reply_markup=kb)
         return
+    if text == BTN_ADMIN_COURSE_STATS:
+        _send_course_stats_course_picker(chat_id, context)
+        return
     if text == BTN_ADMIN_COURSE_ARCHIVE:
         courses = list_courses(status="archived")
         if not courses:
@@ -9543,11 +9631,36 @@ def handle_course_callback(update: Update, context: CallbackContext):
         )
         return
 
+    if data.startswith("course_admin_stats_back"):
+        query.answer()
+        context.bot.send_message(
+            chat_id=chat_id, text="🎓 إدارة الدورات", reply_markup=ADMIN_COURSES_KB
+        )
+        return
+
+    if data.startswith("course_admin_stats_start"):
+        query.answer()
+        _send_course_stats_course_picker(chat_id, context)
+        return
+
+    if data.startswith("course_admin_stats_course_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_admin_stats_course_", "", 1)
+        query.answer()
+        _send_course_participants_keyboard(
+            chat_id, course_id, context, back_callback_data="course_admin_stats_start"
+        )
+        return
+
     if data.startswith("course_stats_"):
         course_id = data.replace("course_stats_", "", 1)
         query.answer()
         if is_admin(user.id) or is_supervisor(user.id):
-            _send_course_participants_keyboard(chat_id, course_id, context)
+            _send_course_participants_keyboard(
+                chat_id, course_id, context, back_callback_data=f"course_admin_manage_{course_id}"
+            )
             return
         participant = get_course_participant(course_id, user.id)
         if not participant:
@@ -9567,42 +9680,12 @@ def handle_course_callback(update: Update, context: CallbackContext):
         if not (is_admin(user.id) or is_supervisor(user.id)):
             query.answer("غير مصرح")
             return
-        _, _, _, course_id, student_id = data.split("_", 4)
-        student_id = int(student_id)
-        query.answer()
-        courses = _list_student_courses(student_id)
-        if len(courses) > 1:
-            rows = [
-                [
-                    InlineKeyboardButton(
-                        c.to_dict().get("name", "دورة"),
-                        callback_data=f"course_admin_stats_show_{getattr(c, 'id', None) or c.id}_{student_id}_{course_id}",
-                    )
-                ]
-                for c in courses
-            ]
-            rows.append([InlineKeyboardButton("رجوع ↩️", callback_data=f"course_stats_{course_id}")])
-            context.bot.send_message(
-                chat_id=chat_id,
-                text="اختر الدورة لعرض إحصائيات هذا الطالب فيها:",
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
+        payload = data.replace("course_admin_stats_student_", "", 1)
+        if "_" not in payload:
+            query.answer()
             return
-        target_course = getattr(courses[0], "id", None) if courses else course_id
-        participant = get_course_participant(target_course, student_id)
-        if not participant:
-            context.bot.send_message(chat_id=chat_id, text="لا تتوفر بيانات للطالب في هذه الدورة.")
-            return
-        stats_text = _format_admin_student_stats(target_course, student_id, participant)
-        context.bot.send_message(chat_id=chat_id, text=stats_text)
-        return
-
-    if data.startswith("course_admin_stats_show_"):
-        if not (is_admin(user.id) or is_supervisor(user.id)):
-            query.answer("غير مصرح")
-            return
-        _, _, _, course_id, student_id, origin_course = data.split("_", 5)
-        student_id = int(student_id)
+        course_id, student_raw = payload.split("_", 1)
+        student_id = int(student_raw)
         query.answer()
         participant = get_course_participant(course_id, student_id)
         if not participant:
@@ -9612,8 +9695,54 @@ def handle_course_callback(update: Update, context: CallbackContext):
         context.bot.send_message(
             chat_id=chat_id,
             text=stats_text,
+            reply_markup=_student_stats_actions_keyboard(course_id, student_id),
+        )
+        return
+
+    if data.startswith("course_admin_stats_attendance_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        payload = data.replace("course_admin_stats_attendance_", "", 1)
+        if "_" not in payload:
+            query.answer()
+            return
+        course_id, student_raw = payload.split("_", 1)
+        student_id = int(student_raw)
+        query.answer()
+        participant = get_course_participant(course_id, student_id)
+        if not participant:
+            context.bot.send_message(chat_id=chat_id, text="لا توجد بيانات حضور لهذا الطالب.")
+            return
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=_format_attendance_details(course_id, participant),
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("رجوع ↩️", callback_data=f"course_stats_{origin_course}")]]
+                [[InlineKeyboardButton("↩️ رجوع", callback_data=f"course_admin_stats_student_{course_id}_{student_id}")]]
+            ),
+        )
+        return
+
+    if data.startswith("course_admin_stats_exams_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        payload = data.replace("course_admin_stats_exams_", "", 1)
+        if "_" not in payload:
+            query.answer()
+            return
+        course_id, student_raw = payload.split("_", 1)
+        student_id = int(student_raw)
+        query.answer()
+        participant = get_course_participant(course_id, student_id)
+        if not participant:
+            context.bot.send_message(chat_id=chat_id, text="لا توجد بيانات اختبارات لهذا الطالب.")
+            return
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=_format_exam_details(course_id, student_id, participant),
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("↩️ رجوع", callback_data=f"course_admin_stats_student_{course_id}_{student_id}")]]
             ),
         )
         return
