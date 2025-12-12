@@ -8116,12 +8116,26 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if user_id in WAITING_EXAM_QUESTION:
+        if user_id not in ACTIVE_EXAM_SESSION:
+            WAITING_EXAM_QUESTION.discard(user_id)
+            msg.reply_text(
+                "لا يوجد اختبار محدد حاليًا. ارجع إلى إدارة الاختبارات واختيار اختبار ثم أعد المحاولة.",
+                reply_markup=ADMIN_COURSES_KB,
+            )
+            return
         ACTIVE_QUESTION_SESSION[user_id] = {"text": text, "answers": [], "last_answer_index": None}
         WAITING_EXAM_QUESTION.discard(user_id)
         msg.reply_text("يمكنك الآن إضافة الأجوبة لهذا السؤال.", reply_markup=question_actions_keyboard())
         return
 
     if user_id in WAITING_EXAM_ANSWER:
+        if user_id not in ACTIVE_EXAM_SESSION:
+            WAITING_EXAM_ANSWER.discard(user_id)
+            msg.reply_text(
+                "لا يوجد اختبار محدد حاليًا. ارجع إلى إدارة الاختبارات واختيار اختبار ثم أعد المحاولة.",
+                reply_markup=ADMIN_COURSES_KB,
+            )
+            return
         question_session = ACTIVE_QUESTION_SESSION.get(user_id)
         if not question_session:
             WAITING_EXAM_ANSWER.discard(user_id)
@@ -8140,6 +8154,13 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if user_id in WAITING_EXAM_POINTS:
+        if user_id not in ACTIVE_EXAM_SESSION:
+            WAITING_EXAM_POINTS.discard(user_id)
+            msg.reply_text(
+                "لا يوجد اختبار محدد حاليًا. ارجع إلى إدارة الاختبارات واختيار اختبار ثم أعد المحاولة.",
+                reply_markup=ADMIN_COURSES_KB,
+            )
+            return
         question_session = ACTIVE_QUESTION_SESSION.get(user_id)
         idx = (question_session or {}).get("last_answer_index")
         try:
