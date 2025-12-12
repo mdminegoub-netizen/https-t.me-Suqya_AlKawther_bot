@@ -1695,7 +1695,7 @@ BTN_MEDALS = "ميدالياتي 🏵️"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 BTN_COURSES_MAIN = "قسم الدورات 🎓"
 BTN_MY_COURSES = "📚 دوراتي"
-BTN_AVAILABLE_COURSES = "🎓 الدورات المتاحة"
+BTN_AVAILABLE_COURSES = "📚 الدورات المتاحة"
 BTN_ARCHIVED_COURSES = "🗂️ أرشيف دوراتي"
 BTN_COURSES_BACK = "⬅️ رجوع للقائمة الرئيسية"
 BTN_COURSE_REGISTER = "✅ تسجيل في الدورة"
@@ -1898,7 +1898,7 @@ STATS_MENU_KB = ReplyKeyboardMarkup(
 
 COURSES_MENU_KB = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_MY_COURSES), KeyboardButton(BTN_AVAILABLE_COURSES)],
+        [KeyboardButton(BTN_AVAILABLE_COURSES), KeyboardButton(BTN_MY_COURSES)],
         [KeyboardButton(BTN_ARCHIVED_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -7297,6 +7297,18 @@ def _clear_course_flow_state(user_id: int):
     WAITING_COURSE_SELECTION.discard(user_id)
 
 
+def _reset_admin_course_states(user_id: int):
+    WAITING_COURSE_NAME.discard(user_id)
+    WAITING_LESSON_TITLE.discard(user_id)
+    WAITING_LESSON_DESCRIPTION.discard(user_id)
+    WAITING_LESSON_STORAGE.discard(user_id)
+    WAITING_LESSON_PUBLISH_DECISION.discard(user_id)
+    WAITING_LESSON_SELECTION.discard(user_id)
+    COURSE_CREATION_STATE.pop(user_id, None)
+    LESSON_CREATION_STATE.pop(user_id, None)
+    ADMIN_COURSE_CONTEXT.pop(user_id, None)
+
+
 def _course_list_keyboard(courses: List[Dict], include_back: bool = True) -> ReplyKeyboardMarkup:
     buttons: List[List[KeyboardButton]] = []
     for course in courses:
@@ -7353,7 +7365,10 @@ def open_course_lessons(update: Update, context: CallbackContext, course_id: str
     if not lessons:
         _set_lesson_selection_state(user_id, {})
         update.message.reply_text(
-            f"لا توجد دروس مضافة بعد لدورة {course_name}.", reply_markup=COURSES_MENU_KB
+            f"لا توجد دروس مضافة بعد لدورة {course_name}.",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True
+            ),
         )
         return
     lessons_map = {}
@@ -8404,17 +8419,14 @@ def handle_text(update: Update, context: CallbackContext):
         prompt_course_name_input(update, context)
         return
     if text == BTN_ADMIN_COURSE_CANCEL:
-        WAITING_COURSE_NAME.discard(user_id)
-        WAITING_LESSON_TITLE.discard(user_id)
-        WAITING_LESSON_DESCRIPTION.discard(user_id)
-        WAITING_LESSON_STORAGE.discard(user_id)
-        LESSON_CREATION_STATE.pop(user_id, None)
-        ADMIN_COURSE_CONTEXT.pop(user_id, None)
+        _reset_admin_course_states(user_id)
         update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_COURSES_MENU_KB)
         return
     if text == BTN_ADMIN_COURSE_BACK:
-        ADMIN_COURSE_CONTEXT.pop(user_id, None)
-        update.message.reply_text("رجوع لقائمة إعداد الدورات.", reply_markup=ADMIN_COURSES_MENU_KB)
+        _reset_admin_course_states(user_id)
+        update.message.reply_text(
+            "تم الرجوع إلى قائمة إعداد الدورات.", reply_markup=ADMIN_COURSES_MENU_KB
+        )
         return
     if text == BTN_ADMIN_MANAGE_COURSES:
         list_courses_for_admin(update, context)
