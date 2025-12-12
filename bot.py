@@ -7903,9 +7903,9 @@ def start_exam_creation(update: Update, context: CallbackContext):
 
 def handle_exam_title_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return False
     if user_id not in WAITING_EXAM_TITLE:
+        return False
+    if not _require_course_admin(update):
         return False
     state = EXAM_CREATION_STATE.setdefault(user_id, {})
     title = (update.message.text or "").strip()
@@ -7940,10 +7940,10 @@ def start_question_creation(update: Update, context: CallbackContext):
 
 def handle_question_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
     if user_id not in WAITING_EXAM_QUESTION_TEXT:
         return False
+    if not _require_course_admin(update):
+        return True
     question_text = (update.message.text or "").strip()
     if not question_text:
         update.message.reply_text("يرجى إرسال نص صحيح للسؤال.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
@@ -7973,10 +7973,10 @@ def prompt_answer_text(update: Update, context: CallbackContext):
 
 def handle_answer_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
     if user_id not in WAITING_EXAM_ANSWER_TEXT:
         return False
+    if not _require_course_admin(update):
+        return True
     answer_text = (update.message.text or "").strip()
     if not answer_text:
         update.message.reply_text("يرجى إرسال نص صحيح للجواب.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
@@ -7991,10 +7991,10 @@ def handle_answer_text(update: Update, context: CallbackContext):
 
 def handle_answer_points(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
     if user_id not in WAITING_EXAM_ANSWER_POINTS:
         return False
+    if not _require_course_admin(update):
+        return True
     state = EXAM_CREATION_STATE.setdefault(user_id, {})
     text = (update.message.text or "").strip()
     try:
@@ -8134,10 +8134,10 @@ def start_lesson_creation(update: Update, context: CallbackContext):
 
 def handle_lesson_title(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
     if user_id not in WAITING_LESSON_TITLE:
         return False
+    if not _require_course_admin(update):
+        return True
     title = (update.message.text or "").strip()
     if not title:
         update.message.reply_text("يرجى إرسال عنوان صحيح.")
@@ -8155,10 +8155,10 @@ def handle_lesson_title(update: Update, context: CallbackContext):
 
 def handle_lesson_description(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
     if user_id not in WAITING_LESSON_DESCRIPTION:
         return False
+    if not _require_course_admin(update):
+        return True
     desc = (update.message.text or "").strip()
     if not desc:
         update.message.reply_text("يرجى إرسال وصف صحيح.")
