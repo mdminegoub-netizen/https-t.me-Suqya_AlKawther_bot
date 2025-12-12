@@ -1633,12 +1633,11 @@ WAITING_LESSON_AUDIO = set()
 WAITING_LESSON_NOTIFY = set()
 PENDING_LESSON_DATA = {}
 WAITING_EXAM_NAME = set()
-WAITING_EXAM_DESCRIPTION = set()
 WAITING_EXAM_QUESTION = set()
-WAITING_EXAM_OPTIONS = set()
-WAITING_EXAM_ADD_MORE = set()
-PENDING_EXAM_DATA = {}
-PENDING_EXAM_QUESTIONS = {}
+WAITING_EXAM_ANSWER = set()
+WAITING_EXAM_POINTS = set()
+ACTIVE_EXAM_SESSION: Dict[int, Dict[str, str]] = {}
+ACTIVE_QUESTION_SESSION: Dict[int, Dict] = {}
 WAITING_COURSE_BROADCAST = set()
 PENDING_COURSE_DATA = {}
 WAITING_COURSE_SELECTION = set()
@@ -1743,6 +1742,15 @@ BTN_ADMIN_COURSES = "🎓 إدارة الدورات"
 BTN_ADMIN_COURSE_ARCHIVE = "🗂 أرشيف الدورات"
 BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
 BTN_ADMIN_ACTIVE_COURSES = "📋 قائمة الدورات النشطة"
+BTN_ADMIN_MANAGE_EXAMS = "📝 إدارة الاختبارات"
+BTN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
+BTN_EXAM_FINISH_SETUP = "✅ إنهاء إعداد الاختبار"
+BTN_EXAM_BACK = "⬅️ رجوع"
+BTN_EXAM_ADD_ANSWER = "➕ إضافة جواب"
+BTN_EXAM_CANCEL_QUESTION = "❌ إلغاء السؤال"
+BTN_EXAM_ASSIGN_POINTS = "🎯 تعيين نقاط لهذا الجواب"
+BTN_EXAM_FINISH_QUESTION = "✅ إنهاء السؤال"
+BTN_EXAM_CANCEL_QUESTION_BACK = "⬅️ إلغاء السؤال"
 
 # إعدادات الجرعة التحفيزية (داخل لوحة التحكم)
 BTN_ADMIN_MOTIVATION_MENU = "إعدادات الجرعة التحفيزية 💡"
@@ -2172,6 +2180,39 @@ ADMIN_COURSES_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+
+def exam_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_EXAM_ADD_QUESTION)],
+            [KeyboardButton(BTN_EXAM_FINISH_SETUP)],
+            [KeyboardButton(BTN_EXAM_BACK)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def question_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_EXAM_ADD_ANSWER)],
+            [KeyboardButton(BTN_EXAM_CANCEL_QUESTION)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def answer_actions_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_EXAM_ASSIGN_POINTS)],
+            [KeyboardButton(BTN_EXAM_ADD_ANSWER)],
+            [KeyboardButton(BTN_EXAM_FINISH_QUESTION)],
+            [KeyboardButton(BTN_EXAM_CANCEL_QUESTION_BACK)],
+        ],
+        resize_keyboard=True,
+    )
+
 # ---- المنافسات و المجتمع ----
 COMP_MENU_KB = ReplyKeyboardMarkup(
     [
@@ -2373,18 +2414,79 @@ def add_exam_to_course(course_id: str, name: str, description: str, questions: L
         raise RuntimeError("Firestore غير متاح")
     exam_id = str(uuid.uuid4())
     exam_ref = course.collection("exams").document(exam_id)
-    exam_ref.set({"name": name, "description": description})
-    for q in questions:
+    exam_ref.set(
+        {
+            "name": name,
+            "description": description,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    for idx, q in enumerate(questions):
+        normalized_answers = []
+        options = q.get("options") or q.get("answers") or []
+        points = q.get("points", [])
+        if isinstance(options, list) and options and isinstance(options[0], dict):
+            normalized_answers = [
+                {"text": a.get("text", ""), "points": int(a.get("points", 0))}
+                for a in options
+            ]
+            options = [a.get("text", "") for a in normalized_answers]
+            points = [a.get("points", 0) for a in normalized_answers]
+        else:
+            normalized_answers = [
+                {"text": opt, "points": int(points[idx]) if idx < len(points) else 0}
+                for idx, opt in enumerate(options or [])
+            ]
         question_id = str(uuid.uuid4())
         exam_ref.collection("questions").document(question_id).set(
             {
                 "text": q.get("text"),
-                "options": q.get("options", []),
-                "points": q.get("points", []),
-                "order": q.get("order", 0),
+                "options": options,
+                "points": points,
+                "answers": normalized_answers,
+                "order": q.get("order", idx),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     return exam_id
+
+
+def create_exam_in_course(course_id: str, name: str) -> str:
+    course = _course_ref(course_id)
+    if not course:
+        raise RuntimeError("Firestore غير متاح")
+    exam_id = str(uuid.uuid4())
+    course.collection("exams").document(exam_id).set(
+        {"name": name, "created_at": datetime.now(timezone.utc).isoformat()}
+    )
+    return exam_id
+
+
+def add_question_to_exam(course_id: str, exam_id: str, question_text: str, answers: List[Dict]):
+    course = _course_ref(course_id)
+    if not course:
+        raise RuntimeError("Firestore غير متاح")
+    exam_ref = course.collection("exams").document(exam_id)
+    existing_questions = list_questions(course_id, exam_id)
+    order = len(existing_questions)
+    normalized_answers = [
+        {"text": ans.get("text", ""), "points": int(ans.get("points", 0))}
+        for ans in answers
+    ]
+    options = [a.get("text", "") for a in normalized_answers]
+    points = [a.get("points", 0) for a in normalized_answers]
+    question_id = str(uuid.uuid4())
+    exam_ref.collection("questions").document(question_id).set(
+        {
+            "text": question_text,
+            "answers": normalized_answers,
+            "options": options,
+            "points": points,
+            "order": order,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    return question_id
 
 
 def record_exam_answer(course_id: str, exam_id: str, question_id: str, question_text: str, option_text: str, earned_points: int, user: User):
@@ -2528,6 +2630,18 @@ def list_exams(course_id: str):
     except Exception as e:
         logger.error(f"خطأ في قراءة اختبارات الدورة: {e}")
         return []
+
+
+def get_exam_data(course_id: str, exam_id: str):
+    ref = _course_ref(course_id)
+    if not ref:
+        return None
+    try:
+        snap = ref.collection("exams").document(exam_id).get()
+        return snap.to_dict() if snap.exists else None
+    except Exception as e:
+        logger.error(f"خطأ في قراءة بيانات الاختبار: {e}")
+        return None
 
 
 def list_questions(course_id: str, exam_id: str):
@@ -7662,18 +7776,17 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_LESSON_AUDIO.discard(user_id)
         WAITING_LESSON_NOTIFY.discard(user_id)
         WAITING_EXAM_NAME.discard(user_id)
-        WAITING_EXAM_DESCRIPTION.discard(user_id)
         WAITING_EXAM_QUESTION.discard(user_id)
-        WAITING_EXAM_OPTIONS.discard(user_id)
-        WAITING_EXAM_ADD_MORE.discard(user_id)
+        WAITING_EXAM_ANSWER.discard(user_id)
+        WAITING_EXAM_POINTS.discard(user_id)
+        ACTIVE_EXAM_SESSION.pop(user_id, None)
+        ACTIVE_QUESTION_SESSION.pop(user_id, None)
         WAITING_COURSE_BROADCAST.discard(user_id)
         WAITING_SELECTED_COURSE.pop(user_id, None)
         WAITING_COURSE_SELECTION.discard(user_id)
         COURSE_SELECTION_MAP.pop(user_id, None)
         COURSE_SELECTION_ACTION.pop(user_id, None)
         PENDING_LESSON_DATA.pop(user_id, None)
-        PENDING_EXAM_DATA.pop(user_id, None)
-        PENDING_EXAM_QUESTIONS.pop(user_id, None)
         PENDING_COURSE_DATA.pop(user_id, None)
         WAITING_BAN_USER.discard(user_id)
         WAITING_UNBAN_USER.discard(user_id)
@@ -7980,84 +8093,152 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if user_id in WAITING_EXAM_NAME:
-        PENDING_EXAM_DATA[user_id] = {"name": text}
         WAITING_EXAM_NAME.discard(user_id)
-        WAITING_EXAM_DESCRIPTION.add(user_id)
-        msg.reply_text("أرسل وصف الاختبار.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_EXAM_DESCRIPTION:
-        exam_data = PENDING_EXAM_DATA.get(user_id, {})
-        exam_data["description"] = text
-        PENDING_EXAM_DATA[user_id] = exam_data
-        WAITING_EXAM_DESCRIPTION.discard(user_id)
-        WAITING_EXAM_QUESTION.add(user_id)
-        PENDING_EXAM_QUESTIONS[user_id] = []
-        msg.reply_text("أرسل نص السؤال الأول.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_EXAM_QUESTION:
-        exam_data = PENDING_EXAM_DATA.get(user_id, {})
-        exam_data["current_question"] = text
-        PENDING_EXAM_DATA[user_id] = exam_data
-        WAITING_EXAM_QUESTION.discard(user_id)
-        WAITING_EXAM_OPTIONS.add(user_id)
-        msg.reply_text("أرسل الخيارات مع النقاط (سطر لكل خيار بشكل: النص | النقاط).", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_EXAM_OPTIONS:
-        exam_data = PENDING_EXAM_DATA.get(user_id, {})
-        lines = text.split("\n")
-        options = []
-        points = []
-        for line in lines:
-            if "|" in line:
-                opt, pts = line.split("|", 1)
-                options.append(opt.strip())
-                try:
-                    points.append(int(pts.strip()))
-                except ValueError:
-                    points.append(0)
-        PENDING_EXAM_QUESTIONS.setdefault(user_id, []).append(
-            {
-                "text": exam_data.get("current_question"),
-                "options": options,
-                "points": points,
-                "order": len(PENDING_EXAM_QUESTIONS.get(user_id, [])),
-            }
-        )
-        exam_data.pop("current_question", None)
-        PENDING_EXAM_DATA[user_id] = exam_data
-        WAITING_EXAM_OPTIONS.discard(user_id)
-        WAITING_EXAM_ADD_MORE.add(user_id)
-        msg.reply_text("هل تريد إضافة سؤال آخر؟ (نعم/لا)", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_EXAM_ADD_MORE:
-        WAITING_EXAM_ADD_MORE.discard(user_id)
-        if text.strip().lower().startswith("نعم"):
-            WAITING_EXAM_QUESTION.add(user_id)
-            msg.reply_text("أرسل نص السؤال التالي.", reply_markup=CANCEL_KB)
-            return
         course_id = WAITING_SELECTED_COURSE.get(user_id)
-        questions = PENDING_EXAM_QUESTIONS.pop(user_id, [])
-        exam_data = PENDING_EXAM_DATA.pop(user_id, {})
         if not course_id:
-            msg.reply_text("لم يتم تحديد دورة للاختبار.", reply_markup=main_kb)
-            return
-        course_info = get_course_data(course_id)
-        if not course_info or course_info.get("status") in ["paused", "archived"]:
-            msg.reply_text("لا يمكن إضافة اختبار لأن الدورة غير نشطة.", reply_markup=ADMIN_COURSES_KB)
+            msg.reply_text("لم يتم تحديد دورة للاختبار.", reply_markup=ADMIN_COURSES_KB)
             return
         try:
-            add_exam_to_course(course_id, exam_data.get("name", "اختبار"), exam_data.get("description", ""), questions)
+            exam_id = create_exam_in_course(course_id, text)
+            ACTIVE_EXAM_SESSION[user_id] = {
+                "course_id": course_id,
+                "exam_id": exam_id,
+                "exam_name": text,
+            }
+            ACTIVE_QUESTION_SESSION.pop(user_id, None)
             msg.reply_text(
-                "تم إنشاء الاختبار وإتاحته للمشتركين.",
-                reply_markup=ADMIN_COURSES_KB if is_admin(user_id) or is_supervisor(user_id) else main_kb,
+                f"تم إنشاء الاختبار: {text}\nيمكنك الآن إضافة الأسئلة.",
+                reply_markup=exam_actions_keyboard(),
             )
         except Exception as e:
             logger.error(f"خطأ في إنشاء الاختبار: {e}")
-            msg.reply_text("تعذر إنشاء الاختبار.")
+            msg.reply_text("تعذر إنشاء الاختبار. تأكد من تفعيل Firestore.", reply_markup=ADMIN_COURSES_KB)
+        return
+
+    if user_id in WAITING_EXAM_QUESTION:
+        ACTIVE_QUESTION_SESSION[user_id] = {"text": text, "answers": [], "last_answer_index": None}
+        WAITING_EXAM_QUESTION.discard(user_id)
+        msg.reply_text("يمكنك الآن إضافة الأجوبة لهذا السؤال.", reply_markup=question_actions_keyboard())
+        return
+
+    if user_id in WAITING_EXAM_ANSWER:
+        question_session = ACTIVE_QUESTION_SESSION.get(user_id)
+        if not question_session:
+            WAITING_EXAM_ANSWER.discard(user_id)
+            msg.reply_text("لا يوجد سؤال محدد حاليًا.", reply_markup=exam_actions_keyboard())
+            return
+        answers = question_session.get("answers", [])
+        answers.append({"text": text, "points": 0})
+        question_session["answers"] = answers
+        question_session["last_answer_index"] = len(answers) - 1
+        ACTIVE_QUESTION_SESSION[user_id] = question_session
+        WAITING_EXAM_ANSWER.discard(user_id)
+        msg.reply_text(
+            "تم إضافة الجواب. يمكنك تعيين نقاطه أو إضافة جواب آخر.",
+            reply_markup=answer_actions_keyboard(),
+        )
+        return
+
+    if user_id in WAITING_EXAM_POINTS:
+        question_session = ACTIVE_QUESTION_SESSION.get(user_id)
+        idx = (question_session or {}).get("last_answer_index")
+        try:
+            pts = int(text)
+        except ValueError:
+            pts = 0
+        if question_session is None or idx is None or idx >= len(question_session.get("answers", [])):
+            WAITING_EXAM_POINTS.discard(user_id)
+            msg.reply_text("لا يوجد جواب لتعيين نقاطه.", reply_markup=exam_actions_keyboard())
+            return
+        question_session["answers"][idx]["points"] = pts
+        ACTIVE_QUESTION_SESSION[user_id] = question_session
+        WAITING_EXAM_POINTS.discard(user_id)
+        msg.reply_text("تم حفظ النقاط لهذا الجواب.", reply_markup=answer_actions_keyboard())
+        return
+
+    if text == BTN_EXAM_ADD_QUESTION and user_id in ACTIVE_EXAM_SESSION:
+        WAITING_EXAM_QUESTION.add(user_id)
+        ACTIVE_QUESTION_SESSION.pop(user_id, None)
+        msg.reply_text("أرسل نص السؤال.", reply_markup=CANCEL_KB)
+        return
+
+    if text == BTN_EXAM_CANCEL_QUESTION or text == BTN_EXAM_CANCEL_QUESTION_BACK:
+        WAITING_EXAM_QUESTION.discard(user_id)
+        WAITING_EXAM_ANSWER.discard(user_id)
+        WAITING_EXAM_POINTS.discard(user_id)
+        ACTIVE_QUESTION_SESSION.pop(user_id, None)
+        msg.reply_text("تم إلغاء السؤال الحالي.", reply_markup=exam_actions_keyboard())
+        return
+
+    if text == BTN_EXAM_ADD_ANSWER and user_id in ACTIVE_EXAM_SESSION:
+        if user_id not in ACTIVE_QUESTION_SESSION:
+            msg.reply_text("ابدأ بإضافة سؤال أولًا.", reply_markup=exam_actions_keyboard())
+            return
+        WAITING_EXAM_ANSWER.add(user_id)
+        WAITING_EXAM_POINTS.discard(user_id)
+        msg.reply_text("أرسل نص الجواب.", reply_markup=CANCEL_KB)
+        return
+
+    if text == BTN_EXAM_ASSIGN_POINTS and user_id in ACTIVE_EXAM_SESSION:
+        question_session = ACTIVE_QUESTION_SESSION.get(user_id)
+        if not question_session or not question_session.get("answers"):
+            msg.reply_text("أضف جوابًا أولًا قبل تعيين النقاط.", reply_markup=answer_actions_keyboard())
+            return
+        WAITING_EXAM_POINTS.add(user_id)
+        msg.reply_text("أدخل عدد النقاط لهذا الجواب (مثال: 0 أو 1 أو 2 أو 3)", reply_markup=CANCEL_KB)
+        return
+
+    if text == BTN_EXAM_FINISH_QUESTION and user_id in ACTIVE_EXAM_SESSION:
+        question_session = ACTIVE_QUESTION_SESSION.get(user_id)
+        if not question_session:
+            msg.reply_text("لا يوجد سؤال لحفظه.", reply_markup=exam_actions_keyboard())
+            return
+        answers = question_session.get("answers", [])
+        if not answers:
+            msg.reply_text("أضف جوابًا واحدًا على الأقل قبل إنهاء السؤال.", reply_markup=answer_actions_keyboard())
+            return
+        exam_session = ACTIVE_EXAM_SESSION.get(user_id, {})
+        try:
+            add_question_to_exam(
+                exam_session.get("course_id", ""),
+                exam_session.get("exam_id", ""),
+                question_session.get("text", "سؤال"),
+                answers,
+            )
+            msg.reply_text("تم حفظ السؤال في الاختبار.", reply_markup=exam_actions_keyboard())
+        except Exception as e:
+            logger.error(f"خطأ في حفظ السؤال: {e}")
+            msg.reply_text("تعذر حفظ السؤال.", reply_markup=exam_actions_keyboard())
+        finally:
+            ACTIVE_QUESTION_SESSION.pop(user_id, None)
+            WAITING_EXAM_QUESTION.discard(user_id)
+            WAITING_EXAM_ANSWER.discard(user_id)
+            WAITING_EXAM_POINTS.discard(user_id)
+        return
+
+    if text == BTN_EXAM_FINISH_SETUP and user_id in ACTIVE_EXAM_SESSION:
+        ACTIVE_QUESTION_SESSION.pop(user_id, None)
+        WAITING_EXAM_QUESTION.discard(user_id)
+        WAITING_EXAM_ANSWER.discard(user_id)
+        WAITING_EXAM_POINTS.discard(user_id)
+        msg.reply_text(
+            "تم إنهاء إعداد الاختبار. يمكنك العودة لإدارة الاختبارات أو إضافة أسئلة أخرى لاحقًا.",
+            reply_markup=ADMIN_COURSES_KB,
+        )
+        exam_session = ACTIVE_EXAM_SESSION.get(user_id)
+        if exam_session:
+            _send_exam_management_menu(chat_id, exam_session.get("course_id", ""), context)
+        ACTIVE_EXAM_SESSION.pop(user_id, None)
+        return
+
+    if text == BTN_EXAM_BACK and user_id in ACTIVE_EXAM_SESSION:
+        exam_session = ACTIVE_EXAM_SESSION.pop(user_id, {})
+        ACTIVE_QUESTION_SESSION.pop(user_id, None)
+        WAITING_EXAM_QUESTION.discard(user_id)
+        WAITING_EXAM_ANSWER.discard(user_id)
+        WAITING_EXAM_POINTS.discard(user_id)
+        msg.reply_text("تم الرجوع لإدارة الاختبارات.", reply_markup=ADMIN_COURSES_KB)
+        _send_exam_management_menu(chat_id, exam_session.get("course_id", ""), context)
         return
 
     # فوائد ونصائح
@@ -9117,15 +9298,70 @@ def handle_course_callback(update: Update, context: CallbackContext):
         context.bot.send_message(chat_id=chat_id, text="أرسل عنوان الدرس الجديد.")
         return
 
+    if data.startswith("course_manageexams_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_manageexams_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        query.answer()
+        _send_exam_management_menu(chat_id, course_id, context)
+        return
+
+    if data.startswith("course_exam_new_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        course_id = data.replace("course_exam_new_", "", 1)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        WAITING_EXAM_NAME.add(user.id)
+        ACTIVE_EXAM_SESSION.pop(user.id, None)
+        ACTIVE_QUESTION_SESSION.pop(user.id, None)
+        query.answer()
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="أرسل اسم / عنوان الاختبار الجديد.",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    if data.startswith("course_exam_manage_"):
+        if not (is_admin(user.id) or is_supervisor(user.id)):
+            query.answer("غير مصرح")
+            return
+        remainder = data.replace("course_exam_manage_", "", 1)
+        if "_" not in remainder:
+            query.answer()
+            return
+        course_id, exam_id = remainder.split("_", 1)
+        exam_data = get_exam_data(course_id, exam_id)
+        WAITING_SELECTED_COURSE[user.id] = course_id
+        query.answer()
+        if not exam_data:
+            context.bot.send_message(chat_id=chat_id, text="لم يتم العثور على الاختبار المطلوب.")
+            return
+        ACTIVE_EXAM_SESSION[user.id] = {
+            "course_id": course_id,
+            "exam_id": exam_id,
+            "exam_name": exam_data.get("name", "اختبار"),
+        }
+        ACTIVE_QUESTION_SESSION.pop(user.id, None)
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=f"إدارة اختبار: {exam_data.get('name', 'اختبار')}",
+            reply_markup=exam_actions_keyboard(),
+        )
+        return
+
     if data.startswith("course_addexam_"):
+        # توجيه قديم لإضافة اختبار، يعيد التوجيه لإدارة الاختبارات
         if not (is_admin(user.id) or is_supervisor(user.id)):
             query.answer("غير مصرح")
             return
         course_id = data.replace("course_addexam_", "", 1)
         WAITING_SELECTED_COURSE[user.id] = course_id
-        WAITING_EXAM_NAME.add(user.id)
         query.answer()
-        context.bot.send_message(chat_id=chat_id, text="أرسل اسم الاختبار الجديد.")
+        _send_exam_management_menu(chat_id, course_id, context)
         return
 
     if data.startswith("course_question_"):
@@ -9229,6 +9465,31 @@ def handle_course_callback(update: Update, context: CallbackContext):
         return
 
 
+def _send_exam_management_menu(chat_id: int, course_id: str, context: CallbackContext):
+    course = get_course_data(course_id)
+    if not course:
+        context.bot.send_message(chat_id=chat_id, text="تعذر العثور على الدورة.")
+        return
+    exams = list_exams(course_id)
+    rows = [[InlineKeyboardButton("➕ إضافة اختبار جديد", callback_data=f"course_exam_new_{course_id}")]]
+    for e in exams:
+        e_data = e.to_dict() if hasattr(e, "to_dict") else e
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    e_data.get("name", "اختبار"),
+                    callback_data=f"course_exam_manage_{course_id}_{getattr(e, 'id', '')}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("⬅️ رجوع", callback_data=f"course_admin_manage_{course_id}")])
+    context.bot.send_message(
+        chat_id=chat_id,
+        text="📝 إدارة الاختبارات لهذه الدورة:",
+        reply_markup=InlineKeyboardMarkup(rows),
+    )
+
+
 def _send_question(chat_id: int, course_id: str, exam_id: str, question_snap, context: CallbackContext):
     q_data = question_snap.to_dict() if hasattr(question_snap, "to_dict") else question_snap
     question_id = getattr(question_snap, "id", None) or question_snap.id
@@ -9252,7 +9513,7 @@ def _send_admin_course_controls(chat_id: int, course_id: str, context: CallbackC
     text = f"إدارة دورة: {course.get('name')}"
     buttons = [
         [InlineKeyboardButton("➕ إضافة درس", callback_data=f"course_addlesson_{course_id}")],
-        [InlineKeyboardButton("📝 إضافة اختبار", callback_data=f"course_addexam_{course_id}")],
+        [InlineKeyboardButton(BTN_ADMIN_MANAGE_EXAMS, callback_data=f"course_manageexams_{course_id}")],
         [InlineKeyboardButton("📊 إحصائيات الدورة", callback_data=f"course_stats_{course_id}")],
         [InlineKeyboardButton("📤 إرسال تنبيه", callback_data=f"course_notify_{course_id}")],
         [InlineKeyboardButton("⏹ إيقاف الدورة", callback_data=f"course_pause_{course_id}")],
