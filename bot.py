@@ -1692,6 +1692,19 @@ def is_user_in_course_flow(user_id: int) -> bool:
         )
     )
 
+
+def reset_course_state(user_id: int):
+    """إعادة تهيئة جميع حالات الدورات للمستخدم فقط دون المساس بالأقسام الأخرى."""
+
+    COURSE_SELECTION_STATE.pop(user_id, None)
+    WAITING_COURSE_SELECTION.discard(user_id)
+
+
+def reset_audio_state(user_id: int):
+    """إعادة تهيئة جميع حالات المكتبة الصوتية للمستخدم فقط."""
+
+    AUDIO_USER_STATE.pop(user_id, None)
+
 # =================== الأزرار ===================
 
 # رئيسية
@@ -1932,7 +1945,6 @@ COURSE_USER_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_COURSE_LESSONS)],
         [KeyboardButton(BTN_COURSE_TESTS)],
         [KeyboardButton(BTN_COURSE_STATS)],
-        [KeyboardButton(BTN_COURSE_BACK)],
     ],
     resize_keyboard=True,
 )
@@ -7061,6 +7073,7 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
 
 
 def open_courses_menu(update: Update, context: CallbackContext):
+    reset_course_state(update.effective_user.id)
     update.message.reply_text(
         "قسم الدورات 🎓\n\nسيتم حفظ كل ما يخص الدورات فقط. اختر من القائمة التالية:",
         reply_markup=COURSES_MENU_KB,
@@ -7431,26 +7444,26 @@ def _require_course_admin(update: Update) -> bool:
 
 def _set_course_selection_state(user_id: int, mapping: Dict[str, str], source: str = ""):
     COURSE_SELECTION_STATE[user_id] = {
-        "courses": mapping,
-        "source": source,
-        "lessons": {},
-        "selected_course": None,
+        "courses:courses_map": mapping,
+        "courses:source": source,
+        "courses:lessons_map": {},
+        "courses:selected_course": None,
+        "courses:exams_map": {},
     }
 
 
 def _set_lesson_selection_state(user_id: int, lessons_map: Dict[str, Dict]):
     state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["lessons"] = lessons_map
+    state["courses:lessons_map"] = lessons_map
 
 
 def _set_exam_selection_state(user_id: int, exams_map: Dict[str, Dict]):
     state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["exams"] = exams_map
+    state["courses:exams_map"] = exams_map
 
 
 def _clear_course_flow_state(user_id: int):
-    COURSE_SELECTION_STATE.pop(user_id, None)
-    WAITING_COURSE_SELECTION.discard(user_id)
+    reset_course_state(user_id)
 
 
 def _reset_admin_course_states(user_id: int):
@@ -7475,33 +7488,78 @@ def _course_list_keyboard(courses: List[Dict], include_back: bool = True) -> Rep
     for course in courses:
         name = course.get("name") or "-"
         buttons.append([KeyboardButton(name)])
-    if include_back:
-        buttons.append([KeyboardButton(BTN_COURSE_BACK)])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+
+
+def _course_back_to_courses_list_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "↩️ رجوع لقائمة الدورات", callback_data="courses_back_to_courses_list"
+                )
+            ]
+        ]
+    )
+
+
+def _course_back_to_course_menu_kb(course_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "↩️ رجوع لقائمة الدورة",
+                    callback_data=f"courses_back_to_course_menu:{course_id}",
+                )
+            ]
+        ]
+    )
+
+
+def _course_back_to_lessons_kb(course_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "↩️ رجوع لقائمة الدروس",
+                    callback_data=f"courses_back_to_lessons:{course_id}",
+                )
+            ]
+        ]
+    )
 
 
 def open_available_courses(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    reset_course_state(user_id)
+    message = update.effective_message
     courses = list_courses(active_only=True)
     if not courses:
-        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
+        message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
         return
     mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
     _set_course_selection_state(user_id, mapping, source="available")
-    update.message.reply_text(
-        "اختر الدورة التي تود تصفحها:", reply_markup=_course_list_keyboard(courses)
+    message.reply_text(
+        "اختر الدورة التي تود تصفحها:",
+        reply_markup=_course_list_keyboard(courses),
+    )
+    message.reply_text(
+        "يمكنك الرجوع لقائمة الدورات في أي وقت:",
+        reply_markup=_course_back_to_courses_list_kb(),
     )
 
 
 def open_my_courses(update: Update, context: CallbackContext, include_archived: bool = False):
     user = update.effective_user
+    reset_course_state(user.id)
+    message = update.effective_message
     courses = list_user_courses(user.id, include_archived=include_archived)
     if include_archived:
         courses = [c for c in courses if c.get("archived")]
     else:
         courses = [c for c in courses if not c.get("archived")]
     if not courses:
-        update.message.reply_text(
+        message.reply_text(
             "لا توجد دورات مسجل فيها حاليًا.",
             reply_markup=ReplyKeyboardMarkup(
                 [
@@ -7518,18 +7576,26 @@ def open_my_courses(update: Update, context: CallbackContext, include_archived: 
         course_name = course.get("name") or "دورة"
         mapping = {course_name: course.get("course_id")}
         _set_course_selection_state(user.id, mapping, source=source)
-        COURSE_SELECTION_STATE[user.id]["selected_course"] = {
+        COURSE_SELECTION_STATE[user.id]["courses:selected_course"] = {
             "id": course.get("course_id"),
             "name": course_name,
         }
-        update.message.reply_text(
+        message.reply_text(
             f"تم فتح دورة {course_name}. اختر من القائمة:",
             reply_markup=COURSE_USER_KB,
+        )
+        message.reply_text(
+            "للوصول إلى قائمة الدورات اضغط رجوع:",
+            reply_markup=_course_back_to_courses_list_kb(),
         )
         return
     mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
     _set_course_selection_state(user.id, mapping, source=source)
-    update.message.reply_text("اختر الدورة:", reply_markup=_course_list_keyboard(courses))
+    message.reply_text("اختر الدورة:", reply_markup=_course_list_keyboard(courses))
+    message.reply_text(
+        "للوصول إلى قائمة الدورات اضغط رجوع:",
+        reply_markup=_course_back_to_courses_list_kb(),
+    )
 
 
 def _course_lessons_keyboard(course_name: str, lessons: List[Dict]):
@@ -7537,33 +7603,36 @@ def _course_lessons_keyboard(course_name: str, lessons: List[Dict]):
     for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
         title = lesson.get("title") or "دون عنوان"
         buttons.append([KeyboardButton(f"📚 الدرس {idx + 1}: {title}")])
-    buttons.append([KeyboardButton(BTN_COURSE_BACK)])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
 def open_course_lessons(update: Update, context: CallbackContext, course_id: str, course_name: str):
     user_id = update.effective_user.id
+    message = update.effective_message
     lessons = fetch_lessons(course_id, published_only=True)
     if not lessons:
         _set_lesson_selection_state(user_id, {})
-        update.message.reply_text(
+        message.reply_text(
             f"لا توجد دروس مضافة بعد لدورة {course_name}.",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True
-            ),
+            reply_markup=_course_back_to_course_menu_kb(course_id),
         )
         return
     lessons_map = {}
     for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
         title = lesson.get("title") or "دون عنوان"
         btn_text = f"📚 الدرس {idx + 1}: {title}"
-        lessons_map[btn_text] = lesson
+        lesson_with_course = dict(lesson)
+        lesson_with_course.setdefault("course_id", course_id)
+        lessons_map[btn_text] = lesson_with_course
     _set_lesson_selection_state(user_id, lessons_map)
     state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["selected_course"] = {"id": course_id, "name": course_name}
-    update.message.reply_text(
+    state["courses:selected_course"] = {"id": course_id, "name": course_name}
+    message.reply_text(
         f"اختر الدرس من دورة {course_name}:",
         reply_markup=_course_lessons_keyboard(course_name, lessons),
+    )
+    message.reply_text(
+        "للعودة لقائمة الدورة:", reply_markup=_course_back_to_course_menu_kb(course_id)
     )
 
 
@@ -7587,8 +7656,10 @@ def _send_lesson_to_user(update: Update, context: CallbackContext, lesson: Dict,
         except Exception as e:
             logger.error(f"❌ خطأ في إرسال ملف الدرس: {e}")
 
-    back_btn = ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True)
-    context.bot.send_message(chat_id, "⬅️ رجوع", reply_markup=back_btn)
+    course_id = lesson.get("course_id") or (COURSE_SELECTION_STATE.get(chat_id, {}).get("courses:selected_course") or {}).get("id")
+    if course_id:
+        back_markup = _course_back_to_lessons_kb(course_id)
+        context.bot.send_message(chat_id, "⬅️ رجوع", reply_markup=back_markup)
 
 
 def _course_exams_keyboard(exams: List[Dict]):
@@ -7596,18 +7667,18 @@ def _course_exams_keyboard(exams: List[Dict]):
     for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("published_at", ""))):
         title = exam.get("exam_title") or "اختبار"
         buttons.append([KeyboardButton(f"🧪 اختبار {idx + 1}: {title}")])
-    buttons.append([KeyboardButton(BTN_COURSE_BACK)])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
 
 
 def open_course_tests(update: Update, context: CallbackContext, course_id: str, course_name: str):
     user_id = update.effective_user.id
+    message = update.effective_message
     exams = fetch_exams(course_id, published_only=True)
     if not exams:
         _set_exam_selection_state(user_id, {})
-        update.message.reply_text(
+        message.reply_text(
             f"لا توجد اختبارات منشورة حاليًا لدورة {course_name}.",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_BACK)]], resize_keyboard=True),
+            reply_markup=_course_back_to_course_menu_kb(course_id),
         )
         return
     exams_map = {}
@@ -7617,10 +7688,13 @@ def open_course_tests(update: Update, context: CallbackContext, course_id: str, 
         exams_map[btn_text] = exam
     _set_exam_selection_state(user_id, exams_map)
     state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["selected_course"] = {"id": course_id, "name": course_name}
-    update.message.reply_text(
+    state["courses:selected_course"] = {"id": course_id, "name": course_name}
+    message.reply_text(
         f"اختر الاختبار من دورة {course_name}:",
         reply_markup=_course_exams_keyboard(exams),
+    )
+    message.reply_text(
+        "للعودة لقائمة الدورة:", reply_markup=_course_back_to_course_menu_kb(course_id)
     )
 
 
@@ -7640,6 +7714,64 @@ def _start_exam_session(update: Update, context: CallbackContext, exam: Dict, co
         "total_points": 0,
     }
     _send_next_question(update, context, user_id)
+
+
+def handle_course_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data or ""
+    user_id = query.from_user.id
+    course_state = COURSE_SELECTION_STATE.get(user_id, {})
+
+    if data == "courses_back_to_courses_list":
+        query.answer()
+        source = course_state.get("courses:source")
+        reset_course_state(user_id)
+        if source == "available":
+            open_available_courses(update, context)
+        elif source == "archived":
+            open_my_courses(update, context, include_archived=True)
+        else:
+            open_my_courses(update, context)
+        return
+
+    if data.startswith("courses_back_to_course_menu:"):
+        query.answer()
+        course_id = data.split(":", 1)[1]
+        selected_course = course_state.get("courses:selected_course") or {}
+        if selected_course.get("id") != course_id:
+            course_data = fetch_course(course_id) or {}
+            course_name = course_data.get("name", "دورة")
+            COURSE_SELECTION_STATE.setdefault(user_id, {})[
+                "courses:selected_course"
+            ] = {"id": course_id, "name": course_name}
+        course_info = COURSE_SELECTION_STATE.get(user_id, {}).get(
+            "courses:selected_course", {}
+        )
+        course_name = course_info.get("name", "دورة")
+        query.message.reply_text(
+            f"تم فتح دورة {course_name}. اختر من القائمة:",
+            reply_markup=COURSE_USER_KB,
+        )
+        query.message.reply_text(
+            "للوصول إلى قائمة الدورات اضغط رجوع:",
+            reply_markup=_course_back_to_courses_list_kb(),
+        )
+        return
+
+    if data.startswith("courses_back_to_lessons:"):
+        query.answer()
+        course_id = data.split(":", 1)[1]
+        course_info = course_state.get("courses:selected_course") or {}
+        course_name = course_info.get("name") or (fetch_course(course_id) or {}).get("name", "")
+        COURSE_SELECTION_STATE.setdefault(user_id, {})["courses:selected_course"] = {
+            "id": course_id,
+            "name": course_name,
+        }
+        open_course_lessons(update, context, course_id, course_name or "دورة")
+        return
 
 
 def _send_next_question(update: Update, context: CallbackContext, user_id: int):
@@ -9144,8 +9276,8 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_COURSE_REGISTER:
-        selected_course = course_state.get("selected_course") or {}
-        if course_state.get("source") != "available" or not selected_course:
+        selected_course = course_state.get("courses:selected_course") or {}
+        if course_state.get("courses:source") != "available" or not selected_course:
             update.message.reply_text(
                 "يرجى اختيار دورة متاحة أولًا.", reply_markup=COURSES_MENU_KB
             )
@@ -9154,7 +9286,7 @@ def handle_text(update: Update, context: CallbackContext):
         course_name = selected_course.get("name") or ""
         register_user_to_course(course_id, user)
         WAITING_COURSE_SELECTION.discard(user_id)
-        COURSE_SELECTION_STATE[user_id]["source"] = "my"
+        COURSE_SELECTION_STATE[user_id]["courses:source"] = "my"
         update.message.reply_text(
             f"✅ تم تسجيلك في دورة {course_name} وتمت إضافتها إلى دوراتك.",
             reply_markup=COURSES_MENU_KB,
@@ -9162,21 +9294,8 @@ def handle_text(update: Update, context: CallbackContext):
         open_course_lessons(update, context, course_id, course_name)
         return
 
-    if text == BTN_COURSE_BACK:
-        source = course_state.get("source")
-        _clear_course_flow_state(user_id)
-        if source == "available":
-            open_available_courses(update, context)
-        elif source == "my":
-            open_my_courses(update, context)
-        elif source == "archived":
-            open_my_courses(update, context, include_archived=True)
-        else:
-            open_courses_menu(update, context)
-        return
-
     if text == BTN_COURSE_LESSONS:
-        selected_course = course_state.get("selected_course") or {}
+        selected_course = course_state.get("courses:selected_course") or {}
         if not selected_course:
             update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
             return
@@ -9184,7 +9303,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_COURSE_TESTS:
-        selected_course = course_state.get("selected_course") or {}
+        selected_course = course_state.get("courses:selected_course") or {}
         if not selected_course:
             update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
             return
@@ -9194,17 +9313,17 @@ def handle_text(update: Update, context: CallbackContext):
         open_course_tests(update, context, selected_course.get("id"), selected_course.get("name", ""))
         return
 
-    courses_map = course_state.get("courses") or {}
+    courses_map = course_state.get("courses:courses_map") or {}
     if text in courses_map:
         course_id = courses_map[text]
         course_data = fetch_course(course_id) or {"course_id": course_id, "name": text}
-        COURSE_SELECTION_STATE.setdefault(user_id, {})["selected_course"] = {
+        COURSE_SELECTION_STATE.setdefault(user_id, {})["courses:selected_course"] = {
             "id": course_id,
             "name": course_data.get("name", text),
         }
-        if course_state.get("source") == "available":
+        if course_state.get("courses:source") == "available":
             if user_is_registered(course_id, user.id):
-                COURSE_SELECTION_STATE[user_id]["source"] = "my"
+                COURSE_SELECTION_STATE[user_id]["courses:source"] = "my"
                 update.message.reply_text(
                     f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
                     reply_markup=COURSE_USER_KB,
@@ -9213,33 +9332,37 @@ def handle_text(update: Update, context: CallbackContext):
             WAITING_COURSE_SELECTION.add(user_id)
             update.message.reply_text(
                 f"الدورة {course_data.get('name', text)} متاحة للتسجيل.\n"
-                f"اضغط زر '{BTN_COURSE_REGISTER}' للتسجيل أو '{BTN_COURSE_BACK}' للرجوع.",
+                f"اضغط زر '{BTN_COURSE_REGISTER}' للتسجيل أو استخدم زر الرجوع أدناه.",
                 reply_markup=ReplyKeyboardMarkup(
-                    [
-                        [KeyboardButton(BTN_COURSE_REGISTER)],
-                        [KeyboardButton(BTN_COURSE_BACK)],
-                    ],
-                    resize_keyboard=True,
+                    [[KeyboardButton(BTN_COURSE_REGISTER)]], resize_keyboard=True
                 ),
+            )
+            update.message.reply_text(
+                "للرجوع لقائمة الدورات:",
+                reply_markup=_course_back_to_courses_list_kb(),
             )
             return
         update.message.reply_text(
             f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
             reply_markup=COURSE_USER_KB,
         )
+        update.message.reply_text(
+            "للوصول إلى قائمة الدورات اضغط رجوع:",
+            reply_markup=_course_back_to_courses_list_kb(),
+        )
         return
 
-    exams_map = course_state.get("exams") or {}
+    exams_map = course_state.get("courses:exams_map") or {}
     if text in exams_map:
         exam = exams_map[text]
-        course_info = course_state.get("selected_course") or {}
+        course_info = course_state.get("courses:selected_course") or {}
         _start_exam_session(update, context, exam, course_info.get("name", ""))
         return
 
-    lessons_map = course_state.get("lessons") or {}
+    lessons_map = course_state.get("courses:lessons_map") or {}
     if text in lessons_map:
         lesson = lessons_map[text]
-        course_info = course_state.get("selected_course") or {}
+        course_info = course_state.get("courses:selected_course") or {}
         _send_lesson_to_user(update, context, lesson, course_info.get("name", ""))
         return
 
@@ -9828,7 +9951,7 @@ def _audio_section_inline_keyboard(section_key: str, clips: List[Dict], page: in
 
 
 def open_audio_library_menu(update: Update, context: CallbackContext):
-    AUDIO_USER_STATE.pop(update.effective_user.id, None)
+    reset_audio_state(update.effective_user.id)
     update.message.reply_text(
         "اختر قسمًا من المكتبة الصوتية:",
         reply_markup=AUDIO_LIBRARY_KB,
@@ -9976,6 +10099,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_callback, pattern=r"^courses_"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
