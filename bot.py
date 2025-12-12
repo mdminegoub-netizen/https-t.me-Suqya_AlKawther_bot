@@ -1674,8 +1674,6 @@ def is_user_in_course_flow(user_id: int) -> bool:
             user_id in WAITING_COURSE_RENAME,
             user_id in WAITING_LESSON_TITLE,
             user_id in WAITING_LESSON_DESCRIPTION,
-            user_id in WAITING_LESSON_STORAGE,
-            user_id in WAITING_LESSON_PUBLISH_DECISION,
             user_id in WAITING_LESSON_SELECTION,
         )
     )
@@ -7545,7 +7543,7 @@ def handle_lesson_title(update: Update, context: CallbackContext):
     WAITING_LESSON_TITLE.discard(user_id)
     WAITING_LESSON_DESCRIPTION.add(user_id)
     update.message.reply_text(
-        "أرسل سؤال/وصف الدرس (نص)",
+        "أرسل محتوى الدرس (نص فقط)",
         reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
     )
     return True
@@ -7563,10 +7561,30 @@ def handle_lesson_description(update: Update, context: CallbackContext):
     state["description"] = desc
     state["question_text"] = desc
     WAITING_LESSON_DESCRIPTION.discard(user_id)
-    WAITING_LESSON_STORAGE.add(user_id)
-    update.message.reply_text(
-        "اختر طريقة إضافة ملف الدرس:", reply_markup=ADMIN_LESSON_STORAGE_KB
-    )
+    course_id = state.get("course_id")
+    course_name = state.get("course_name") or ""
+    try:
+        lesson_id = save_lesson(
+            course_id,
+            {
+                "title": state.get("title"),
+                "description": state.get("description"),
+                "question_text": state.get("question_text"),
+                "created_by": user_id,
+                "published": True,
+                "publish_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        mark_lesson_published(course_id, lesson_id)
+        update.message.reply_text(
+            f"✅ تم إضافة الدرس '{state.get('title')}' لدورة {course_name}.",
+            reply_markup=ADMIN_COURSE_ACTIONS_KB,
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الدرس: {e}")
+        update.message.reply_text("تعذر حفظ الدرس، حاول مجددًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+    finally:
+        LESSON_CREATION_STATE.pop(user_id, None)
     return True
 
 
@@ -8451,11 +8469,28 @@ def handle_text(update: Update, context: CallbackContext):
     if handle_lesson_description(update, context):
         return
 
-    if handle_lesson_storage(update, context, text):
-        return
-
     # قوائم الدورات والدروس للمستخدمين
     course_state = COURSE_SELECTION_STATE.get(user_id, {})
+
+    if text == BTN_COURSE_REGISTER:
+        selected_course = course_state.get("selected_course") or {}
+        if course_state.get("source") != "available" or not selected_course:
+            update.message.reply_text(
+                "يرجى اختيار دورة متاحة أولًا.", reply_markup=COURSES_MENU_KB
+            )
+            return
+        course_id = selected_course.get("id")
+        course_name = selected_course.get("name") or ""
+        register_user_to_course(course_id, user)
+        WAITING_COURSE_SELECTION.discard(user_id)
+        COURSE_SELECTION_STATE[user_id]["source"] = "my"
+        update.message.reply_text(
+            f"✅ تم تسجيلك في دورة {course_name} وتمت إضافتها إلى دوراتك.",
+            reply_markup=COURSES_MENU_KB,
+        )
+        open_course_lessons(update, context, course_id, course_name)
+        return
+
     if text == BTN_COURSE_BACK:
         source = course_state.get("source")
         _clear_course_flow_state(user_id)
@@ -8473,12 +8508,28 @@ def handle_text(update: Update, context: CallbackContext):
     if text in courses_map:
         course_id = courses_map[text]
         course_data = fetch_course(course_id) or {"course_id": course_id, "name": text}
-        if course_state.get("source") == "available":
-            register_user_to_course(course_id, user)
-        COURSE_SELECTION_STATE[user_id]["selected_course"] = {
+        COURSE_SELECTION_STATE.setdefault(user_id, {})["selected_course"] = {
             "id": course_id,
             "name": course_data.get("name", text),
         }
+        if course_state.get("source") == "available":
+            if user_is_registered(course_id, user.id):
+                COURSE_SELECTION_STATE[user_id]["source"] = "my"
+                open_course_lessons(update, context, course_id, course_data.get("name", text))
+                return
+            WAITING_COURSE_SELECTION.add(user_id)
+            update.message.reply_text(
+                f"الدورة {course_data.get('name', text)} متاحة للتسجيل.\n"
+                f"اضغط زر '{BTN_COURSE_REGISTER}' للتسجيل أو '{BTN_COURSE_BACK}' للرجوع.",
+                reply_markup=ReplyKeyboardMarkup(
+                    [
+                        [KeyboardButton(BTN_COURSE_REGISTER)],
+                        [KeyboardButton(BTN_COURSE_BACK)],
+                    ],
+                    resize_keyboard=True,
+                ),
+            )
+            return
         open_course_lessons(update, context, course_id, course_data.get("name", text))
         return
 
