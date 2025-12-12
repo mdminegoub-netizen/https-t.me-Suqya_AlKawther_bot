@@ -7411,6 +7411,24 @@ def _is_admin_or_supervisor(user_id: int) -> bool:
     return is_admin(user_id) or is_supervisor(user_id)
 
 
+def _deny_course_admin_access(update: Update):
+    """إظهار رسالة منع وإرجاع المستخدم لقائمة الدورات للطلاب."""
+
+    _reset_admin_course_states(update.effective_user.id)
+    update.message.reply_text(
+        "هذه الميزة خاصة بالإدارة فقط.", reply_markup=COURSES_MENU_KB
+    )
+
+
+def _require_course_admin(update: Update) -> bool:
+    """التأكد من أن الطلب من الأدمن أو المشرفة قبل متابعة إجراءات الدورات الإدارية."""
+
+    if _is_admin_or_supervisor(update.effective_user.id):
+        return True
+    _deny_course_admin_access(update)
+    return False
+
+
 def _set_course_selection_state(user_id: int, mapping: Dict[str, str], source: str = ""):
     COURSE_SELECTION_STATE[user_id] = {
         "courses": mapping,
@@ -7713,14 +7731,14 @@ def handle_student_answer(update: Update, context: CallbackContext, text: str):
 
 def open_admin_courses_menu(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     update.message.reply_text("🛠️ إعداد الدورات", reply_markup=ADMIN_COURSES_MENU_KB)
 
 
 def start_course_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     WAITING_SUPPORT.discard(user_id)
     WAITING_SUPPORT_GENDER.discard(user_id)
@@ -7732,7 +7750,7 @@ def start_course_creation(update: Update, context: CallbackContext):
 
 def prompt_course_name_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     WAITING_SUPPORT.discard(user_id)
     WAITING_SUPPORT_GENDER.discard(user_id)
@@ -7745,6 +7763,8 @@ def prompt_course_name_input(update: Update, context: CallbackContext):
 def save_new_course(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
+    if not _require_course_admin(update):
+        return
     if user_id not in WAITING_COURSE_NAME:
         return
     name = (update.message.text or "").strip()
@@ -7766,7 +7786,7 @@ def save_new_course(update: Update, context: CallbackContext):
 
 def list_courses_for_admin(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     courses = list_courses(include_archived=True)
     if not courses:
@@ -7781,7 +7801,7 @@ def list_courses_for_admin(update: Update, context: CallbackContext):
 
 def list_courses_for_archive(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     courses = [c for c in list_courses(include_archived=False)]
     if not courses:
@@ -7797,6 +7817,8 @@ def list_courses_for_archive(update: Update, context: CallbackContext):
 
 def handle_admin_course_selection(update: Update, context: CallbackContext, text: str):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return False
     ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
     course_id = (ctx.get("courses") or {}).get(text)
     if not course_id:
@@ -7818,7 +7840,7 @@ def handle_admin_course_selection(update: Update, context: CallbackContext, text
 
 def open_admin_course_tests(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
     if not selected:
@@ -7831,7 +7853,7 @@ def open_admin_course_tests(update: Update, context: CallbackContext):
 
 def open_admin_manage_exams(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
     if not selected:
@@ -7842,7 +7864,7 @@ def open_admin_manage_exams(update: Update, context: CallbackContext):
 
 def start_exam_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
     if not selected:
@@ -7858,6 +7880,8 @@ def start_exam_creation(update: Update, context: CallbackContext):
 
 def handle_exam_title_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return False
     if user_id not in WAITING_EXAM_TITLE:
         return False
     state = EXAM_CREATION_STATE.setdefault(user_id, {})
@@ -7880,6 +7904,8 @@ def handle_exam_title_input(update: Update, context: CallbackContext):
 
 def start_question_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     state = EXAM_CREATION_STATE.get(user_id)
     if not state or not state.get("exam_id"):
         update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
@@ -7891,6 +7917,8 @@ def start_question_creation(update: Update, context: CallbackContext):
 
 def handle_question_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_EXAM_QUESTION_TEXT:
         return False
     question_text = (update.message.text or "").strip()
@@ -7910,6 +7938,8 @@ def handle_question_text(update: Update, context: CallbackContext):
 
 def prompt_answer_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     state = EXAM_CREATION_STATE.get(user_id)
     if not state or not state.get("current_question"):
         update.message.reply_text("يرجى إنشاء سؤال أولاً.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
@@ -7920,6 +7950,8 @@ def prompt_answer_text(update: Update, context: CallbackContext):
 
 def handle_answer_text(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_EXAM_ANSWER_TEXT:
         return False
     answer_text = (update.message.text or "").strip()
@@ -7936,6 +7968,8 @@ def handle_answer_text(update: Update, context: CallbackContext):
 
 def handle_answer_points(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_EXAM_ANSWER_POINTS:
         return False
     state = EXAM_CREATION_STATE.setdefault(user_id, {})
@@ -7961,6 +7995,8 @@ def handle_answer_points(update: Update, context: CallbackContext):
 
 def finalize_question(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     state = EXAM_CREATION_STATE.get(user_id)
     if not state or not state.get("exam_id"):
         update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
@@ -7979,6 +8015,8 @@ def finalize_question(update: Update, context: CallbackContext):
 
 def cancel_question(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     WAITING_EXAM_QUESTION_TEXT.discard(user_id)
     WAITING_EXAM_ANSWER_TEXT.discard(user_id)
     WAITING_EXAM_ANSWER_POINTS.discard(user_id)
@@ -7991,6 +8029,8 @@ def cancel_question(update: Update, context: CallbackContext):
 
 def publish_exam(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     state = EXAM_CREATION_STATE.get(user_id)
     if not state or not state.get("exam_id"):
         update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
@@ -8016,6 +8056,8 @@ def publish_exam(update: Update, context: CallbackContext):
 
 def cancel_exam_draft(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     state = EXAM_CREATION_STATE.get(user_id)
     if not state or not state.get("exam_id"):
         update.message.reply_text("لا توجد مسودة لحذفها.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
@@ -8031,7 +8073,7 @@ def cancel_exam_draft(update: Update, context: CallbackContext):
 
 def list_exams_for_admin(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
+    if not _require_course_admin(update):
         return
     selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
     if not selected:
@@ -8049,6 +8091,8 @@ def list_exams_for_admin(update: Update, context: CallbackContext):
 
 def start_lesson_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return
     ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
     selected = ctx.get("selected") or {}
     if not selected:
@@ -8067,6 +8111,8 @@ def start_lesson_creation(update: Update, context: CallbackContext):
 
 def handle_lesson_title(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_LESSON_TITLE:
         return False
     title = (update.message.text or "").strip()
@@ -8086,6 +8132,8 @@ def handle_lesson_title(update: Update, context: CallbackContext):
 
 def handle_lesson_description(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_LESSON_DESCRIPTION:
         return False
     desc = (update.message.text or "").strip()
@@ -8131,6 +8179,8 @@ def _fetch_latest_from_section(section_key: str) -> Dict:
 
 
 def _present_latest_storage_choices(update: Update, context: CallbackContext):
+    if not _require_course_admin(update):
+        return
     choices: List[Dict] = []
     for section_key in AUDIO_SECTIONS.keys():
         clip = _fetch_latest_from_section(section_key)
@@ -8151,6 +8201,8 @@ def _present_latest_storage_choices(update: Update, context: CallbackContext):
 
 
 def _store_lesson_and_confirm(update: Update, context: CallbackContext, state: Dict):
+    if not _require_course_admin(update):
+        return
     course_id = state.get("course_id")
     course_name = state.get("course_name") or ""
     try:
@@ -8183,6 +8235,8 @@ def _store_lesson_and_confirm(update: Update, context: CallbackContext, state: D
 
 def handle_lesson_storage(update: Update, context: CallbackContext, text: str):
     user_id = update.effective_user.id
+    if not _require_course_admin(update):
+        return True
     if user_id not in WAITING_LESSON_STORAGE:
         return False
     state = LESSON_CREATION_STATE.setdefault(user_id, {})
