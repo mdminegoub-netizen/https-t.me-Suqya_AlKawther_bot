@@ -7061,10 +7061,15 @@ def list_courses(include_archived: bool = False, active_only: bool = False):
     query = db.collection(COURSES_COLLECTION)
     if not include_archived:
         query = query.where("archived", "==", False)
-    if active_only:
-        query = query.where("status", "==", COURSE_STATUS_ACTIVE)
     try:
-        return [dict(doc.to_dict() or {}, course_id=doc.id) for doc in query.stream()]
+        courses = [dict(doc.to_dict() or {}, course_id=doc.id) for doc in query.stream()]
+        if active_only:
+            courses = [
+                c
+                for c in courses
+                if (c.get("status") in [COURSE_STATUS_ACTIVE, "available", None, ""])
+            ]
+        return courses
     except Exception as e:
         logger.error(f"❌ خطأ في جلب الدورات: {e}")
         return []
@@ -7285,6 +7290,11 @@ def _set_course_selection_state(user_id: int, mapping: Dict[str, str], source: s
 def _set_lesson_selection_state(user_id: int, lessons_map: Dict[str, Dict]):
     state = COURSE_SELECTION_STATE.setdefault(user_id, {})
     state["lessons"] = lessons_map
+
+
+def _clear_course_flow_state(user_id: int):
+    COURSE_SELECTION_STATE.pop(user_id, None)
+    WAITING_COURSE_SELECTION.discard(user_id)
 
 
 def _course_list_keyboard(courses: List[Dict], include_back: bool = True) -> ReplyKeyboardMarkup:
@@ -8147,7 +8157,8 @@ def handle_text(update: Update, context: CallbackContext):
         open_notifications_menu(update, context)
         return
 
-    if text == BTN_BACK_MAIN:
+    if text in (BTN_BACK_MAIN, BTN_COURSES_BACK):
+        _clear_course_flow_state(user_id)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=main_kb,
@@ -8435,7 +8446,7 @@ def handle_text(update: Update, context: CallbackContext):
     course_state = COURSE_SELECTION_STATE.get(user_id, {})
     if text == BTN_COURSE_BACK:
         source = course_state.get("source")
-        COURSE_SELECTION_STATE[user_id] = {}
+        _clear_course_flow_state(user_id)
         if source == "available":
             open_available_courses(update, context)
         elif source == "my":
