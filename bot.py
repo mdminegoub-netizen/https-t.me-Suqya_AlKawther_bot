@@ -296,6 +296,7 @@ COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
 COMPETITION_POINTS_COLLECTION = "competition_points"
 COMMUNITY_MEDALS_COLLECTION = "community_medals"
 AUDIO_LIBRARY_COLLECTION = "audio_library"
+COURSES_COLLECTION = "courses"
 
 
 # =================== نهاية Firebase ===================
@@ -1646,12 +1647,27 @@ WAITING_DELETE_USER_MEDALS = set()
 WAITING_CONFIRM_RESET_POINTS = set()
 WAITING_CONFIRM_RESET_MEDALS = set()
 
+# قسم الدورات
+WAITING_COURSE_NAME = set()
+WAITING_COURSE_STATUS = set()
+WAITING_COURSE_SELECTION = set()
+WAITING_COURSE_RENAME = set()
+WAITING_LESSON_TITLE = set()
+WAITING_LESSON_DESCRIPTION = set()
+WAITING_LESSON_STORAGE = set()
+WAITING_LESSON_PUBLISH_DECISION = set()
+WAITING_LESSON_SELECTION = set()
+COURSE_CREATION_STATE: Dict[int, Dict] = {}
+COURSE_SELECTION_STATE: Dict[int, Dict] = {}
+ADMIN_COURSE_CONTEXT: Dict[int, Dict] = {}
+LESSON_CREATION_STATE: Dict[int, Dict] = {}
+USER_COURSE_CONTEXT: Dict[int, Dict] = {}
+
 # =================== الأزرار ===================
 
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
-BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
@@ -1660,6 +1676,19 @@ BTN_MEDALS_ONLY = "🏅 ميدالياتي"
 BTN_STATS_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 BTN_MEDALS = "ميدالياتي 🏵️"
 BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
+BTN_COURSES_MAIN = "قسم الدورات 🎓"
+BTN_MY_COURSES = "📚 دوراتي"
+BTN_AVAILABLE_COURSES = "🎓 الدورات المتاحة"
+BTN_ARCHIVED_COURSES = "🗂️ أرشيف دوراتي"
+BTN_COURSES_BACK = "⬅️ رجوع للقائمة الرئيسية"
+BTN_COURSE_REGISTER = "✅ تسجيل في الدورة"
+BTN_COURSE_BACK = "⬅️ رجوع"
+BTN_COURSE_USER_MENU = "⬅️ رجوع للدورات"
+BTN_COURSE_LESSONS = "📚 الدروس"
+BTN_COURSE_TESTS = "🧪 الاختبارات"
+BTN_COURSE_STATS = "📊 احصائياتي في هذه الدورة"
+BTN_LESSON_OPEN = "▶️ فتح محتوى الدرس"
+BTN_LESSON_ATTENDANCE = "✅ تسجيل الحضور"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
@@ -1671,6 +1700,25 @@ BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
 BTN_AUDIO_PREV = "⬅️ السابق"
+
+BTN_ADMIN_COURSE_SETTINGS = "🛠️ إعداد الدورات"
+BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
+BTN_ADMIN_MANAGE_COURSES = "📋 إدارة الدورات"
+BTN_ADMIN_ARCHIVE_COURSE = "🗂️ أرشفة دورة"
+BTN_ADMIN_BACK = "⬅️ رجوع"
+BTN_ADMIN_EDIT_COURSE_NAME = "✏️ تعديل اسم الدورة"
+BTN_ADMIN_TOGGLE_STATUS = "⏸️ إيقاف الدورة / ▶️ تشغيل الدورة"
+BTN_ADMIN_COURSE_LESSONS = "📚 عرض الدروس"
+BTN_ADMIN_ADD_LESSON = "➕ إضافة درس"
+BTN_ADMIN_TESTS_PLACEHOLDER = "🧪 الاختبارات"
+BTN_ADMIN_COURSE_STATS_PLACEHOLDER = "📊 إحصائيات الدورة"
+BTN_ADMIN_MOVE_TO_ARCHIVE = "🗂️ نقل للأرشيف"
+BTN_ADMIN_CREATE_COURSE_LABEL = "✍️ تسمية الدورة"
+BTN_ADMIN_CREATE_COURSE_NAME = "➕ إضافة اسم الدورة"
+BTN_ADMIN_LESSON_STORAGE_LINK = "🔗 إرسال رابط منشور من قناة التخزين"
+BTN_ADMIN_LESSON_STORAGE_HASHTAG = "#️⃣ إرسال هاشتاق/قسم (مثال: #الفقه)"
+BTN_ADMIN_LESSON_STORAGE_RECENT = "📌 اختيار من آخر الملفات في قناة التخزين"
+BTN_COURSE_CANCEL = "❌ إلغاء"
 
 AUDIO_PAGE_SIZE = 10
 AUDIO_SECTIONS = {
@@ -1770,17 +1818,11 @@ MEDAL_RENAMES = {
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -1788,19 +1830,12 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1808,19 +1843,12 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -1844,6 +1872,69 @@ STATS_MENU_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(BTN_STATS_ONLY), KeyboardButton(BTN_MEDALS_ONLY)],
         [KeyboardButton(BTN_STATS_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSES_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_MY_COURSES), KeyboardButton(BTN_AVAILABLE_COURSES)],
+        [KeyboardButton(BTN_ARCHIVED_COURSES)],
+        [KeyboardButton(BTN_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSE_USER_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_COURSE_LESSONS)],
+        [KeyboardButton(BTN_COURSE_TESTS)],
+        [KeyboardButton(BTN_COURSE_STATS)],
+        [KeyboardButton(BTN_COURSE_USER_MENU)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSES_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_COURSE)],
+        [KeyboardButton(BTN_ADMIN_MANAGE_COURSES)],
+        [KeyboardButton(BTN_ADMIN_ARCHIVE_COURSE)],
+        [KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_CREATE_COURSE_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_COURSE_LABEL)],
+        [KeyboardButton(BTN_COURSE_CANCEL), KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_CREATE_COURSE_NAME_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_CREATE_COURSE_NAME)],
+        [KeyboardButton(BTN_COURSE_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_MANAGE_COURSE_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_ADD_LESSON)],
+        [KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+LESSON_STORAGE_OPTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_ADMIN_LESSON_STORAGE_LINK)],
+        [KeyboardButton(BTN_ADMIN_LESSON_STORAGE_HASHTAG)],
+        [KeyboardButton(BTN_ADMIN_LESSON_STORAGE_RECENT)],
+        [KeyboardButton(BTN_COURSE_CANCEL), KeyboardButton(BTN_ADMIN_BACK)],
     ],
     resize_keyboard=True,
 )
@@ -2069,6 +2160,7 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
+        [KeyboardButton(BTN_ADMIN_COURSE_SETTINGS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2081,6 +2173,7 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
+        [KeyboardButton(BTN_ADMIN_COURSE_SETTINGS)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -6882,6 +6975,24 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
         )
     return True
 
+
+# =================== قسم الدورات (مبدئي) ===================
+
+
+def open_courses_menu(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "قسم الدورات 🎓\n\nسيتم حفظ كل ما يخص الدورات فقط. اختر من القائمة التالية:",
+        reply_markup=COURSES_MENU_KB,
+    )
+
+
+def courses_feature_pending(update: Update, context: CallbackContext):
+    update.message.reply_text(
+        "🚧 قسم الدورات قيد التجهيز حاليًا.\n\n"
+        "تم حفظ طلبك، ويمكنك متابعة التحديثات قريبًا بإذن الله.",
+        reply_markup=COURSES_MENU_KB,
+    )
+
 # =================== دوال جديدة للميزات المطلوبة ===================
 
 # حالات الانتظار الجديدة
@@ -6906,6 +7017,690 @@ def get_user_record_by_id(user_id: int) -> Dict:
     except Exception as e:
         logger.error(f"خطأ في الحصول على سجل المستخدم {user_id}: {e}")
         return data.get(user_id_str)
+
+
+
+# =================== قسم الدورات ===================
+COURSE_STATUS_ACTIVE = "active"
+COURSE_STATUS_STOPPED = "stopped"
+COURSE_STATUS_LABELS = {
+    COURSE_STATUS_ACTIVE: "نشطة",
+    COURSE_STATUS_STOPPED: "متوقفة",
+}
+
+
+def course_status_label(status: str) -> str:
+    return COURSE_STATUS_LABELS.get(status, "-")
+
+
+def list_courses(include_archived: bool = False, active_only: bool = False):
+    if not firestore_available():
+        logger.warning("Firestore غير متاح لقائمة الدورات")
+        return []
+    query = db.collection(COURSES_COLLECTION)
+    if not include_archived:
+        query = query.where("archived", "==", False)
+    if active_only:
+        query = query.where("status", "==", COURSE_STATUS_ACTIVE)
+    try:
+        return [dict(doc.to_dict() or {}, course_id=doc.id) for doc in query.stream()]
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب الدورات: {e}")
+        return []
+
+
+def fetch_course(course_id: str):
+    if not firestore_available():
+        return None
+    try:
+        doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+        if doc.exists:
+            data = doc.to_dict() or {}
+            data["course_id"] = doc.id
+            return data
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة الدورة {course_id}: {e}")
+    return None
+
+
+def save_course(course_data: Dict) -> str:
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح لحفظ الدورات")
+    doc_ref = db.collection(COURSES_COLLECTION).document()
+    course_id = doc_ref.id
+    payload = {
+        "course_id": course_id,
+        "name": course_data.get("name"),
+        "status": course_data.get("status", COURSE_STATUS_ACTIVE),
+        "created_at": course_data.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        "created_by": course_data.get("created_by"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "archived": False,
+    }
+    doc_ref.set(payload)
+    return course_id
+
+
+def update_course(course_id: str, **fields):
+    if not firestore_available():
+        return
+    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        db.collection(COURSES_COLLECTION).document(course_id).update(fields)
+    except Exception as e:
+        logger.error(f"❌ خطأ في تحديث الدورة {course_id}: {e}")
+
+
+def user_is_registered(course_id: str, user_id: int) -> bool:
+    if not firestore_available():
+        return False
+    try:
+        doc = (
+            db.collection(COURSES_COLLECTION)
+            .document(course_id)
+            .collection("participants")
+            .document(str(user_id))
+            .get()
+        )
+        return doc.exists
+    except Exception as e:
+        logger.error(f"❌ خطأ في فحص التسجيل: {e}")
+        return False
+
+
+def register_user_to_course(course_id: str, user: User):
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح للتسجيل")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "user_id": user.id,
+        "username": user.username,
+        "first_name": user.first_name,
+        "joined_at": now_iso,
+    }
+    db.collection(COURSES_COLLECTION).document(course_id).collection("participants").document(str(user.id)).set(payload)
+
+
+def list_user_courses(user_id: int, include_archived: bool = False):
+    if not firestore_available():
+        return []
+    try:
+        courses = list_courses(include_archived=include_archived)
+        registered = []
+        for course in courses:
+            if user_is_registered(course.get("course_id"), user_id):
+                registered.append(course)
+        return registered
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب دورات المستخدم: {e}")
+        return []
+
+
+def fetch_lessons(course_id: str, published_only: bool = False):
+    if not firestore_available():
+        return []
+    try:
+        lessons_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons")
+        if published_only:
+            lessons_ref = lessons_ref.where("published", "==", True)
+        lessons = []
+        for doc in lessons_ref.order_by("created_at", direction=firestore.Query.DESCENDING).stream():
+            lesson = doc.to_dict() or {}
+            lesson["lesson_id"] = doc.id
+            lessons.append(lesson)
+        return lessons
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب الدروس: {e}")
+        return []
+
+
+def save_lesson(course_id: str, lesson_data: Dict) -> str:
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح لإضافة درس")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "title": lesson_data.get("title"),
+        "description": lesson_data.get("description"),
+        "storage_chat_id": lesson_data.get("storage_chat_id"),
+        "storage_message_id": lesson_data.get("storage_message_id"),
+        "storage_file_id": lesson_data.get("storage_file_id"),
+        "created_at": now_iso,
+        "created_by": lesson_data.get("created_by"),
+        "publish_at": lesson_data.get("publish_at"),
+        "published": lesson_data.get("published", False),
+        "course_name": lesson_data.get("course_name"),
+        "question_text": lesson_data.get("question_text"),
+        "order": lesson_data.get("order"),
+    }
+    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document()
+    payload["lesson_id"] = doc_ref.id
+    doc_ref.set(payload)
+    return doc_ref.id
+
+
+def mark_lesson_published(course_id: str, lesson_id: str):
+    if not firestore_available():
+        return
+    try:
+        db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document(lesson_id).update(
+            {"published": True, "publish_at": datetime.now(timezone.utc).isoformat()}
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في نشر الدرس {lesson_id}: {e}")
+
+
+def notify_course_participants(course_id: str, text: str, context: CallbackContext):
+    if not firestore_available():
+        return
+    try:
+        participants = (
+            db.collection(COURSES_COLLECTION)
+            .document(course_id)
+            .collection("participants")
+            .stream()
+        )
+        for doc in participants:
+            info = doc.to_dict() or {}
+            uid = info.get("user_id")
+            if not uid:
+                continue
+            try:
+                context.bot.send_message(uid, text)
+            except Exception as e:
+                logger.debug(f"تعذر إرسال إشعار للمستخدم {uid}: {e}")
+    except Exception as e:
+        logger.error(f"❌ خطأ في إرسال إشعارات الدروس: {e}")
+
+
+def extract_storage_reference(msg) -> Dict:
+    storage_chat_id = None
+    storage_message_id = None
+    storage_file_id = None
+    title = None
+    if msg.forward_from_chat and msg.forward_from_chat.id:
+        storage_chat_id = msg.forward_from_chat.id
+        storage_message_id = msg.forward_from_message_id
+    text = (msg.text or "").strip()
+    if not storage_message_id and text:
+        m = re.search(r"t\.me/(c/)?(\-?\d+)?/?(\d+)$", text)
+        if m:
+            chat_part = m.group(2)
+            if chat_part:
+                try:
+                    storage_chat_id = int(chat_part if chat_part.startswith("-") else f"-100{chat_part}")
+                except Exception:
+                    storage_chat_id = None
+            try:
+                storage_message_id = int(m.group(3))
+            except Exception:
+                storage_message_id = None
+    for attr in ["document", "audio", "voice", "video", "video_note"]:
+        media = getattr(msg, attr, None)
+        if media and getattr(media, "file_id", None):
+            storage_file_id = media.file_id
+            title = getattr(media, "file_name", None) or media.file_id
+            break
+    if storage_chat_id and storage_message_id:
+        return {
+            "storage_chat_id": storage_chat_id,
+            "storage_message_id": storage_message_id,
+            "storage_file_id": storage_file_id,
+            "title": title or msg.caption or msg.text,
+        }
+    return {}
+
+# =================== نهاية وظائف الدورات المساعدة ===================
+
+
+def _assert_course_firestore(update: Update) -> bool:
+    if firestore_available():
+        return True
+    update.message.reply_text(
+        "⚠️ لا يمكن متابعة إجراءات الدورات حاليًا لعدم توفر Firestore.",
+        reply_markup=user_main_keyboard(update.effective_user.id),
+    )
+    return False
+
+
+def _reset_course_creation(user_id: int):
+    COURSE_CREATION_STATE.pop(user_id, None)
+    WAITING_COURSE_NAME.discard(user_id)
+
+
+def _reset_lesson_creation(user_id: int):
+    LESSON_CREATION_STATE.pop(user_id, None)
+    WAITING_LESSON_TITLE.discard(user_id)
+    WAITING_LESSON_DESCRIPTION.discard(user_id)
+    WAITING_LESSON_STORAGE.discard(user_id)
+
+
+def _reset_admin_course_context(user_id: int):
+    ADMIN_COURSE_CONTEXT.pop(user_id, None)
+    COURSE_SELECTION_STATE.pop(user_id, None)
+
+
+def _course_list_keyboard(courses: List[Dict], back_button: str) -> ReplyKeyboardMarkup:
+    rows: List[List[KeyboardButton]] = []
+    for course in courses:
+        name = course.get("name") or "دورة"
+        rows.append([KeyboardButton(name)])
+    rows.append([KeyboardButton(back_button)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def _lesson_list_keyboard(lessons: List[Dict], back_button: str) -> ReplyKeyboardMarkup:
+    rows: List[List[KeyboardButton]] = []
+    for idx, lesson in enumerate(lessons, start=1):
+        title = lesson.get("title") or "درس"
+        rows.append([KeyboardButton(f"📚 الدرس {idx}: {title}")])
+    rows.append([KeyboardButton(back_button)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def open_admin_courses_menu(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        return
+    _reset_course_creation(user_id)
+    _reset_lesson_creation(user_id)
+    _reset_admin_course_context(user_id)
+    update.message.reply_text(
+        "🛠️ إعداد الدورات",
+        reply_markup=ADMIN_COURSES_MENU_KB,
+    )
+
+
+def start_create_course(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        return
+    _reset_course_creation(user_id)
+    COURSE_CREATION_STATE[user_id] = {}
+    update.message.reply_text(
+        "اختر إجراء إنشاء الدورة:",
+        reply_markup=ADMIN_CREATE_COURSE_KB,
+    )
+
+
+def start_course_naming(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        return
+    update.message.reply_text(
+        "اختر الطريقة المناسبة لتسمية الدورة:",
+        reply_markup=ADMIN_CREATE_COURSE_NAME_KB,
+    )
+
+
+def request_course_name(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        return
+    WAITING_COURSE_NAME.add(user_id)
+    update.message.reply_text(
+        "أرسل اسم الدورة (مثال: الفقه)",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def handle_course_name_input(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_COURSE_NAME:
+        return False
+    if not _assert_course_firestore(update):
+        _reset_course_creation(user_id)
+        return True
+    name = (update.message.text or "").strip()
+    if not name:
+        update.message.reply_text("يرجى إرسال اسم صالح للدورة.")
+        return True
+    try:
+        course_id = save_course({"name": name, "created_by": user_id})
+        COURSE_CREATION_STATE[user_id] = {"course_id": course_id, "name": name}
+        update.message.reply_text(
+            f"✅ تم إنشاء الدورة: {name}",
+            reply_markup=ADMIN_CREATE_COURSE_KB,
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في إنشاء الدورة: {e}")
+        update.message.reply_text("تعذر إنشاء الدورة الآن. حاول مرة أخرى لاحقًا.")
+    finally:
+        WAITING_COURSE_NAME.discard(user_id)
+    return True
+
+
+def list_courses_for_admin(update: Update, include_archived: bool = True, action: str = "manage"):
+    user_id = update.effective_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        return
+    if not _assert_course_firestore(update):
+        return
+    courses = list_courses(include_archived=include_archived)
+    if not courses:
+        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    COURSE_SELECTION_STATE[user_id] = {"action": action, "courses": courses}
+    update.message.reply_text(
+        "اختر الدورة المطلوبة:",
+        reply_markup=_course_list_keyboard(courses, BTN_ADMIN_BACK),
+    )
+
+
+def _find_course_by_name(courses: List[Dict], name: str):
+    for course in courses:
+        if (course.get("name") or "").strip() == name.strip():
+            return course
+    return None
+
+
+def open_admin_course(update: Update, context: CallbackContext, course: Dict):
+    user_id = update.effective_user.id
+    ADMIN_COURSE_CONTEXT[user_id] = {"course_id": course.get("course_id"), "course_name": course.get("name")}
+    update.message.reply_text(
+        f"إدارة دورة: {course.get('name')}",
+        reply_markup=ADMIN_MANAGE_COURSE_KB,
+    )
+
+
+def archive_course(update: Update, course: Dict):
+    user_id = update.effective_user.id
+    if not _assert_course_firestore(update):
+        return
+    try:
+        update_course(course.get("course_id"), archived=True)
+        update.message.reply_text(
+            f"✅ تم أرشفة الدورة: {course.get('name')}",
+            reply_markup=ADMIN_COURSES_MENU_KB,
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في أرشفة الدورة: {e}")
+        update.message.reply_text("تعذر أرشفة الدورة الآن.", reply_markup=ADMIN_COURSES_MENU_KB)
+    _reset_admin_course_context(user_id)
+
+
+def start_add_lesson(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    course_ctx = ADMIN_COURSE_CONTEXT.get(user_id)
+    if not course_ctx:
+        update.message.reply_text("يرجى اختيار دورة أولًا.", reply_markup=ADMIN_COURSES_MENU_KB)
+        return
+    _reset_lesson_creation(user_id)
+    LESSON_CREATION_STATE[user_id] = {
+        "course_id": course_ctx.get("course_id"),
+        "course_name": course_ctx.get("course_name"),
+    }
+    WAITING_LESSON_TITLE.add(user_id)
+    update.message.reply_text("أرسل عنوان الدرس", reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_CANCEL)]], resize_keyboard=True))
+
+
+def handle_lesson_title(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_TITLE:
+        return False
+    title = (update.message.text or "").strip()
+    if not title:
+        update.message.reply_text("يرجى إرسال عنوان صالح.")
+        return True
+    LESSON_CREATION_STATE.setdefault(user_id, {})["title"] = title
+    WAITING_LESSON_TITLE.discard(user_id)
+    WAITING_LESSON_DESCRIPTION.add(user_id)
+    update.message.reply_text("أرسل سؤال/وصف الدرس (نص)", reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_CANCEL)]], resize_keyboard=True))
+    return True
+
+
+def handle_lesson_description(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_DESCRIPTION:
+        return False
+    desc = (update.message.text or "").strip()
+    if not desc:
+        update.message.reply_text("يرجى إرسال وصف صالح.")
+        return True
+    LESSON_CREATION_STATE.setdefault(user_id, {})["description"] = desc
+    WAITING_LESSON_DESCRIPTION.discard(user_id)
+    WAITING_LESSON_STORAGE.add(user_id)
+    update.message.reply_text(
+        "اختر طريقة جلب ملف الدرس:",
+        reply_markup=LESSON_STORAGE_OPTIONS_KB,
+    )
+    return True
+
+
+def _recent_storage_files(limit: int = 5) -> List[Dict]:
+    records: List[Dict] = []
+    if not firestore_available():
+        return records
+    try:
+        docs = (
+            db.collection(AUDIO_LIBRARY_COLLECTION)
+            .order_by("created_at", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .stream()
+        )
+        for doc in docs:
+            data = doc.to_dict() or {}
+            data.setdefault("message_id", int(doc.id) if str(doc.id).isdigit() else doc.id)
+            records.append(data)
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة آخر ملفات قناة التخزين: {e}")
+    return records
+
+
+def _apply_storage_choice(update: Update, context: CallbackContext, ref: Dict):
+    user_id = update.effective_user.id
+    state = LESSON_CREATION_STATE.get(user_id)
+    if not state or not ref:
+        update.message.reply_text("لم يتم التعرف على الملف، حاول مرة أخرى.", reply_markup=LESSON_STORAGE_OPTIONS_KB)
+        return
+    state.update(ref)
+    if not _assert_course_firestore(update):
+        _reset_lesson_creation(user_id)
+        return
+    try:
+        existing = fetch_lessons(state.get("course_id"))
+        lesson_number = len(existing) + 1
+        payload = {
+            "title": state.get("title"),
+            "description": state.get("description"),
+            "storage_chat_id": state.get("storage_chat_id"),
+            "storage_message_id": state.get("storage_message_id"),
+            "storage_file_id": state.get("storage_file_id"),
+            "created_by": user_id,
+            "publish_at": datetime.now(timezone.utc).isoformat(),
+            "published": True,
+            "course_name": state.get("course_name"),
+            "question_text": state.get("description"),
+            "order": lesson_number,
+        }
+        save_lesson(state.get("course_id"), payload)
+        update.message.reply_text(
+            "✅ تم حفظ الدرس بنجاح.",
+            reply_markup=ADMIN_MANAGE_COURSE_KB,
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الدرس: {e}")
+        update.message.reply_text("تعذر حفظ الدرس الآن.", reply_markup=ADMIN_MANAGE_COURSE_KB)
+    finally:
+        _reset_lesson_creation(user_id)
+
+
+def handle_lesson_storage_choice(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_LESSON_STORAGE:
+        return False
+    text = (update.message.text or "").strip()
+    state = LESSON_CREATION_STATE.setdefault(user_id, {})
+
+    if text == BTN_ADMIN_BACK:
+        _reset_lesson_creation(user_id)
+        open_admin_courses_menu(update, context)
+        return True
+
+    if text == BTN_ADMIN_LESSON_STORAGE_LINK:
+        state["storage_mode"] = "link"
+        update.message.reply_text(
+            "أرسل رابط منشور قناة التخزين أو قم بتمرير الرسالة من قناة التخزين.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    if text == BTN_ADMIN_LESSON_STORAGE_HASHTAG:
+        state["storage_mode"] = "hashtag"
+        update.message.reply_text(
+            "أرسل الهاشتاق أو القسم (مثال: #الفقه).",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_COURSE_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    if text == BTN_ADMIN_LESSON_STORAGE_RECENT:
+        records = _recent_storage_files()
+        if not records:
+            update.message.reply_text("لا توجد ملفات متاحة حاليًا في قناة التخزين.", reply_markup=LESSON_STORAGE_OPTIONS_KB)
+            return True
+        state["storage_mode"] = "recent"
+        state["recent_choices"] = []
+        labels = []
+        for idx, rec in enumerate(records, start=1):
+            title = rec.get("title") or rec.get("file_id") or "ملف"
+            label = f"📌 ملف {idx}: {title}"[:60]
+            state["recent_choices"].append({"label": label, **rec})
+            labels.append([KeyboardButton(label)])
+        labels.append([KeyboardButton(BTN_COURSE_CANCEL), KeyboardButton(BTN_ADMIN_BACK)])
+        update.message.reply_text(
+            "اختر أحد الملفات الأخيرة:",
+            reply_markup=ReplyKeyboardMarkup(labels, resize_keyboard=True),
+        )
+        return True
+
+    mode = state.get("storage_mode")
+    if mode == "link":
+        ref = extract_storage_reference(update.message)
+        if not ref:
+            update.message.reply_text("تعذر التعرف على رابط قناة التخزين. أعد المحاولة.")
+            return True
+        _apply_storage_choice(update, context, ref)
+        return True
+    if mode == "hashtag":
+        tag = text
+        section = _match_audio_section([tag])
+        if not section:
+            update.message.reply_text("لم يتم العثور على ملفات لهذا الهاشتاق.", reply_markup=LESSON_STORAGE_OPTIONS_KB)
+            return True
+        clips = fetch_audio_clips(section)
+        if not clips:
+            update.message.reply_text("لا يوجد ملف مطابق حاليًا.", reply_markup=LESSON_STORAGE_OPTIONS_KB)
+            return True
+        clip = clips[0]
+        ref = {
+            "storage_chat_id": int(AUDIO_STORAGE_CHANNEL_ID),
+            "storage_message_id": clip.get("message_id"),
+            "storage_file_id": clip.get("file_id"),
+            "title": clip.get("title"),
+        }
+        _apply_storage_choice(update, context, ref)
+        return True
+    if mode == "recent":
+        for rec in state.get("recent_choices", []):
+            if text == rec.get("label"):
+                ref = {
+                    "storage_chat_id": int(AUDIO_STORAGE_CHANNEL_ID),
+                    "storage_message_id": rec.get("message_id"),
+                    "storage_file_id": rec.get("file_id"),
+                    "title": rec.get("title"),
+                }
+                _apply_storage_choice(update, context, ref)
+                return True
+        update.message.reply_text("رجاءً اختر من الخيارات المعروضة.")
+        return True
+
+    return False
+
+
+def open_courses_for_user(update: Update):
+    USER_COURSE_CONTEXT.pop(update.effective_user.id, None)
+    COURSE_SELECTION_STATE.pop(update.effective_user.id, None)
+    update.message.reply_text(
+        "قسم الدورات 🎓",
+        reply_markup=COURSES_MENU_KB,
+    )
+
+
+def list_available_courses(update: Update, context: CallbackContext):
+    if not _assert_course_firestore(update):
+        return
+    courses = list_courses(include_archived=False, active_only=True)
+    if not courses:
+        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
+        return
+    user_id = update.effective_user.id
+    COURSE_SELECTION_STATE[user_id] = {"action": "available", "courses": courses}
+    update.message.reply_text(
+        "اختر دورة للعرض:",
+        reply_markup=_course_list_keyboard(courses, BTN_COURSES_BACK),
+    )
+
+
+def list_user_courses_menu(update: Update, context: CallbackContext, include_archived: bool = False, action_name: str = "my"):
+    if not _assert_course_firestore(update):
+        return
+    user_id = update.effective_user.id
+    courses = list_user_courses(user_id, include_archived=include_archived)
+    if include_archived:
+        courses = [c for c in courses if c.get("archived")]
+    if not courses:
+        update.message.reply_text("لا توجد دورات مسجلة.", reply_markup=COURSES_MENU_KB)
+        return
+    COURSE_SELECTION_STATE[user_id] = {"action": action_name, "courses": courses}
+    update.message.reply_text(
+        "دوراتك:",
+        reply_markup=_course_list_keyboard(courses, BTN_COURSES_BACK),
+    )
+
+
+def open_course_lessons_for_user(update: Update, course: Dict):
+    user_id = update.effective_user.id
+    lessons = fetch_lessons(course.get("course_id"), published_only=True)
+    USER_COURSE_CONTEXT[user_id] = {"course_id": course.get("course_id"), "course_name": course.get("name"), "lessons": lessons}
+    if not lessons:
+        update.message.reply_text(
+            "لا توجد دروس متاحة بعد في هذه الدورة.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_BACK_MAIN)], [KeyboardButton(BTN_COURSES_BACK)]], resize_keyboard=True),
+        )
+        return
+    update.message.reply_text(
+        f"دروس دورة {course.get('name')}:",
+        reply_markup=_lesson_list_keyboard(lessons, BTN_COURSES_BACK),
+    )
+
+
+def handle_user_lesson_open(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    course_ctx = USER_COURSE_CONTEXT.get(user_id)
+    if not course_ctx:
+        return False
+    text = (update.message.text or "").strip()
+    lessons = course_ctx.get("lessons", [])
+    for idx, lesson in enumerate(lessons, start=1):
+        label = f"📚 الدرس {idx}: {lesson.get('title') or 'درس'}"
+        if text == label:
+            course_name = course_ctx.get("course_name") or "دورة"
+            description = lesson.get("description") or ""
+            publish_at = lesson.get("publish_at") or lesson.get("created_at")
+            msg_lines = [f"📚 {lesson.get('title') or 'درس'}", description]
+            if publish_at:
+                msg_lines.append(f"تاريخ النشر: {publish_at}")
+            update.message.reply_text("\n\n".join([ln for ln in msg_lines if ln]), reply_markup=_lesson_list_keyboard(lessons, BTN_COURSES_BACK))
+            try:
+                if lesson.get("storage_chat_id") and lesson.get("storage_message_id"):
+                    context.bot.copy_message(
+                        chat_id=update.effective_chat.id,
+                        from_chat_id=lesson.get("storage_chat_id"),
+                        message_id=lesson.get("storage_message_id"),
+                    )
+                elif lesson.get("storage_file_id"):
+                    context.bot.send_document(update.effective_chat.id, lesson.get("storage_file_id"))
+            except Exception as e:
+                logger.error(f"خطأ في إرسال محتوى الدرس: {e}")
+            return True
+    return False
 
 
 def handle_supervisor_new_users(update: Update, context: CallbackContext):
@@ -6969,8 +7764,64 @@ def handle_text(update: Update, context: CallbackContext):
         
         # منع أي استخدام آخر للبوت
         return
-    
+
     main_kb = user_main_keyboard(user_id)
+
+    # حالات إنشاء وإدارة الدورات
+    if handle_course_name_input(update, context):
+        return
+    if handle_lesson_title(update, context):
+        return
+    if handle_lesson_description(update, context):
+        return
+    if handle_lesson_storage_choice(update, context):
+        return
+    if handle_user_lesson_open(update, context):
+        return
+
+    # زر إلغاء عام
+    if text in {BTN_CANCEL, BTN_COURSE_CANCEL}:
+        WAITING_GENDER.discard(user_id)
+        WAITING_AGE.discard(user_id)
+        WAITING_WEIGHT.discard(user_id)
+        WAITING_QURAN_GOAL.discard(user_id)
+        WAITING_QURAN_ADD_PAGES.discard(user_id)
+        WAITING_TASBIH.discard(user_id)
+        ACTIVE_TASBIH.pop(user_id, None)
+        WAITING_MEMO_MENU.discard(user_id)
+        WAITING_MEMO_ADD.discard(user_id)
+        WAITING_MEMO_EDIT_SELECT.discard(user_id)
+        WAITING_MEMO_EDIT_TEXT.discard(user_id)
+        WAITING_MEMO_DELETE_SELECT.discard(user_id)
+        MEMO_EDIT_INDEX.pop(user_id, None)
+        WAITING_LETTER_MENU.discard(user_id)
+        WAITING_LETTER_ADD.discard(user_id)
+        WAITING_LETTER_ADD_CONTENT.discard(user_id)
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        WAITING_LETTER_DELETE_SELECT.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+        WAITING_SUPPORT_GENDER.discard(user_id)
+        WAITING_SUPPORT.discard(user_id)
+        WAITING_BROADCAST.discard(user_id)
+        WAITING_COURSE_NAME.discard(user_id)
+        WAITING_COURSE_SELECTION.discard(user_id)
+        WAITING_COURSE_RENAME.discard(user_id)
+        WAITING_LESSON_TITLE.discard(user_id)
+        WAITING_LESSON_DESCRIPTION.discard(user_id)
+        WAITING_LESSON_STORAGE.discard(user_id)
+        WAITING_LESSON_PUBLISH_DECISION.discard(user_id)
+        WAITING_LESSON_SELECTION.discard(user_id)
+        COURSE_CREATION_STATE.pop(user_id, None)
+        COURSE_SELECTION_STATE.pop(user_id, None)
+        ADMIN_COURSE_CONTEXT.pop(user_id, None)
+        LESSON_CREATION_STATE.pop(user_id, None)
+        USER_COURSE_CONTEXT.pop(user_id, None)
+        msg.reply_text(
+            "تم الإلغاء. عدنا للقائمة الرئيسية.",
+            reply_markup=main_kb,
+        )
+        return
 
     # تحديد الجنس للدعم
     if user_id in WAITING_SUPPORT_GENDER:
@@ -7317,8 +8168,8 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
-    if text == BTN_TASBIH_MAIN:
-        open_tasbih_menu(update, context)
+    if text == BTN_COURSES_MAIN:
+        open_courses_menu(update, context)
         return
 
     if text == BTN_MEMOS_MAIN:
@@ -7350,6 +8201,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_LETTER_MAIN:
         open_letters_menu(update, context)
+        return
+
+    if text in {BTN_MY_COURSES, BTN_AVAILABLE_COURSES, BTN_ARCHIVED_COURSES}:
+        courses_feature_pending(update, context)
         return
 
     if text == BTN_SUPPORT:
@@ -7432,6 +8287,43 @@ def handle_text(update: Update, context: CallbackContext):
     if text.isdigit():
         handle_add_cups(update, context)
         return
+
+    # قسم الدورات (المستخدم)
+    if text == BTN_COURSES_MAIN:
+        open_courses_for_user(update)
+        return
+    if text == BTN_AVAILABLE_COURSES:
+        list_available_courses(update, context)
+        return
+    if text == BTN_MY_COURSES:
+        list_user_courses_menu(update, context)
+        return
+    if text == BTN_ARCHIVED_COURSES:
+        list_user_courses_menu(update, context, include_archived=True, action_name="archived")
+        return
+    if text in {BTN_COURSE_USER_MENU, BTN_COURSES_BACK, BTN_COURSE_BACK}:
+        open_courses_for_user(update)
+        return
+
+    selection_ctx = COURSE_SELECTION_STATE.get(user_id)
+    if selection_ctx:
+        course = _find_course_by_name(selection_ctx.get("courses", []), text)
+        if course:
+            action = selection_ctx.get("action")
+            if action == "manage" and (is_admin(user_id) or is_supervisor(user_id)):
+                open_admin_course(update, context, course)
+                return
+            if action == "archive" and (is_admin(user_id) or is_supervisor(user_id)):
+                archive_course(update, course)
+                return
+            if action in {"available", "my", "archived"}:
+                if action == "available" and firestore_available() and not user_is_registered(course.get("course_id"), user_id):
+                    try:
+                        register_user_to_course(course.get("course_id"), user)
+                    except Exception as e:
+                        logger.error(f"❌ خطأ في تسجيل المستخدم في الدورة: {e}")
+                open_course_lessons_for_user(update, course)
+                return
 
     # ورد القرآن
     if text == BTN_QURAN_SET_GOAL:
@@ -7596,6 +8488,31 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MOTIVATION_TIMES:
         handle_admin_motivation_times_start(update, context)
+        return
+
+    if text == BTN_ADMIN_COURSE_SETTINGS:
+        open_admin_courses_menu(update, context)
+        return
+    if text == BTN_ADMIN_CREATE_COURSE:
+        start_create_course(update, context)
+        return
+    if text == BTN_ADMIN_CREATE_COURSE_LABEL:
+        start_course_naming(update, context)
+        return
+    if text == BTN_ADMIN_CREATE_COURSE_NAME:
+        request_course_name(update, context)
+        return
+    if text == BTN_ADMIN_MANAGE_COURSES:
+        list_courses_for_admin(update, include_archived=True, action="manage")
+        return
+    if text == BTN_ADMIN_ARCHIVE_COURSE:
+        list_courses_for_admin(update, include_archived=False, action="archive")
+        return
+    if text == BTN_ADMIN_ADD_LESSON:
+        start_add_lesson(update, context)
+        return
+    if text == BTN_ADMIN_BACK and (is_admin(user_id) or is_supervisor(user_id)):
+        open_admin_courses_menu(update, context)
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
