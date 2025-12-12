@@ -1662,6 +1662,24 @@ COURSE_SELECTION_STATE: Dict[int, Dict] = {}
 ADMIN_COURSE_CONTEXT: Dict[int, Dict] = {}
 LESSON_CREATION_STATE: Dict[int, Dict] = {}
 
+
+def is_user_in_course_flow(user_id: int) -> bool:
+    """التحقق مما إذا كان المستخدم داخل أي حالة تخص الدورات."""
+
+    return any(
+        (
+            user_id in WAITING_COURSE_NAME,
+            user_id in WAITING_COURSE_STATUS,
+            user_id in WAITING_COURSE_SELECTION,
+            user_id in WAITING_COURSE_RENAME,
+            user_id in WAITING_LESSON_TITLE,
+            user_id in WAITING_LESSON_DESCRIPTION,
+            user_id in WAITING_LESSON_STORAGE,
+            user_id in WAITING_LESSON_PUBLISH_DECISION,
+            user_id in WAITING_LESSON_SELECTION,
+        )
+    )
+
 # =================== الأزرار ===================
 
 # رئيسية
@@ -7377,6 +7395,8 @@ def start_course_creation(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if not _is_admin_or_supervisor(user_id):
         return
+    WAITING_SUPPORT.discard(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
     COURSE_CREATION_STATE[user_id] = {}
     update.message.reply_text(
         "اختر الإجراء لإنشاء دورة جديدة:", reply_markup=ADMIN_CREATE_COURSE_KB
@@ -7387,6 +7407,8 @@ def prompt_course_name_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if not _is_admin_or_supervisor(user_id):
         return
+    WAITING_SUPPORT.discard(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
     update.message.reply_text(
         "أرسل اسم الدورة (مثال: الفقه)", reply_markup=ADMIN_CREATE_COURSE_NAME_KB
     )
@@ -7409,6 +7431,7 @@ def save_new_course(update: Update, context: CallbackContext):
         update.message.reply_text(
             f"✅ تم حفظ دورة '{name}' بنجاح.", reply_markup=ADMIN_CREATE_COURSE_KB
         )
+        COURSE_CREATION_STATE.pop(user_id, None)
     except Exception as e:
         logger.error(f"❌ خطأ في إنشاء الدورة: {e}")
         update.message.reply_text("تعذر حفظ الدورة. حاول مرة أخرى.", reply_markup=ADMIN_CREATE_COURSE_KB)
@@ -7698,6 +7721,7 @@ def handle_text(update: Update, context: CallbackContext):
     text = (msg.text or "").strip()
 
     record = get_user_record(user)
+    in_course_flow = is_user_in_course_flow(user_id)
     
     # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
     if record.get("is_banned", False):
@@ -7798,7 +7822,8 @@ def handle_text(update: Update, context: CallbackContext):
 
     # رد المستخدم على ردود الدعم
     if (
-        not is_admin(user_id)
+        not in_course_flow
+        and not is_admin(user_id)
         and not is_supervisor(user_id)
         and msg.reply_to_message
         and msg.reply_to_message.from_user.id == context.bot.id
@@ -7994,7 +8019,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # الدعم
-    if user_id in WAITING_SUPPORT:
+    if user_id in WAITING_SUPPORT and not in_course_flow:
         WAITING_SUPPORT.discard(user_id)
         forward_support_to_admin(user, text, context)
 
