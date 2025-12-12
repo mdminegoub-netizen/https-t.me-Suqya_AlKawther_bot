@@ -6,7 +6,7 @@ import re
 import random
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import pytz
 from flask import Flask, request
@@ -1647,57 +1647,31 @@ WAITING_DELETE_USER_MEDALS = set()
 WAITING_CONFIRM_RESET_POINTS = set()
 WAITING_CONFIRM_RESET_MEDALS = set()
 
-# قسم الدورات
-WAITING_COURSE_NAME = set()
-WAITING_COURSE_STATUS = set()
-WAITING_COURSE_SELECTION = set()
-WAITING_COURSE_RENAME = set()
-WAITING_LESSON_TITLE = set()
-WAITING_LESSON_DESCRIPTION = set()
-WAITING_LESSON_STORAGE = set()
-WAITING_LESSON_PUBLISH_DECISION = set()
-WAITING_LESSON_SELECTION = set()
-COURSE_CREATION_STATE: Dict[int, Dict] = {}
-COURSE_SELECTION_STATE: Dict[int, Dict] = {}
-ADMIN_COURSE_CONTEXT: Dict[int, Dict] = {}
-LESSON_CREATION_STATE: Dict[int, Dict] = {}
-
-# اختبارات الدورات
-WAITING_EXAM_TITLE = set()
-WAITING_EXAM_QUESTION_TEXT = set()
-WAITING_EXAM_ANSWER_TEXT = set()
-WAITING_EXAM_ANSWER_POINTS = set()
-EXAM_CREATION_STATE: Dict[int, Dict] = {}
-STUDENT_EXAM_SESSIONS: Dict[int, Dict] = {}
+# قسم الدورات - مساحة مستقلة تمامًا
+COURSES_STATE: Dict[int, Dict] = {}
+COURSES_ADMIN_STATE: Dict[int, Dict] = {}
 
 
-def is_user_in_course_flow(user_id: int) -> bool:
-    """التحقق مما إذا كان المستخدم داخل أي حالة تخص الدورات."""
+def get_course_state(user_id: int) -> Dict:
+    return COURSES_STATE.setdefault(user_id, {})
 
-    return any(
-        (
-            user_id in WAITING_COURSE_NAME,
-            user_id in WAITING_COURSE_STATUS,
-            user_id in WAITING_COURSE_SELECTION,
-            user_id in WAITING_COURSE_RENAME,
-            user_id in WAITING_LESSON_TITLE,
-            user_id in WAITING_LESSON_DESCRIPTION,
-            user_id in WAITING_LESSON_SELECTION,
-            user_id in WAITING_EXAM_TITLE,
-            user_id in WAITING_EXAM_QUESTION_TEXT,
-            user_id in WAITING_EXAM_ANSWER_TEXT,
-            user_id in WAITING_EXAM_ANSWER_POINTS,
-            user_id in EXAM_CREATION_STATE,
-            user_id in STUDENT_EXAM_SESSIONS,
-        )
-    )
+
+def get_admin_course_state(user_id: int) -> Dict:
+    return COURSES_ADMIN_STATE.setdefault(user_id, {})
 
 
 def reset_course_state(user_id: int):
-    """إعادة تهيئة جميع حالات الدورات للمستخدم فقط دون المساس بالأقسام الأخرى."""
+    COURSES_STATE.pop(user_id, None)
 
-    COURSE_SELECTION_STATE.pop(user_id, None)
-    WAITING_COURSE_SELECTION.discard(user_id)
+
+def reset_admin_course_state(user_id: int):
+    COURSES_ADMIN_STATE.pop(user_id, None)
+
+
+def is_user_in_course_flow(user_id: int) -> bool:
+    """تحقق سريع إذا كان المستخدم داخل أي تدفق يخص الدورات فقط."""
+
+    return user_id in COURSES_STATE or user_id in COURSES_ADMIN_STATE
 
 
 def reset_audio_state(user_id: int):
@@ -1743,7 +1717,7 @@ BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
 BTN_AUDIO_PREV = "⬅️ السابق"
 
-BTN_ADMIN_COURSE_SETTINGS = "🛠️ إعداد الدورات"
+BTN_ADMIN_COURSE_SETTINGS = "⚙️ إعداد الدورات"
 BTN_ADMIN_CREATE_COURSE = "➕ إنشاء دورة جديدة"
 BTN_ADMIN_MANAGE_COURSES = "📋 إدارة الدورات"
 BTN_ADMIN_ARCHIVE_COURSE = "🗂️ أرشفة دورة"
@@ -7069,82 +7043,82 @@ def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
     return True
 
 
-# =================== قسم الدورات (مبدئي) ===================
-
-
-def open_courses_menu(update: Update, context: CallbackContext):
-    reset_course_state(update.effective_user.id)
-    update.message.reply_text(
-        "قسم الدورات 🎓\n\nسيتم حفظ كل ما يخص الدورات فقط. اختر من القائمة التالية:",
-        reply_markup=COURSES_MENU_KB,
-    )
-
-
-def courses_feature_pending(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "🚧 قسم الدورات قيد التجهيز حاليًا.\n\n"
-        "تم حفظ طلبك، ويمكنك متابعة التحديثات قريبًا بإذن الله.",
-        reply_markup=COURSES_MENU_KB,
-    )
-
-# =================== دوال جديدة للميزات المطلوبة ===================
-
-# حالات الانتظار الجديدة
-WAITING_MANAGE_POINTS_USER_ID = set()
-WAITING_MANAGE_POINTS_ACTION = {}  # user_id -> target_user_id
-WAITING_MANAGE_POINTS_VALUE = set()
-
-def get_user_record_by_id(user_id: int) -> Dict:
-    """الحصول على سجل المستخدم بناءً على المعرف"""
-    user_id_str = str(user_id)
-    if not firestore_available():
-        return data.get(user_id_str)
-    try:
-        doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
-        doc = doc_ref.get()
-        if doc.exists:
-            record = doc.to_dict()
-            data[user_id_str] = record
-            ensure_medal_defaults(record)
-            return record
-        return None
-    except Exception as e:
-        logger.error(f"خطأ في الحصول على سجل المستخدم {user_id}: {e}")
-        return data.get(user_id_str)
-
-
-
-# =================== قسم الدورات ===================
+# =================== قسم الدورات (إعادة بناء) ===================
+COURSES_COLLECTION = "courses"
+COURSES_CALLBACK_PREFIX = "COURSES"
 COURSE_STATUS_ACTIVE = "active"
 COURSE_STATUS_STOPPED = "stopped"
-COURSE_STATUS_LABELS = {
-    COURSE_STATUS_ACTIVE: "نشطة",
-    COURSE_STATUS_STOPPED: "متوقفة",
-}
 
+COURSES_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_AVAILABLE_COURSES)],
+        [KeyboardButton(BTN_MY_COURSES)],
+        [KeyboardButton(BTN_ARCHIVED_COURSES)],
+        [KeyboardButton(BTN_COURSES_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSES_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("⚙️ إعداد الدورات")],
+        [KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+ADMIN_COURSE_ACTIONS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("➕ إنشاء دورة جديدة"), KeyboardButton("📋 إدارة الدورات")],
+        [KeyboardButton("🗃 أرشفة دورة")],
+        [KeyboardButton(BTN_ADMIN_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSE_USER_INLINE_MENU = lambda course_id: InlineKeyboardMarkup(
+    [
+        [InlineKeyboardButton("📘 الدروس", callback_data=f"{COURSES_CALLBACK_PREFIX}:LESSONS:{course_id}")],
+        [InlineKeyboardButton("📝 الاختبارات", callback_data=f"{COURSES_CALLBACK_PREFIX}:EXAMS:{course_id}")],
+        [InlineKeyboardButton("📊 نتائجي", callback_data=f"{COURSES_CALLBACK_PREFIX}:RESULTS:{course_id}")],
+        [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")],
+    ]
+)
 
 def course_status_label(status: str) -> str:
-    return COURSE_STATUS_LABELS.get(status, "-")
+    return "نشطة" if status == COURSE_STATUS_ACTIVE else "متوقفة"
+
+
+def _course_back_markup(target: str, course_id: Optional[str] = None) -> InlineKeyboardMarkup:
+    callback = f"{COURSES_CALLBACK_PREFIX}:BACK:{target}"
+    if course_id:
+        callback = f"{callback}:{course_id}"
+    return InlineKeyboardMarkup([[InlineKeyboardButton("↩️ رجوع", callback_data=callback)]])
+
+
+def _notify_admins(context: CallbackContext, text: str):
+    for target in (ADMIN_ID, SUPERVISOR_ID):
+        if target:
+            try:
+                context.bot.send_message(chat_id=target, text=text)
+            except Exception:
+                logger.exception("فشل إرسال إشعار للدورات")
 
 
 def list_courses(include_archived: bool = False, active_only: bool = False):
     if not firestore_available():
         logger.warning("Firestore غير متاح لقائمة الدورات")
         return []
-    query = db.collection(COURSES_COLLECTION)
-    if not include_archived:
-        query = query.where("archived", "==", False)
     try:
-        courses = [dict(doc.to_dict() or {}, course_id=doc.id) for doc in query.stream()]
+        query = db.collection(COURSES_COLLECTION)
+        if not include_archived:
+            query = query.where("archived", "==", False)
         if active_only:
-            courses = [
-                c
-                for c in courses
-                if (c.get("status") in [COURSE_STATUS_ACTIVE, "available", None, ""])
-            ]
-        return courses
-    except Exception as e:
-        logger.error(f"❌ خطأ في جلب الدورات: {e}")
+            query = query.where("status", "==", COURSE_STATUS_ACTIVE)
+        docs = query.stream()
+        return [dict(doc.to_dict() or {}, course_id=doc.id) for doc in docs]
+    except Exception as exc:
+        logger.error("خطأ في جلب الدورات: %s", exc)
         return []
 
 
@@ -7153,137 +7127,102 @@ def fetch_course(course_id: str):
         return None
     try:
         doc = db.collection(COURSES_COLLECTION).document(course_id).get()
-        if doc.exists:
-            data = doc.to_dict() or {}
-            data["course_id"] = doc.id
-            return data
-    except Exception as e:
-        logger.error(f"❌ خطأ في قراءة الدورة {course_id}: {e}")
-    return None
+        if not doc.exists:
+            return None
+        data = doc.to_dict() or {}
+        data["course_id"] = course_id
+        return data
+    except Exception as exc:
+        logger.error("فشل قراءة الدورة %s: %s", course_id, exc)
+        return None
 
 
 def save_course(course_data: Dict) -> str:
     if not firestore_available():
         raise RuntimeError("Firestore غير متاح لحفظ الدورات")
     doc_ref = db.collection(COURSES_COLLECTION).document()
-    course_id = doc_ref.id
     payload = {
-        "course_id": course_id,
         "name": course_data.get("name"),
         "status": course_data.get("status", COURSE_STATUS_ACTIVE),
+        "archived": course_data.get("archived", False),
         "created_at": course_data.get("created_at") or datetime.now(timezone.utc).isoformat(),
         "created_by": course_data.get("created_by"),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "archived": False,
     }
     doc_ref.set(payload)
-    return course_id
+    return doc_ref.id
 
 
 def update_course(course_id: str, **fields):
     if not firestore_available():
         return
-    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
     try:
         db.collection(COURSES_COLLECTION).document(course_id).update(fields)
-    except Exception as e:
-        logger.error(f"❌ خطأ في تحديث الدورة {course_id}: {e}")
+    except Exception as exc:
+        logger.error("فشل تحديث الدورة %s: %s", course_id, exc)
+
+
+def _participant_ref(course_id: str, user_id: int):
+    return db.collection(COURSES_COLLECTION).document(course_id).collection("participants").document(str(user_id))
+
+
+def register_user_to_course(course_id: str, user: User):
+    if not firestore_available():
+        raise RuntimeError("Firestore غير متاح")
+    payload = {
+        "user_id": user.id,
+        "first_name": user.first_name,
+        "username": user.username,
+        "registered_at": datetime.now(timezone.utc).isoformat(),
+        "lessons_attended": [],
+        "exam_results": {},
+        "total_points": 0,
+    }
+    _participant_ref(course_id, user.id).set(payload, merge=True)
 
 
 def user_is_registered(course_id: str, user_id: int) -> bool:
     if not firestore_available():
         return False
     try:
-        doc = (
-            db.collection(COURSES_COLLECTION)
-            .document(course_id)
-            .collection("participants")
-            .document(str(user_id))
-            .get()
-        )
-        return doc.exists
-    except Exception as e:
-        logger.error(f"❌ خطأ في فحص التسجيل: {e}")
+        return _participant_ref(course_id, user_id).get().exists
+    except Exception:
         return False
 
 
-def register_user_to_course(course_id: str, user: User):
-    if not firestore_available():
-        raise RuntimeError("Firestore غير متاح للتسجيل")
-    now_iso = datetime.now(timezone.utc).isoformat()
-    payload = {
-        "user_id": user.id,
-        "username": user.username,
-        "first_name": user.first_name,
-        "joined_at": now_iso,
-    }
-    db.collection(COURSES_COLLECTION).document(course_id).collection("participants").document(str(user.id)).set(payload)
-
-
 def list_user_courses(user_id: int, include_archived: bool = False):
+    courses = list_courses(include_archived=include_archived)
+    registered = []
+    for course in courses:
+        if user_is_registered(course.get("course_id"), user_id):
+            registered.append(course)
+    return registered
+
+
+def fetch_lessons(course_id: str):
     if not firestore_available():
         return []
     try:
-        courses = list_courses(include_archived=include_archived)
-        registered = []
-        for course in courses:
-            if user_is_registered(course.get("course_id"), user_id):
-                registered.append(course)
-        return registered
-    except Exception as e:
-        logger.error(f"❌ خطأ في جلب دورات المستخدم: {e}")
-        return []
-
-
-def fetch_lessons(course_id: str, published_only: bool = False):
-    if not firestore_available():
-        return []
-    try:
-        lessons_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons")
-        if published_only:
-            lessons_ref = lessons_ref.where("published", "==", True)
-        lessons = []
-        for doc in lessons_ref.order_by("created_at", direction=firestore.Query.DESCENDING).stream():
-            lesson = doc.to_dict() or {}
-            lesson["lesson_id"] = doc.id
-            lessons.append(lesson)
-        return lessons
-    except Exception as e:
-        logger.error(f"❌ خطأ في جلب الدروس: {e}")
+        ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons")
+        docs = ref.order_by("created_at").stream()
+        return [dict(doc.to_dict() or {}, lesson_id=doc.id) for doc in docs]
+    except Exception as exc:
+        logger.error("خطأ في قراءة الدروس: %s", exc)
         return []
 
 
 def save_lesson(course_id: str, lesson_data: Dict) -> str:
     if not firestore_available():
-        raise RuntimeError("Firestore غير متاح لإضافة درس")
-    now_iso = datetime.now(timezone.utc).isoformat()
+        raise RuntimeError("Firestore غير متاح")
+    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document()
     payload = {
         "title": lesson_data.get("title"),
         "description": lesson_data.get("description"),
-        "question_text": lesson_data.get("question_text") or lesson_data.get("description"),
-        "storage_chat_id": lesson_data.get("storage_chat_id"),
-        "storage_message_id": lesson_data.get("storage_message_id"),
-        "storage_file_id": lesson_data.get("storage_file_id"),
-        "created_at": now_iso,
-        "created_by": lesson_data.get("created_by"),
-        "publish_at": lesson_data.get("publish_at"),
-        "published": lesson_data.get("published", False),
+        "content_type": lesson_data.get("content_type"),
+        "content_ref": lesson_data.get("content_ref"),
+        "created_at": lesson_data.get("created_at") or datetime.now(timezone.utc).isoformat(),
     }
-    doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document()
-    payload["lesson_id"] = doc_ref.id
     doc_ref.set(payload)
     return doc_ref.id
-
-
-def mark_lesson_published(course_id: str, lesson_id: str):
-    if not firestore_available():
-        return
-    try:
-        db.collection(COURSES_COLLECTION).document(course_id).collection("lessons").document(lesson_id).update(
-            {"published": True, "publish_at": datetime.now(timezone.utc).isoformat()}
-        )
-    except Exception as e:
-        logger.error(f"❌ خطأ في نشر الدرس {lesson_id}: {e}")
 
 
 def _exam_ref(course_id: str, exam_id: str):
@@ -7292,54 +7231,26 @@ def _exam_ref(course_id: str, exam_id: str):
 
 def create_exam(course_id: str, title: str, created_by: int) -> str:
     if not firestore_available():
-        raise RuntimeError("Firestore غير متاح لحفظ الاختبارات")
+        raise RuntimeError("Firestore غير متاح")
     doc_ref = db.collection(COURSES_COLLECTION).document(course_id).collection("exams").document()
-    now_iso = datetime.now(timezone.utc).isoformat()
     payload = {
-        "exam_id": doc_ref.id,
-        "course_id": course_id,
-        "exam_title": title,
-        "status": "draft",
-        "published": False,
-        "published_at": None,
+        "title": title,
         "questions": [],
-        "created_at": now_iso,
         "created_by": created_by,
-        "updated_at": now_iso,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     doc_ref.set(payload)
     return doc_ref.id
 
 
-def update_exam(course_id: str, exam_id: str, **fields):
-    if not firestore_available():
-        return
-    fields["updated_at"] = datetime.now(timezone.utc).isoformat()
-    try:
-        _exam_ref(course_id, exam_id).update(fields)
-    except Exception as e:
-        logger.error(f"❌ خطأ في تحديث الاختبار {exam_id}: {e}")
-
-
-def delete_exam(course_id: str, exam_id: str):
-    if not firestore_available():
-        return
-    try:
-        _exam_ref(course_id, exam_id).delete()
-    except Exception as e:
-        logger.error(f"❌ خطأ في حذف الاختبار {exam_id}: {e}")
-
-
-def fetch_exams(course_id: str, published_only: bool = False):
+def fetch_exams(course_id: str):
     if not firestore_available():
         return []
     try:
-        ref = db.collection(COURSES_COLLECTION).document(course_id).collection("exams")
-        if published_only:
-            ref = ref.where("published", "==", True)
-        return [dict(doc.to_dict() or {}, exam_id=doc.id) for doc in ref.stream()]
-    except Exception as e:
-        logger.error(f"❌ خطأ في قراءة الاختبارات للدورة {course_id}: {e}")
+        docs = db.collection(COURSES_COLLECTION).document(course_id).collection("exams").stream()
+        return [dict(doc.to_dict() or {}, exam_id=doc.id) for doc in docs]
+    except Exception as exc:
+        logger.error("خطأ في قراءة الاختبارات: %s", exc)
         return []
 
 
@@ -7348,1119 +7259,602 @@ def fetch_exam(course_id: str, exam_id: str):
         return None
     try:
         doc = _exam_ref(course_id, exam_id).get()
-        if doc.exists:
-            return dict(doc.to_dict() or {}, exam_id=doc.id)
-    except Exception as e:
-        logger.error(f"❌ خطأ في قراءة الاختبار {exam_id}: {e}")
-    return None
+        if not doc.exists:
+            return None
+        data = doc.to_dict() or {}
+        data["exam_id"] = exam_id
+        return data
+    except Exception as exc:
+        logger.error("فشل قراءة الاختبار: %s", exc)
+        return None
 
 
-def _save_questions(course_id: str, exam_id: str, questions: List[Dict]):
-    update_exam(course_id, exam_id, questions=questions)
-
-
-def notify_course_participants(course_id: str, text: str, context: CallbackContext):
+def save_exam_questions(course_id: str, exam_id: str, questions: List[Dict]):
     if not firestore_available():
         return
-    try:
-        participants = (
-            db.collection(COURSES_COLLECTION)
-            .document(course_id)
-            .collection("participants")
-            .stream()
-        )
-        for doc in participants:
-            info = doc.to_dict() or {}
-            uid = info.get("user_id")
-            if not uid:
-                continue
-            try:
-                context.bot.send_message(uid, text)
-            except Exception as e:
-                logger.debug(f"تعذر إرسال إشعار للمستخدم {uid}: {e}")
-    except Exception as e:
-        logger.error(f"❌ خطأ في إرسال إشعارات الدروس: {e}")
+    _exam_ref(course_id, exam_id).update({"questions": questions})
 
 
-def extract_storage_reference(msg) -> Dict:
-    storage_chat_id = None
-    storage_message_id = None
-    storage_file_id = None
-    title = None
-    if msg.forward_from_chat and msg.forward_from_chat.id:
-        storage_chat_id = msg.forward_from_chat.id
-        storage_message_id = msg.forward_from_message_id
-    text = (msg.text or "").strip()
-    if not storage_message_id and text:
-        m = re.search(r"t\.me/(c/)?(\-?\d+)?/?(\d+)$", text)
-        if m:
-            chat_part = m.group(2)
-            if chat_part:
-                try:
-                    storage_chat_id = int(chat_part if chat_part.startswith("-") else f"-100{chat_part}")
-                except Exception:
-                    storage_chat_id = None
-            try:
-                storage_message_id = int(m.group(3))
-            except Exception:
-                storage_message_id = None
-    for attr in ["document", "audio", "voice", "video", "video_note"]:
-        media = getattr(msg, attr, None)
-        if media and getattr(media, "file_id", None):
-            storage_file_id = media.file_id
-            title = getattr(media, "file_name", None) or media.file_id
-            break
-    if storage_chat_id and storage_message_id:
-        return {
-            "storage_chat_id": storage_chat_id,
-            "storage_message_id": storage_message_id,
-            "storage_file_id": storage_file_id,
-            "title": title or msg.caption or msg.text,
-        }
-    return {}
-
-
-def _is_admin_or_supervisor(user_id: int) -> bool:
-    return is_admin(user_id) or is_supervisor(user_id)
-
-
-def _deny_course_admin_access(update: Update):
-    """إظهار رسالة منع وإرجاع المستخدم لقائمة الدورات للطلاب."""
-
-    _reset_admin_course_states(update.effective_user.id)
-    update.message.reply_text(
-        "هذه الميزة خاصة بالإدارة فقط.", reply_markup=COURSES_MENU_KB
-    )
-
-
-def _require_course_admin(update: Update) -> bool:
-    """التأكد من أن الطلب من الأدمن أو المشرفة قبل متابعة إجراءات الدورات الإدارية."""
-
-    if _is_admin_or_supervisor(update.effective_user.id):
-        return True
-    _deny_course_admin_access(update)
-    return False
-
-
-def _set_course_selection_state(user_id: int, mapping: Dict[str, str], source: str = ""):
-    COURSE_SELECTION_STATE[user_id] = {
-        "courses:courses_map": mapping,
-        "courses:source": source,
-        "courses:lessons_map": {},
-        "courses:selected_course": None,
-        "courses:exams_map": {},
+def record_exam_answer(course_id: str, user: User, exam_id: str, question_index: int, option_index: int, points: int):
+    if not firestore_available():
+        return
+    ref = _participant_ref(course_id, user.id)
+    snap = ref.get()
+    current = snap.to_dict() if snap.exists else {}
+    exam_results = current.get("exam_results", {})
+    answers = exam_results.get(exam_id, {}).get("answers", [])
+    while len(answers) <= question_index:
+        answers.append(None)
+    answers[question_index] = option_index
+    total_points = current.get("total_points", 0) + points
+    exam_results[exam_id] = {
+        "answers": answers,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "score": exam_results.get(exam_id, {}).get("score", 0) + points,
     }
-
-
-def _set_lesson_selection_state(user_id: int, lessons_map: Dict[str, Dict]):
-    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["courses:lessons_map"] = lessons_map
-
-
-def _set_exam_selection_state(user_id: int, exams_map: Dict[str, Dict]):
-    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["courses:exams_map"] = exams_map
-
-
-def _clear_course_flow_state(user_id: int):
-    reset_course_state(user_id)
-
-
-def _reset_admin_course_states(user_id: int):
-    WAITING_COURSE_NAME.discard(user_id)
-    WAITING_LESSON_TITLE.discard(user_id)
-    WAITING_LESSON_DESCRIPTION.discard(user_id)
-    WAITING_LESSON_STORAGE.discard(user_id)
-    WAITING_LESSON_PUBLISH_DECISION.discard(user_id)
-    WAITING_LESSON_SELECTION.discard(user_id)
-    WAITING_EXAM_TITLE.discard(user_id)
-    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
-    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
-    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
-    COURSE_CREATION_STATE.pop(user_id, None)
-    LESSON_CREATION_STATE.pop(user_id, None)
-    EXAM_CREATION_STATE.pop(user_id, None)
-    ADMIN_COURSE_CONTEXT.pop(user_id, None)
-
-
-def _course_list_keyboard(courses: List[Dict], include_back: bool = True) -> ReplyKeyboardMarkup:
-    buttons: List[List[KeyboardButton]] = []
-    for course in courses:
-        name = course.get("name") or "-"
-        buttons.append([KeyboardButton(name)])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
-
-def _course_back_to_courses_list_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "↩️ رجوع لقائمة الدورات", callback_data="courses_back_to_courses_list"
-                )
-            ]
-        ]
+    ref.set(
+        {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "username": user.username,
+            "exam_results": exam_results,
+            "total_points": total_points,
+        },
+        merge=True,
     )
 
 
-def _course_back_to_course_menu_kb(course_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "↩️ رجوع لقائمة الدورة",
-                    callback_data=f"courses_back_to_course_menu:{course_id}",
-                )
-            ]
-        ]
+def record_lesson_attendance(course_id: str, user: User, lesson_id: str):
+    if not firestore_available():
+        return
+    ref = _participant_ref(course_id, user.id)
+    snap = ref.get()
+    current = snap.to_dict() if snap.exists else {}
+    lessons = current.get("lessons_attended", [])
+    if lesson_id not in lessons:
+        lessons.append(lesson_id)
+    ref.set(
+        {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "username": user.username,
+            "lessons_attended": lessons,
+        },
+        merge=True,
     )
 
 
-def _course_back_to_lessons_kb(course_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "↩️ رجوع لقائمة الدروس",
-                    callback_data=f"courses_back_to_lessons:{course_id}",
-                )
-            ]
-        ]
-    )
+def get_course_participants(course_id: str):
+    if not firestore_available():
+        return []
+    try:
+        docs = db.collection(COURSES_COLLECTION).document(course_id).collection("participants").stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as exc:
+        logger.error("فشل قراءة المشاركين: %s", exc)
+        return []
 
 
-def open_available_courses(update: Update, context: CallbackContext):
+def courses_main_menu(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     reset_course_state(user_id)
     message = update.effective_message
+    message.reply_text(
+        "قسم الدورات 🎓\n\nاختر أحد الخيارات التالية.",
+        reply_markup=COURSES_MENU_KB,
+    )
+
+
+def _courses_list_keyboard(courses: List[Dict], source: str) -> InlineKeyboardMarkup:
+    buttons = []
+    for course in courses:
+        cid = course.get("course_id")
+        name = course.get("name") or "دورة"
+        buttons.append([InlineKeyboardButton(name, callback_data=f"{COURSES_CALLBACK_PREFIX}:{source}:{cid}")])
+    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def courses_open_available(update: Update, context: CallbackContext):
     courses = list_courses(active_only=True)
     if not courses:
-        message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
+        update.message.reply_text("لا توجد دورات متاحة حاليًا.", reply_markup=COURSES_MENU_KB)
         return
-    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
-    _set_course_selection_state(user_id, mapping, source="available")
-    message.reply_text(
-        "اختر الدورة التي تود تصفحها:",
-        reply_markup=_course_list_keyboard(courses),
-    )
-    message.reply_text(
-        "يمكنك الرجوع لقائمة الدورات في أي وقت:",
-        reply_markup=_course_back_to_courses_list_kb(),
+    update.message.reply_text(
+        "الدورات المتاحة حاليًا:",
+        reply_markup=_courses_list_keyboard(courses, "AVAILABLE"),
     )
 
 
-def open_my_courses(update: Update, context: CallbackContext, include_archived: bool = False):
-    user = update.effective_user
-    reset_course_state(user.id)
-    message = update.effective_message
-    courses = list_user_courses(user.id, include_archived=include_archived)
-    if include_archived:
-        courses = [c for c in courses if c.get("archived")]
-    else:
-        courses = [c for c in courses if not c.get("archived")]
+def courses_open_my_courses(update: Update, context: CallbackContext, archived: bool = False):
+    courses = list_user_courses(update.effective_user.id, include_archived=archived)
+    courses = [c for c in courses if bool(c.get("archived")) == archived]
     if not courses:
-        message.reply_text(
-            "لا توجد دورات مسجل فيها حاليًا.",
-            reply_markup=ReplyKeyboardMarkup(
-                [
-                    [KeyboardButton(BTN_AVAILABLE_COURSES)],
-                    [KeyboardButton(BTN_BACK_MAIN)],
-                ],
-                resize_keyboard=True,
-            ),
+        update.message.reply_text(
+            "لا توجد دورات في هذا القسم.",
+            reply_markup=COURSES_MENU_KB,
         )
         return
-    source = "archived" if include_archived else "my"
-    if len(courses) == 1:
-        course = courses[0]
-        course_name = course.get("name") or "دورة"
-        mapping = {course_name: course.get("course_id")}
-        _set_course_selection_state(user.id, mapping, source=source)
-        COURSE_SELECTION_STATE[user.id]["courses:selected_course"] = {
-            "id": course.get("course_id"),
-            "name": course_name,
-        }
-        message.reply_text(
-            f"تم فتح دورة {course_name}. اختر من القائمة:",
-            reply_markup=COURSE_USER_KB,
+    source = "ARCHIVED" if archived else "MY"
+    title = "أرشيف دوراتي" if archived else "دوراتي"
+    update.message.reply_text(title, reply_markup=_courses_list_keyboard(courses, source))
+
+
+def _set_selected_course(user_id: int, course: Dict, source: str):
+    state = get_course_state(user_id)
+    state["selected"] = {"id": course.get("course_id"), "name": course.get("name")}
+    state["source"] = source
+    state.pop("lessons", None)
+    state.pop("exams", None)
+    state.pop("exam_session", None)
+
+
+def courses_open_course_menu(update: Update, context: CallbackContext, course_id: str, source: str):
+    course = fetch_course(course_id)
+    if not course:
+        update.effective_message.reply_text("تعذر تحميل بيانات الدورة.", reply_markup=COURSES_MENU_KB)
+        return
+    user_id = update.effective_user.id
+    registered = user_is_registered(course_id, user_id)
+    _set_selected_course(user_id, course, source)
+    if source == "AVAILABLE" and not registered:
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("✅ التسجيل في الدورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:REGISTER:{course_id}")],
+                [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:MAIN")],
+            ]
         )
-        message.reply_text(
-            "للوصول إلى قائمة الدورات اضغط رجوع:",
-            reply_markup=_course_back_to_courses_list_kb(),
+        update.effective_message.reply_text(
+            f"الدورة {course.get('name','دورة')} متاحة للتسجيل.", reply_markup=kb
         )
         return
-    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
-    _set_course_selection_state(user.id, mapping, source=source)
-    message.reply_text("اختر الدورة:", reply_markup=_course_list_keyboard(courses))
-    message.reply_text(
-        "للوصول إلى قائمة الدورات اضغط رجوع:",
-        reply_markup=_course_back_to_courses_list_kb(),
+
+    update.effective_message.reply_text(
+        f"تم فتح دورة {course.get('name','دورة')}.",
+        reply_markup=COURSE_USER_INLINE_MENU(course_id),
     )
 
 
-def _course_lessons_keyboard(course_name: str, lessons: List[Dict]):
-    buttons: List[List[KeyboardButton]] = []
-    for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
-        title = lesson.get("title") or "دون عنوان"
-        buttons.append([KeyboardButton(f"📚 الدرس {idx + 1}: {title}")])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
-
-def open_course_lessons(update: Update, context: CallbackContext, course_id: str, course_name: str):
-    user_id = update.effective_user.id
-    message = update.effective_message
-    lessons = fetch_lessons(course_id, published_only=True)
+def courses_show_lessons(update: Update, context: CallbackContext, course_id: str):
+    lessons = fetch_lessons(course_id)
+    state = get_course_state(update.effective_user.id)
+    state["lessons"] = {l.get("title") or l.get("lesson_id"): l for l in lessons}
     if not lessons:
-        _set_lesson_selection_state(user_id, {})
-        message.reply_text(
-            f"لا توجد دروس مضافة بعد لدورة {course_name}.",
-            reply_markup=_course_back_to_course_menu_kb(course_id),
-        )
+        update.effective_message.reply_text("لا توجد دروس بعد.", reply_markup=_course_back_markup("COURSE_MENU", course_id))
         return
-    lessons_map = {}
-    for idx, lesson in enumerate(sorted(lessons, key=lambda l: l.get("created_at", ""))):
-        title = lesson.get("title") or "دون عنوان"
-        btn_text = f"📚 الدرس {idx + 1}: {title}"
-        lesson_with_course = dict(lesson)
-        lesson_with_course.setdefault("course_id", course_id)
-        lessons_map[btn_text] = lesson_with_course
-    _set_lesson_selection_state(user_id, lessons_map)
-    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["courses:selected_course"] = {"id": course_id, "name": course_name}
-    message.reply_text(
-        f"اختر الدرس من دورة {course_name}:",
-        reply_markup=_course_lessons_keyboard(course_name, lessons),
-    )
-    message.reply_text(
-        "للعودة لقائمة الدورة:", reply_markup=_course_back_to_course_menu_kb(course_id)
-    )
+    buttons = []
+    for lesson in lessons:
+        title = lesson.get("title") or "درس"
+        buttons.append([InlineKeyboardButton(title, callback_data=f"{COURSES_CALLBACK_PREFIX}:LESSON:{course_id}:{lesson.get('lesson_id')}" )])
+    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:COURSE_MENU:{course_id}")])
+    update.effective_message.reply_text("اختر الدرس:", reply_markup=InlineKeyboardMarkup(buttons))
 
 
-def _send_lesson_to_user(update: Update, context: CallbackContext, lesson: Dict, course_name: str):
-    chat_id = update.effective_user.id
-    title = lesson.get("title") or "دون عنوان"
-    description = lesson.get("question_text") or lesson.get("description") or ""
-    context.bot.send_message(chat_id, f"{title}\n\n{description}")
-
-    storage_chat = lesson.get("storage_chat_id")
-    storage_msg = lesson.get("storage_message_id")
-    storage_file = lesson.get("storage_file_id")
-    if storage_chat and storage_msg:
+def courses_send_lesson(update: Update, context: CallbackContext, course_id: str, lesson_id: str):
+    lessons = fetch_lessons(course_id)
+    lesson = next((l for l in lessons if l.get("lesson_id") == lesson_id), None)
+    if not lesson:
+        update.effective_message.reply_text("الدرس غير موجود.")
+        return
+    text_parts = [f"📘 {lesson.get('title','درس')}\n\n"]
+    if lesson.get("description"):
+        text_parts.append(lesson.get("description"))
+    content_type = lesson.get("content_type")
+    content_ref = lesson.get("content_ref")
+    content_sent = False
+    if content_type == "audio" and content_ref:
         try:
-            context.bot.copy_message(chat_id=chat_id, from_chat_id=storage_chat, message_id=storage_msg)
-        except Exception as e:
-            logger.error(f"❌ خطأ في نسخ ملف الدرس: {e}")
-    elif storage_file:
-        try:
-            context.bot.send_document(chat_id, storage_file)
-        except Exception as e:
-            logger.error(f"❌ خطأ في إرسال ملف الدرس: {e}")
-
-    course_id = lesson.get("course_id") or (COURSE_SELECTION_STATE.get(chat_id, {}).get("courses:selected_course") or {}).get("id")
-    if course_id:
-        back_markup = _course_back_to_lessons_kb(course_id)
-        context.bot.send_message(chat_id, "⬅️ رجوع", reply_markup=back_markup)
+            update.effective_message.reply_audio(audio=content_ref, caption="\n".join(text_parts) or None)
+            content_sent = True
+        except Exception:
+            logger.exception("تعذر إرسال ملف الصوت")
+    if not content_sent:
+        update.effective_message.reply_text("\n".join(text_parts))
+        if content_ref:
+            update.effective_message.reply_text(f"المحتوى: {content_ref}")
+    record_lesson_attendance(course_id, update.effective_user, lesson_id)
+    update.effective_message.reply_text("تم تسجيل حضورك لهذا الدرس.", reply_markup=_course_back_markup("LESSONS", course_id))
 
 
-def _course_exams_keyboard(exams: List[Dict]):
-    buttons: List[List[KeyboardButton]] = []
-    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("published_at", ""))):
-        title = exam.get("exam_title") or "اختبار"
-        buttons.append([KeyboardButton(f"🧪 اختبار {idx + 1}: {title}")])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
-
-
-def open_course_tests(update: Update, context: CallbackContext, course_id: str, course_name: str):
-    user_id = update.effective_user.id
-    message = update.effective_message
-    exams = fetch_exams(course_id, published_only=True)
+def courses_show_exams(update: Update, context: CallbackContext, course_id: str):
+    exams = fetch_exams(course_id)
+    state = get_course_state(update.effective_user.id)
+    state["exams"] = {e.get("title") or e.get("exam_id"): e for e in exams}
     if not exams:
-        _set_exam_selection_state(user_id, {})
-        message.reply_text(
-            f"لا توجد اختبارات منشورة حاليًا لدورة {course_name}.",
-            reply_markup=_course_back_to_course_menu_kb(course_id),
-        )
+        update.effective_message.reply_text("لا توجد اختبارات بعد.", reply_markup=_course_back_markup("COURSE_MENU", course_id))
         return
-    exams_map = {}
-    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("published_at", ""))):
-        title = exam.get("exam_title") or "اختبار"
-        btn_text = f"🧪 اختبار {idx + 1}: {title}"
-        exams_map[btn_text] = exam
-    _set_exam_selection_state(user_id, exams_map)
-    state = COURSE_SELECTION_STATE.setdefault(user_id, {})
-    state["courses:selected_course"] = {"id": course_id, "name": course_name}
-    message.reply_text(
-        f"اختر الاختبار من دورة {course_name}:",
-        reply_markup=_course_exams_keyboard(exams),
-    )
-    message.reply_text(
-        "للعودة لقائمة الدورة:", reply_markup=_course_back_to_course_menu_kb(course_id)
-    )
+    buttons = []
+    for exam in exams:
+        title = exam.get("title") or "اختبار"
+        buttons.append([InlineKeyboardButton(title, callback_data=f"{COURSES_CALLBACK_PREFIX}:EXAM_START:{course_id}:{exam.get('exam_id')}" )])
+    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:COURSE_MENU:{course_id}")])
+    update.effective_message.reply_text("اختر الاختبار:", reply_markup=InlineKeyboardMarkup(buttons))
 
-
-def _start_exam_session(update: Update, context: CallbackContext, exam: Dict, course_name: str):
-    user_id = update.effective_user.id
-    questions = exam.get("questions") or []
-    if not questions:
-        update.message.reply_text("هذا الاختبار لا يحتوي على أسئلة حالياً.")
-        return
-    STUDENT_EXAM_SESSIONS[user_id] = {
-        "course_id": exam.get("course_id"),
-        "exam_id": exam.get("exam_id"),
-        "exam_title": exam.get("exam_title"),
-        "course_name": course_name,
-        "questions": questions,
-        "current_index": 0,
-        "total_points": 0,
-    }
-    _send_next_question(update, context, user_id)
-
-
-def handle_course_callback(update: Update, context: CallbackContext):
-    query = update.callback_query
-    if not query:
-        return
-
-    data = query.data or ""
-    user_id = query.from_user.id
-    course_state = COURSE_SELECTION_STATE.get(user_id, {})
-
-    if data == "courses_back_to_courses_list":
-        query.answer()
-        source = course_state.get("courses:source")
-        reset_course_state(user_id)
-        if source == "available":
-            open_available_courses(update, context)
-        elif source == "archived":
-            open_my_courses(update, context, include_archived=True)
-        else:
-            open_my_courses(update, context)
-        return
-
-    if data.startswith("courses_back_to_course_menu:"):
-        query.answer()
-        course_id = data.split(":", 1)[1]
-        selected_course = course_state.get("courses:selected_course") or {}
-        if selected_course.get("id") != course_id:
-            course_data = fetch_course(course_id) or {}
-            course_name = course_data.get("name", "دورة")
-            COURSE_SELECTION_STATE.setdefault(user_id, {})[
-                "courses:selected_course"
-            ] = {"id": course_id, "name": course_name}
-        course_info = COURSE_SELECTION_STATE.get(user_id, {}).get(
-            "courses:selected_course", {}
-        )
-        course_name = course_info.get("name", "دورة")
-        query.message.reply_text(
-            f"تم فتح دورة {course_name}. اختر من القائمة:",
-            reply_markup=COURSE_USER_KB,
-        )
-        query.message.reply_text(
-            "للوصول إلى قائمة الدورات اضغط رجوع:",
-            reply_markup=_course_back_to_courses_list_kb(),
-        )
-        return
-
-    if data.startswith("courses_back_to_lessons:"):
-        query.answer()
-        course_id = data.split(":", 1)[1]
-        course_info = course_state.get("courses:selected_course") or {}
-        course_name = course_info.get("name") or (fetch_course(course_id) or {}).get("name", "")
-        COURSE_SELECTION_STATE.setdefault(user_id, {})["courses:selected_course"] = {
-            "id": course_id,
-            "name": course_name,
-        }
-        open_course_lessons(update, context, course_id, course_name or "دورة")
-        return
-
-
-def _send_next_question(update: Update, context: CallbackContext, user_id: int):
-    session = STUDENT_EXAM_SESSIONS.get(user_id)
-    if not session:
-        return
+def _send_exam_question(update: Update, session: Dict):
     questions = session.get("questions", [])
-    idx = session.get("current_index", 0)
+    idx = session.get("index", 0)
     if idx >= len(questions):
-        total = session.get("total_points", 0)
-        context.bot.send_message(
-            chat_id=user_id,
-            text=f"تم إنهاء الاختبار. مجموع نقاطك: {total}.",
-            reply_markup=COURSE_USER_KB,
-        )
-        STUDENT_EXAM_SESSIONS.pop(user_id, None)
-        return
-    question = questions[idx]
-    answers = question.get("answers") or []
-    if not answers:
-        context.bot.send_message(chat_id=user_id, text="لا توجد إجابات لهذا السؤال.")
-        STUDENT_EXAM_SESSIONS.pop(user_id, None)
-        return
-    answer_buttons = []
-    answers_map = {}
-    for a_idx, ans in enumerate(answers):
-        label = f"{a_idx + 1}️⃣ {ans.get('text', '')}"
-        answer_buttons.append([KeyboardButton(label)])
-        answers_map[label] = {"text": ans.get("text", ""), "points": ans.get("points", 0)}
-    session["answers_map"] = answers_map
-    question_text = question.get("text") or "سؤال"
-    context.bot.send_message(
-        chat_id=user_id,
-        text=f"{question_text}",
-        reply_markup=ReplyKeyboardMarkup(answer_buttons, resize_keyboard=True),
-    )
-
-
-def handle_student_answer(update: Update, context: CallbackContext, text: str):
-    user_id = update.effective_user.id
-    session = STUDENT_EXAM_SESSIONS.get(user_id)
-    if not session:
+        update.effective_message.reply_text("✅ انتهى الاختبار.", reply_markup=_course_back_markup("EXAMS", session.get("course_id")))
         return False
-    answers_map = session.get("answers_map") or {}
-    if text not in answers_map:
-        return False
-    answer = answers_map[text]
-    questions = session.get("questions", [])
-    idx = session.get("current_index", 0)
-    if idx >= len(questions):
-        return True
     question = questions[idx]
-    course_id = session.get("course_id")
-    exam_id = session.get("exam_id")
-
-    if not firestore_available():
-        update.message.reply_text("الخدمة غير متاحة حاليًا، حاول لاحقًا.")
-        return True
-
-    attempt_ref = (
-        db.collection(COURSES_COLLECTION)
-        .document(course_id)
-        .collection("exams")
-        .document(exam_id)
-        .collection("attempts")
-        .document(str(user_id))
-    )
-    attempt_data = {
-        "user_id": user_id,
-        "exam_id": exam_id,
-        "course_id": course_id,
-        "exam_title": session.get("exam_title"),
-        "answers_chosen": [],
-        "total_points": 0,
-    }
-    try:
-        existing = attempt_ref.get()
-        if existing.exists:
-            attempt_data = existing.to_dict() or attempt_data
-    except Exception as e:
-        logger.error(f"❌ خطأ في جلب محاولة الاختبار للمستخدم {user_id}: {e}")
-
-    answers_chosen = attempt_data.get("answers_chosen") or []
-    if any(a.get("question_index") == idx for a in answers_chosen):
-        update.message.reply_text("تم تسجيل إجابتك على هذا السؤال سابقًا.")
-        return True
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    answers_chosen.append(
-        {
-            "question_index": idx,
-            "question_text": question.get("text"),
-            "answer_text": answer.get("text"),
-            "points": answer.get("points", 0),
-            "answered_at": now_iso,
-        }
-    )
-    total_points = attempt_data.get("total_points", 0) + answer.get("points", 0)
-    attempt_data.update({"answers_chosen": answers_chosen, "total_points": total_points, "updated_at": now_iso})
-    try:
-        attempt_ref.set(attempt_data)
-    except Exception as e:
-        logger.error(f"❌ خطأ في حفظ إجابة الاختبار للمستخدم {user_id}: {e}")
-
-    session["total_points"] = total_points
-    session["current_index"] = idx + 1
-    _send_next_question(update, context, user_id)
+    answers = question.get("answers", [])
+    buttons = []
+    for i, answer in enumerate(answers):
+        buttons.append([
+            InlineKeyboardButton(
+                answer.get("text", f"خيار {i+1}"),
+                callback_data=f"{COURSES_CALLBACK_PREFIX}:ANSWER:{session['course_id']}:{session['exam_id']}:{idx}:{i}",
+            )
+        ])
+    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:EXAMS:{session['course_id']}")])
+    update.effective_message.reply_text(question.get("text", "سؤال"), reply_markup=InlineKeyboardMarkup(buttons))
     return True
 
 
-def open_admin_courses_menu(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
+def courses_start_exam(update: Update, context: CallbackContext, course_id: str, exam_id: str):
+    exam = fetch_exam(course_id, exam_id) or {}
+    questions = exam.get("questions", [])
+    if not questions:
+        update.effective_message.reply_text("لا يحتوي الاختبار على أسئلة بعد.", reply_markup=_course_back_markup("EXAMS", course_id))
         return
-    update.message.reply_text("🛠️ إعداد الدورات", reply_markup=ADMIN_COURSES_MENU_KB)
+    state = get_course_state(update.effective_user.id)
+    state["exam_session"] = {
+        "course_id": course_id,
+        "exam_id": exam_id,
+        "questions": questions,
+        "index": 0,
+    }
+    _send_exam_question(update, state["exam_session"])
 
 
-def start_course_creation(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
+def courses_handle_answer(update: Update, context: CallbackContext, course_id: str, exam_id: str, question_idx: int, option_idx: int):
+    state = get_course_state(update.effective_user.id)
+    session = state.get("exam_session")
+    if not session or session.get("exam_id") != exam_id:
+        update.effective_message.reply_text("لا يوجد اختبار نشط.")
         return
-    WAITING_SUPPORT.discard(user_id)
-    WAITING_SUPPORT_GENDER.discard(user_id)
-    COURSE_CREATION_STATE[user_id] = {}
-    update.message.reply_text(
-        "اختر الإجراء لإنشاء دورة جديدة:", reply_markup=ADMIN_CREATE_COURSE_KB
-    )
-
-
-def prompt_course_name_input(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
+    questions = session.get("questions", [])
+    if question_idx >= len(questions):
         return
-    WAITING_SUPPORT.discard(user_id)
-    WAITING_SUPPORT_GENDER.discard(user_id)
-    update.message.reply_text(
-        "أرسل اسم الدورة (مثال: الفقه)", reply_markup=ADMIN_CREATE_COURSE_NAME_KB
-    )
-    WAITING_COURSE_NAME.add(user_id)
-
-
-def save_new_course(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    if not _require_course_admin(update):
-        return
-    if user_id not in WAITING_COURSE_NAME:
-        return
-    name = (update.message.text or "").strip()
-    WAITING_COURSE_NAME.discard(user_id)
-    if not name:
-        update.message.reply_text("يرجى إرسال اسم صحيح للدورة.", reply_markup=ADMIN_CREATE_COURSE_NAME_KB)
-        return
+    question = questions[question_idx]
+    answers = question.get("answers", [])
     try:
-        course_id = save_course({"name": name, "created_by": user_id})
-        logger.info("✅ تم إنشاء دورة جديدة %s | id=%s", name, course_id)
-        update.message.reply_text(
-            f"✅ تم حفظ دورة '{name}' بنجاح.", reply_markup=ADMIN_CREATE_COURSE_KB
-        )
-        COURSE_CREATION_STATE.pop(user_id, None)
-    except Exception as e:
-        logger.error(f"❌ خطأ في إنشاء الدورة: {e}")
-        update.message.reply_text("تعذر حفظ الدورة. حاول مرة أخرى.", reply_markup=ADMIN_CREATE_COURSE_KB)
+        selected = answers[option_idx]
+    except IndexError:
+        update.effective_message.reply_text("خيار غير صالح.")
+        return
+    points = int(selected.get("points", 0))
+    record_exam_answer(course_id, update.effective_user, exam_id, question_idx, option_idx, points)
+    session["index"] = question_idx + 1
+    if not _send_exam_question(update, session):
+        state.pop("exam_session", None)
 
 
-def list_courses_for_admin(update: Update, context: CallbackContext):
+def courses_show_results(update: Update, context: CallbackContext, course_id: str):
+    if not firestore_available():
+        update.effective_message.reply_text("النتائج غير متاحة الآن.")
+        return
+    ref = _participant_ref(course_id, update.effective_user.id)
+    snap = ref.get()
+    if not snap.exists:
+        update.effective_message.reply_text("لم يتم تسجيلك في الدورة.")
+        return
+    data = snap.to_dict() or {}
+    total = data.get("total_points", 0)
+    lessons = len(data.get("lessons_attended", []))
+    update.effective_message.reply_text(
+        f"📊 نتائجي في الدورة\n- الدروس المحضورة: {lessons}\n- إجمالي النقاط: {total}",
+        reply_markup=_course_back_markup("COURSE_MENU", course_id),
+    )
+
+
+def courses_admin_menu(update: Update, context: CallbackContext):
+    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
+        return
+    reset_admin_course_state(update.effective_user.id)
+    update.effective_message.reply_text("⚙️ إعداد الدورات", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+
+
+def admin_start_course_creation(update: Update, context: CallbackContext):
+    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
+        return
+    state = get_admin_course_state(update.effective_user.id)
+    state.clear()
+    state["mode"] = "create_course"
+    state["awaiting"] = "name"
+    update.message.reply_text("أدخل اسم الدورة:", reply_markup=CANCEL_KB)
+
+
+def admin_handle_text(update: Update, context: CallbackContext) -> bool:
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
+    state = COURSES_ADMIN_STATE.get(user_id)
+    if not state:
+        return False
+    awaiting = state.get("awaiting")
+    text = (update.message.text or "").strip()
+    if text == BTN_CANCEL:
+        reset_admin_course_state(user_id)
+        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+        return True
+    if state.get("mode") == "create_course" and awaiting == "name":
+        state["name"] = text
+        state["awaiting"] = None
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🟢 نشطة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATUS:{COURSE_STATUS_ACTIVE}")],
+                [InlineKeyboardButton("🔴 متوقفة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATUS:{COURSE_STATUS_STOPPED}")],
+            ]
+        )
+        update.message.reply_text("اختر حالة الدورة:", reply_markup=kb)
+        return True
+    if state.get("mode") == "rename" and awaiting == "name":
+        course_id = state.get("course_id")
+        update_course(course_id, name=text)
+        reset_admin_course_state(user_id)
+        update.message.reply_text("تم تحديث اسم الدورة.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+        return True
+    if state.get("mode") == "lesson" and awaiting == "title":
+        state["title"] = text
+        state["awaiting"] = "description"
+        update.message.reply_text("أدخل وصف/سؤال الدرس (اختياري، اكتب - للتخطي):", reply_markup=CANCEL_KB)
+        return True
+    if state.get("mode") == "lesson" and awaiting == "description":
+        state["description"] = None if text == "-" else text
+        state["awaiting"] = "content_type"
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("صوتي", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:LESSON_TYPE:audio")],
+                [InlineKeyboardButton("نصي", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:LESSON_TYPE:text")],
+            ]
+        )
+        update.message.reply_text("اختر نوع المحتوى:", reply_markup=kb)
+        return True
+    if state.get("mode") == "lesson" and awaiting == "content_ref":
+        state["content_ref"] = text
+        try:
+            lesson_id = save_lesson(state.get("course_id"), {
+                "title": state.get("title"),
+                "description": state.get("description"),
+                "content_type": state.get("content_type"),
+                "content_ref": state.get("content_ref"),
+            })
+            update.message.reply_text(
+                f"✅ تم إضافة الدرس '{state.get('title')}'.", reply_markup=ADMIN_COURSE_ACTIONS_KB
+            )
+        except Exception as exc:
+            logger.error("فشل حفظ الدرس: %s", exc)
+            update.message.reply_text("تعذر حفظ الدرس.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+        reset_admin_course_state(user_id)
+        return True
+    if state.get("mode") == "exam" and awaiting == "title":
+        state["title"] = text
+        exam_id = create_exam(state.get("course_id"), text, user_id)
+        state["exam_id"] = exam_id
+        state["awaiting"] = "question_text"
+        state["questions"] = []
+        update.message.reply_text("أرسل نص السؤال الأول:", reply_markup=CANCEL_KB)
+        return True
+    if state.get("mode") == "exam" and awaiting == "question_text":
+        state["current_question"] = {"text": text, "answers": []}
+        state["awaiting"] = "answer_text"
+        state["answer_index"] = 0
+        update.message.reply_text("أرسل إجابة الخيار A:", reply_markup=CANCEL_KB)
+        return True
+    if state.get("mode") == "exam" and awaiting == "answer_text":
+        answers = state["current_question"].setdefault("answers", [])
+        labels = ["A", "B", "C", "D"]
+        idx = state.get("answer_index", 0)
+        answers.append({"text": text, "points": 0})
+        state["awaiting"] = "answer_points"
+        update.message.reply_text(f"حدد نقاط الإجابة {labels[idx]} (0/1/2/3...):", reply_markup=CANCEL_KB)
+        return True
+    if state.get("mode") == "exam" and awaiting == "answer_points":
+        try:
+            points = int(text)
+        except ValueError:
+            update.message.reply_text("أدخل رقمًا صحيحًا للنقاط.")
+            return True
+        labels = ["A", "B", "C", "D"]
+        idx = state.get("answer_index", 0)
+        state["current_question"]["answers"][idx]["points"] = points
+        state["answer_index"] = idx + 1
+        if state["answer_index"] >= 4:
+            state["questions"].append(state["current_question"])
+            save_exam_questions(state.get("course_id"), state.get("exam_id"), state["questions"])
+            state["awaiting"] = "add_next"
+            kb = InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("➕ إضافة سؤال آخر", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_QUESTION")],
+                    [InlineKeyboardButton("✅ إنهاء الاختبار", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:FINISH_EXAM")],
+                ]
+            )
+            update.message.reply_text("تم حفظ السؤال. اختر الإجراء التالي:", reply_markup=kb)
+        else:
+            state["awaiting"] = "answer_text"
+            update.message.reply_text(f"أرسل إجابة الخيار {labels[state['answer_index']] }:", reply_markup=CANCEL_KB)
+        return True
+    return False
+
+
+def admin_list_courses(update: Update, context: CallbackContext):
+    if not (is_admin(update.effective_user.id) or is_supervisor(update.effective_user.id)):
         return
     courses = list_courses(include_archived=True)
     if not courses:
-        update.message.reply_text("لا توجد دورات حالياً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
-    ADMIN_COURSE_CONTEXT[user_id] = {"courses": mapping, "selected": None}
-    update.message.reply_text(
-        "اختر الدورة لإدارتها:", reply_markup=_course_list_keyboard(courses, include_back=True)
-    )
-
-
-def list_courses_for_archive(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    courses = [c for c in list_courses(include_archived=False)]
-    if not courses:
-        update.message.reply_text("لا توجد دورات متاحة للأرشفة.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
-    ADMIN_COURSE_CONTEXT[user_id] = {"courses": mapping, "selected": None, "archive_mode": True}
-    update.message.reply_text(
-        "اختر الدورة لأرشفتها (سيتم إخفاؤها من الدورات المتاحة):",
-        reply_markup=_course_list_keyboard(courses, include_back=True),
-    )
-
-
-def handle_admin_course_selection(update: Update, context: CallbackContext, text: str):
-    user_id = update.effective_user.id
-    if not _is_admin_or_supervisor(user_id):
-        return False
-    if not _require_course_admin(update):
-        return False
-    ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
-    course_id = (ctx.get("courses") or {}).get(text)
-    if not course_id:
-        return False
-    if ctx.get("archive_mode"):
-        update_course(course_id, archived=True)
-        update.message.reply_text(
-            f"✅ تم أرشفة دورة {text}.", reply_markup=ADMIN_COURSES_MENU_KB
-        )
-        ADMIN_COURSE_CONTEXT[user_id] = {}
-        return True
-    ADMIN_COURSE_CONTEXT[user_id]["selected"] = {"id": course_id, "name": text}
-    update.message.reply_text(
-        f"تم اختيار دورة {text}.",
-        reply_markup=ADMIN_COURSE_ACTIONS_KB,
-    )
-    return True
-
-
-def open_admin_course_tests(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
-    if not selected:
-        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    update.message.reply_text(
-        "إدارة الاختبارات ضمن هذه الدورة:", reply_markup=ADMIN_COURSE_TESTS_KB
-    )
-
-
-def open_admin_manage_exams(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
-    if not selected:
-        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    update.message.reply_text("اختر الإجراء:", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-
-
-def start_exam_creation(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
-    if not selected:
-        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    EXAM_CREATION_STATE[user_id] = {
-        "course_id": selected.get("id"),
-        "course_name": selected.get("name"),
-    }
-    WAITING_EXAM_TITLE.add(user_id)
-    update.message.reply_text("أرسل اسم الاختبار", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-
-
-def handle_exam_title_input(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_EXAM_TITLE:
-        return False
-    if not _require_course_admin(update):
-        return False
-    state = EXAM_CREATION_STATE.setdefault(user_id, {})
-    title = (update.message.text or "").strip()
-    if not title:
-        update.message.reply_text("يرجى إرسال اسم صحيح للاختبار.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return True
-    WAITING_EXAM_TITLE.discard(user_id)
-    try:
-        exam_id = create_exam(state.get("course_id"), title, user_id)
-        state.update({"exam_id": exam_id, "exam_title": title, "current_question": None})
-        update.message.reply_text(
-            f"✅ تم إنشاء مسودة الاختبار '{title}'.", reply_markup=ADMIN_EXAM_ACTIONS_KB
-        )
-    except Exception as e:
-        logger.error(f"❌ خطأ في إنشاء الاختبار: {e}")
-        update.message.reply_text("تعذر إنشاء الاختبار، حاول مرة أخرى.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-    return True
-
-
-def start_question_creation(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    state = EXAM_CREATION_STATE.get(user_id)
-    if not state or not state.get("exam_id"):
-        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return
-    state["current_question"] = {"answers": []}
-    WAITING_EXAM_QUESTION_TEXT.add(user_id)
-    update.message.reply_text("أرسل نص السؤال", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-
-
-def handle_question_text(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_EXAM_QUESTION_TEXT:
-        return False
-    if not _require_course_admin(update):
-        return True
-    question_text = (update.message.text or "").strip()
-    if not question_text:
-        update.message.reply_text("يرجى إرسال نص صحيح للسؤال.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-        return True
-    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
-    state = EXAM_CREATION_STATE.setdefault(user_id, {})
-    question = state.get("current_question") or {}
-    question.update({"text": question_text, "answers": question.get("answers") or []})
-    state["current_question"] = question
-    update.message.reply_text(
-        "تم حفظ نص السؤال. أضف الأجوبة والنقاط:", reply_markup=ADMIN_QUESTION_ACTIONS_KB
-    )
-    return True
-
-
-def prompt_answer_text(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    state = EXAM_CREATION_STATE.get(user_id)
-    if not state or not state.get("current_question"):
-        update.message.reply_text("يرجى إنشاء سؤال أولاً.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-        return
-    WAITING_EXAM_ANSWER_TEXT.add(user_id)
-    update.message.reply_text("أرسل نص الجواب", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-
-
-def handle_answer_text(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_EXAM_ANSWER_TEXT:
-        return False
-    if not _require_course_admin(update):
-        return True
-    answer_text = (update.message.text or "").strip()
-    if not answer_text:
-        update.message.reply_text("يرجى إرسال نص صحيح للجواب.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-        return True
-    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
-    state = EXAM_CREATION_STATE.setdefault(user_id, {})
-    state["pending_answer_text"] = answer_text
-    WAITING_EXAM_ANSWER_POINTS.add(user_id)
-    update.message.reply_text("أرسل نقاط هذا الجواب (رقم فقط مثل 0/1/2/3…)", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-    return True
-
-
-def handle_answer_points(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_EXAM_ANSWER_POINTS:
-        return False
-    if not _require_course_admin(update):
-        return True
-    state = EXAM_CREATION_STATE.setdefault(user_id, {})
-    text = (update.message.text or "").strip()
-    try:
-        points = int(text)
-    except Exception:
-        update.message.reply_text("أرسل رقمًا صحيحًا للنقاط.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-        return True
-    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
-    answer_text = state.pop("pending_answer_text", None)
-    if not answer_text:
-        update.message.reply_text("يرجى إرسال نص الجواب أولاً.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-        return True
-    question = state.get("current_question") or {}
-    answers = question.get("answers") or []
-    answers.append({"text": answer_text, "points": points})
-    question["answers"] = answers
-    state["current_question"] = question
-    update.message.reply_text("تم حفظ الجواب مع النقاط. يمكنك إضافة المزيد أو إنهاء السؤال.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-    return True
-
-
-def finalize_question(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    state = EXAM_CREATION_STATE.get(user_id)
-    if not state or not state.get("exam_id"):
-        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return
-    question = state.get("current_question") or {}
-    if not question.get("text") or not (question.get("answers") or []):
-        update.message.reply_text("يرجى إضافة نص السؤال وإجابة واحدة على الأقل.", reply_markup=ADMIN_QUESTION_ACTIONS_KB)
-        return
-    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
-    questions = exam.get("questions") or []
-    questions.append({"text": question.get("text"), "answers": question.get("answers")})
-    _save_questions(state.get("course_id"), state.get("exam_id"), questions)
-    state["current_question"] = None
-    update.message.reply_text("تم حفظ السؤال داخل الاختبار.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-
-
-def cancel_question(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    WAITING_EXAM_QUESTION_TEXT.discard(user_id)
-    WAITING_EXAM_ANSWER_TEXT.discard(user_id)
-    WAITING_EXAM_ANSWER_POINTS.discard(user_id)
-    state = EXAM_CREATION_STATE.get(user_id)
-    if state:
-        state["current_question"] = None
-        state.pop("pending_answer_text", None)
-    update.message.reply_text("تم إلغاء السؤال الحالي.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-
-
-def publish_exam(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    state = EXAM_CREATION_STATE.get(user_id)
-    if not state or not state.get("exam_id"):
-        update.message.reply_text("يرجى إنشاء اختبار أولاً.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return
-    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
-    questions = exam.get("questions") or []
-    if not questions or any(not (q.get("answers") or []) for q in questions):
-        update.message.reply_text("لا يمكن النشر بدون أسئلة وأجوبة.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-        return
-    if exam.get("published"):
-        update.message.reply_text("تم نشر الاختبار مسبقًا.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-        return
-    publish_time = datetime.now(timezone.utc).isoformat()
-    update_exam(
-        state.get("course_id"),
-        state.get("exam_id"),
-        published=True,
-        published_at=publish_time,
-        status="published",
-    )
-    update.message.reply_text(f"✅ تم نشر الاختبار '{exam.get('exam_title')}'.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-
-
-def cancel_exam_draft(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    state = EXAM_CREATION_STATE.get(user_id)
-    if not state or not state.get("exam_id"):
-        update.message.reply_text("لا توجد مسودة لحذفها.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return
-    exam = fetch_exam(state.get("course_id"), state.get("exam_id")) or {}
-    if exam.get("published"):
-        update.message.reply_text("لا يمكن حذف اختبار منشور.", reply_markup=ADMIN_EXAM_ACTIONS_KB)
-        return
-    delete_exam(state.get("course_id"), state.get("exam_id"))
-    EXAM_CREATION_STATE.pop(user_id, None)
-    update.message.reply_text("تم حذف مسودة الاختبار.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-
-
-def list_exams_for_admin(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    selected = (ADMIN_COURSE_CONTEXT.get(user_id) or {}).get("selected") or {}
-    if not selected:
-        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    exams = fetch_exams(selected.get("id"))
-    if not exams:
-        update.message.reply_text("لا توجد اختبارات لهذه الدورة.", reply_markup=ADMIN_MANAGE_EXAMS_KB)
-        return
-    lines = ["قائمة الاختبارات:"]
-    for idx, exam in enumerate(sorted(exams, key=lambda e: e.get("created_at", "")), 1):
-        status = "منشور" if exam.get("published") else "مسودة"
-        lines.append(f"{idx}. {exam.get('exam_title', '-')}: {status}")
-    update.message.reply_text("\n".join(lines), reply_markup=ADMIN_MANAGE_EXAMS_KB)
-
-def start_lesson_creation(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return
-    ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
-    selected = ctx.get("selected") or {}
-    if not selected:
-        update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    course_name = selected.get("name")
-    LESSON_CREATION_STATE[user_id] = {
-        "course_id": selected.get("id"),
-        "course_name": course_name,
-    }
-    update.message.reply_text(
-        "أرسل عنوان الدرس", reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True)
-    )
-    WAITING_LESSON_TITLE.add(user_id)
-
-
-def handle_lesson_title(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_LESSON_TITLE:
-        return False
-    if not _require_course_admin(update):
-        return True
-    title = (update.message.text or "").strip()
-    if not title:
-        update.message.reply_text("يرجى إرسال عنوان صحيح.")
-        return True
-    state = LESSON_CREATION_STATE.setdefault(user_id, {})
-    state["title"] = title
-    WAITING_LESSON_TITLE.discard(user_id)
-    WAITING_LESSON_DESCRIPTION.add(user_id)
-    update.message.reply_text(
-        "أرسل محتوى الدرس (نص فقط)",
-        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
-    )
-    return True
-
-
-def handle_lesson_description(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if user_id not in WAITING_LESSON_DESCRIPTION:
-        return False
-    if not _require_course_admin(update):
-        return True
-    desc = (update.message.text or "").strip()
-    if not desc:
-        update.message.reply_text("يرجى إرسال وصف صحيح.")
-        return True
-    state = LESSON_CREATION_STATE.setdefault(user_id, {})
-    state["description"] = desc
-    state["question_text"] = desc
-    WAITING_LESSON_DESCRIPTION.discard(user_id)
-    course_id = state.get("course_id")
-    course_name = state.get("course_name") or ""
-    try:
-        lesson_id = save_lesson(
-            course_id,
-            {
-                "title": state.get("title"),
-                "description": state.get("description"),
-                "question_text": state.get("question_text"),
-                "created_by": user_id,
-                "published": True,
-                "publish_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        mark_lesson_published(course_id, lesson_id)
-        update.message.reply_text(
-            f"✅ تم إضافة الدرس '{state.get('title')}' لدورة {course_name}.",
-            reply_markup=ADMIN_COURSE_ACTIONS_KB,
-        )
-    except Exception as e:
-        logger.error(f"❌ خطأ في حفظ الدرس: {e}")
-        update.message.reply_text("تعذر حفظ الدرس، حاول مجددًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-    finally:
-        LESSON_CREATION_STATE.pop(user_id, None)
-    return True
-
-
-def _fetch_latest_from_section(section_key: str) -> Dict:
-    clips = fetch_audio_clips(section_key)
-    if clips:
-        return clips[0]
-    return {}
-
-
-def _present_latest_storage_choices(update: Update, context: CallbackContext):
-    if not _require_course_admin(update):
-        return
-    choices: List[Dict] = []
-    for section_key in AUDIO_SECTIONS.keys():
-        clip = _fetch_latest_from_section(section_key)
-        if clip:
-            choices.append(clip)
-    if not choices:
-        update.message.reply_text("لا توجد ملفات حديثة متاحة.", reply_markup=ADMIN_LESSON_STORAGE_KB)
+        update.message.reply_text("لا توجد دورات حاليًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
         return
     buttons = []
-    for clip in choices:
-        title = clip.get("title") or "ملف مخزن"
-        label = f"📌 {title}"
-        buttons.append([KeyboardButton(label)])
-    buttons.append([KeyboardButton(BTN_ADMIN_COURSE_CANCEL)])
-    state = LESSON_CREATION_STATE.setdefault(update.effective_user.id, {})
-    state["latest_choices"] = {f"📌 {c.get('title') or 'ملف مخزن'}": c for c in choices}
-    update.message.reply_text("اختر من آخر الملفات:", reply_markup=ReplyKeyboardMarkup(buttons, resize_keyboard=True))
+    for c in courses:
+        name = c.get("name") or "دورة"
+        cid = c.get("course_id")
+        buttons.append([InlineKeyboardButton(f"{name} ({course_status_label(c.get('status'))})", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:SELECT:{cid}")])
+    buttons.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:ADMIN")])
+    update.message.reply_text("اختر الدورة:", reply_markup=InlineKeyboardMarkup(buttons))
 
 
-def _store_lesson_and_confirm(update: Update, context: CallbackContext, state: Dict):
-    if not _require_course_admin(update):
+def admin_open_course_actions(update: Update, context: CallbackContext, course_id: str):
+    course = fetch_course(course_id)
+    if not course:
+        update.effective_message.reply_text("تعذر العثور على الدورة.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
         return
-    course_id = state.get("course_id")
-    course_name = state.get("course_name") or ""
-    try:
-        lesson_id = save_lesson(
-            course_id,
-            {
-                "title": state.get("title"),
-                "description": state.get("description"),
-                "question_text": state.get("question_text"),
-                "storage_chat_id": state.get("storage_chat_id") or AUDIO_STORAGE_CHANNEL_ID,
-                "storage_message_id": state.get("storage_message_id"),
-                "storage_file_id": state.get("storage_file_id"),
-                "created_by": update.effective_user.id,
-                "published": True,
-                "publish_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-        mark_lesson_published(course_id, lesson_id)
-        update.message.reply_text(
-            f"✅ تم إضافة الدرس '{state.get('title')}' لدورة {course_name}.",
-            reply_markup=ADMIN_COURSE_ACTIONS_KB,
-        )
-    except Exception as e:
-        logger.error(f"❌ خطأ في حفظ الدرس: {e}")
-        update.message.reply_text("تعذر حفظ الدرس، حاول مجددًا.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
-    finally:
-        WAITING_LESSON_STORAGE.discard(update.effective_user.id)
-        LESSON_CREATION_STATE.pop(update.effective_user.id, None)
+    state = get_admin_course_state(update.effective_user.id)
+    state.clear()
+    state.update({"mode": "course_actions", "course_id": course_id})
+    buttons = [
+        [InlineKeyboardButton("➕ إضافة درس", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_LESSON:{course_id}")],
+        [InlineKeyboardButton("➕ إضافة اختبار", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ADD_EXAM:{course_id}")],
+        [InlineKeyboardButton("👥 إحصائيات الدورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:STATS:{course_id}")],
+        [InlineKeyboardButton("✏️ إعادة تسمية", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:RENAME:{course_id}")],
+        [InlineKeyboardButton("🔁 تغيير الحالة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:TOGGLE:{course_id}")],
+        [InlineKeyboardButton("🗃 أرشفة دورة", callback_data=f"{COURSES_CALLBACK_PREFIX}:ADMIN:ARCHIVE:{course_id}")],
+        [InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSES_CALLBACK_PREFIX}:BACK:ADMIN")],
+    ]
+    update.effective_message.reply_text(
+        f"لوحة إدارة: {course.get('name','دورة')}", reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 
-def handle_lesson_storage(update: Update, context: CallbackContext, text: str):
+def admin_toggle_status(update: Update, context: CallbackContext, course_id: str):
+    course = fetch_course(course_id)
+    if not course:
+        update.effective_message.reply_text("الدورة غير موجودة.")
+        return
+    new_status = COURSE_STATUS_ACTIVE if course.get("status") != COURSE_STATUS_ACTIVE else COURSE_STATUS_STOPPED
+    update_course(course_id, status=new_status)
+    update.effective_message.reply_text(f"تم تحديث الحالة إلى {course_status_label(new_status)}.")
+
+
+def admin_archive_course(update: Update, context: CallbackContext, course_id: str):
+    update_course(course_id, archived=True)
+    update.effective_message.reply_text("تم نقل الدورة للأرشيف.")
+
+
+def admin_show_stats(update: Update, context: CallbackContext, course_id: str):
+    participants = get_course_participants(course_id)
+    if not participants:
+        update.effective_message.reply_text("لا يوجد مشاركون حتى الآن.")
+        return
+    lines = ["👥 إحصائيات المسجلين:"]
+    for p in participants:
+        lessons = len(p.get("lessons_attended", []))
+        total = p.get("total_points", 0)
+        name = p.get("first_name") or "مستخدم"
+        lines.append(f"- {name} | حضور: {lessons} | النقاط: {total}")
+    update.effective_message.reply_text("\n".join(lines), reply_markup=_course_back_markup("ADMIN", course_id))
+
+
+def courses_callback_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if not query:
+        return
+    data = query.data or ""
+    parts = data.split(":")
+    if len(parts) < 2 or parts[0] != COURSES_CALLBACK_PREFIX:
+        return
+    query.answer()
+    action = parts[1]
     user_id = update.effective_user.id
-    if not _require_course_admin(update):
-        return True
-    if user_id not in WAITING_LESSON_STORAGE:
-        return False
-    state = LESSON_CREATION_STATE.setdefault(user_id, {})
-    if text == BTN_ADMIN_ADD_LESSON_FROM_LINK:
-        state["storage_mode"] = "link"
-        update.message.reply_text(
-            "أرسل رابط المنشور من قناة التخزين أو قم بعمل إعادة توجيه للمنشور.",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
-        )
-        return True
-    if text == BTN_ADMIN_ADD_LESSON_FROM_HASHTAG:
-        state["storage_mode"] = "hashtag"
-        update.message.reply_text(
-            "أرسل الهاشتاق/القسم (مثال: #الفقه)",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_ADMIN_COURSE_CANCEL)]], resize_keyboard=True),
-        )
-        return True
-    if text == BTN_ADMIN_ADD_LESSON_FROM_LATEST:
-        state["storage_mode"] = "latest"
-        _present_latest_storage_choices(update, context)
-        return True
+    if action == "BACK":
+        target = parts[2] if len(parts) > 2 else "MAIN"
+        if target == "MAIN":
+            courses_main_menu(update, context)
+        elif target == "COURSE_MENU" and len(parts) > 3:
+            courses_open_course_menu(update, context, parts[3], get_course_state(user_id).get("source", "MY"))
+        elif target == "LESSONS" and len(parts) > 3:
+            courses_show_lessons(update, context, parts[3])
+        elif target == "EXAMS" and len(parts) > 3:
+            courses_show_exams(update, context, parts[3])
+        elif target == "ADMIN":
+            courses_admin_menu(update, context)
+        return
+    if action in ("AVAILABLE", "MY", "ARCHIVED"):
+        source = action
+        course_id = parts[2]
+        courses_open_course_menu(update, context, course_id, source)
+        return
+    if action == "REGISTER":
+        course_id = parts[2]
+        course = fetch_course(course_id) or {"course_id": course_id}
+        try:
+            register_user_to_course(course_id, update.effective_user)
+            _set_selected_course(user_id, course, "MY")
+            record = get_user_record(update.effective_user)
+            update_user_record(update.effective_user.id, points=record.get("points", 0) + 1)
+            _notify_admins(context, f"مستخدم جديد سجل بالدورة ({course.get('name','')})")
+            update.effective_message.reply_text(
+                "✅ تم تسجيلك في الدورة وتم إضافة نقطة تسجيل لك.", reply_markup=COURSE_USER_INLINE_MENU(course_id)
+            )
+        except Exception:
+            logger.exception("فشل تسجيل المستخدم في الدورة")
+            update.effective_message.reply_text("تعذر إتمام التسجيل حاليًا.")
+        return
+    if action == "LESSONS":
+        course_id = parts[2]
+        courses_show_lessons(update, context, course_id)
+        return
+    if action == "LESSON":
+        course_id, lesson_id = parts[2], parts[3]
+        courses_send_lesson(update, context, course_id, lesson_id)
+        return
+    if action == "EXAMS":
+        course_id = parts[2]
+        courses_show_exams(update, context, course_id)
+        return
+    if action == "EXAM_START":
+        course_id, exam_id = parts[2], parts[3]
+        courses_start_exam(update, context, course_id, exam_id)
+        return
+    if action == "ANSWER":
+        course_id, exam_id, q_idx, ans_idx = parts[2], parts[3], int(parts[4]), int(parts[5])
+        courses_handle_answer(update, context, course_id, exam_id, q_idx, ans_idx)
+        return
+    if action == "RESULTS":
+        course_id = parts[2]
+        courses_show_results(update, context, course_id)
+        return
+    if action == "ADMIN":
+        sub = parts[2]
+        if sub == "STATUS":
+            state = get_admin_course_state(user_id)
+            state["status"] = parts[3]
+            course_id = save_course({"name": state.get("name"), "status": state.get("status"), "created_by": user_id})
+            reset_admin_course_state(user_id)
+            update.effective_message.reply_text(f"✅ تم إنشاء دورة جديدة: {fetch_course(course_id).get('name','')}", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+        elif sub == "SELECT":
+            admin_open_course_actions(update, context, parts[3])
+        elif sub == "RENAME":
+            state = get_admin_course_state(user_id)
+            state.update({"mode": "rename", "awaiting": "name", "course_id": parts[3]})
+            update.effective_message.reply_text("أدخل الاسم الجديد:", reply_markup=CANCEL_KB)
+        elif sub == "TOGGLE":
+            admin_toggle_status(update, context, parts[3])
+        elif sub == "ARCHIVE":
+            admin_archive_course(update, context, parts[3])
+        elif sub == "ADD_LESSON":
+            state = get_admin_course_state(user_id)
+            state.clear(); state.update({"mode": "lesson", "awaiting": "title", "course_id": parts[3]})
+            update.effective_message.reply_text("أدخل عنوان الدرس:", reply_markup=CANCEL_KB)
+        elif sub == "LESSON_TYPE":
+            state = get_admin_course_state(user_id)
+            state["content_type"] = parts[3]
+            state["awaiting"] = "content_ref"
+            update.effective_message.reply_text("أرسل رابط المحتوى أو file_id:", reply_markup=CANCEL_KB)
+        elif sub == "ADD_EXAM":
+            state = get_admin_course_state(user_id)
+            state.clear(); state.update({"mode": "exam", "awaiting": "title", "course_id": parts[3]})
+            update.effective_message.reply_text("أدخل اسم الاختبار:", reply_markup=CANCEL_KB)
+        elif sub == "ADD_QUESTION":
+            state = get_admin_course_state(user_id)
+            state["awaiting"] = "question_text"
+            update.effective_message.reply_text("أرسل نص السؤال:", reply_markup=CANCEL_KB)
+        elif sub == "FINISH_EXAM":
+            reset_admin_course_state(user_id)
+            update.effective_message.reply_text("تم حفظ الاختبار.", reply_markup=ADMIN_COURSE_ACTIONS_KB)
+        elif sub == "STATS":
+            admin_show_stats(update, context, parts[3])
+    return
 
-    if state.get("storage_mode") == "hashtag":
-        tag = _normalize_hashtag(text)
-        section = _match_audio_section([tag])
-        if not section:
-            update.message.reply_text("لم يتم العثور على ملفات لهذا الهاشتاق.", reply_markup=ADMIN_LESSON_STORAGE_KB)
-            return True
-        clip = _fetch_latest_from_section(section)
-        if not clip:
-            update.message.reply_text("لا توجد ملفات حديثة لهذا القسم.", reply_markup=ADMIN_LESSON_STORAGE_KB)
-            return True
-        state.update(
-            {
-                "storage_chat_id": AUDIO_STORAGE_CHANNEL_ID,
-                "storage_message_id": clip.get("message_id"),
-                "storage_file_id": clip.get("file_id"),
-            }
-        )
-        _store_lesson_and_confirm(update, context, state)
-        return True
-
-    if state.get("storage_mode") == "latest":
-        latest_map = state.get("latest_choices") or {}
-        clip = latest_map.get(text)
-        if not clip:
-            return False
-        state.update(
-            {
-                "storage_chat_id": AUDIO_STORAGE_CHANNEL_ID,
-                "storage_message_id": clip.get("message_id"),
-                "storage_file_id": clip.get("file_id"),
-            }
-        )
-        _store_lesson_and_confirm(update, context, state)
-        return True
-
-    if state.get("storage_mode") == "link":
-        ref = extract_storage_reference(update.message)
-        if not ref:
-            update.message.reply_text("تعذر قراءة الرابط، حاول مرة أخرى.", reply_markup=ADMIN_LESSON_STORAGE_KB)
-            return True
-        state.update(ref)
-        _store_lesson_and_confirm(update, context, state)
-        return True
-
-    return False
-
-# =================== نهاية وظائف الدورات المساعدة ===================
+# =================== نهاية قسم الدورات ===================
 
 def handle_supervisor_new_users(update: Update, context: CallbackContext):
     """عرض الحسابات الجديدة للمشرفة"""
@@ -8509,6 +7903,8 @@ def handle_text(update: Update, context: CallbackContext):
 
     record = get_user_record(user)
     in_course_flow = is_user_in_course_flow(user_id)
+    if admin_handle_text(update, context):
+        return
     
     # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
     if record.get("is_banned", False):
@@ -8883,7 +8279,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_COURSES_MAIN:
-        open_courses_menu(update, context)
+        courses_main_menu(update, context)
         return
 
     if text == BTN_MEMOS_MAIN:
@@ -8918,13 +8314,13 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_MY_COURSES:
-        open_my_courses(update, context)
+        courses_open_my_courses(update, context)
         return
     if text == BTN_AVAILABLE_COURSES:
-        open_available_courses(update, context)
+        courses_open_available(update, context)
         return
     if text == BTN_ARCHIVED_COURSES:
-        open_my_courses(update, context, include_archived=True)
+        courses_open_my_courses(update, context, archived=True)
         return
 
     if text == BTN_SUPPORT:
@@ -8944,7 +8340,8 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text in (BTN_BACK_MAIN, BTN_COURSES_BACK):
-        _clear_course_flow_state(user_id)
+        reset_course_state(user_id)
+        reset_admin_course_state(user_id)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=main_kb,
@@ -9175,195 +8572,26 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_ADMIN_COURSE_SETTINGS:
-        open_admin_courses_menu(update, context)
+        courses_admin_menu(update, context)
         return
 
-    if text == BTN_ADMIN_CREATE_COURSE:
-        start_course_creation(update, context)
-        return
-    if text == BTN_ADMIN_CREATE_COURSE_NAME:
-        update.message.reply_text(
-            "اختر إضافة اسم الدورة:", reply_markup=ADMIN_CREATE_COURSE_NAME_KB
-        )
-        return
-    if text == BTN_ADMIN_COURSE_NAME_ADD:
-        prompt_course_name_input(update, context)
-        return
-    if text == BTN_ADMIN_COURSE_CANCEL:
-        _reset_admin_course_states(user_id)
-        update.message.reply_text("تم الإلغاء.", reply_markup=ADMIN_COURSES_MENU_KB)
-        return
-    if text == BTN_ADMIN_COURSE_BACK:
-        _reset_admin_course_states(user_id)
-        update.message.reply_text(
-            "تم الرجوع إلى قائمة إعداد الدورات.", reply_markup=ADMIN_COURSES_MENU_KB
-        )
-        return
-    if text == BTN_ADMIN_MANAGE_COURSES:
-        list_courses_for_admin(update, context)
-        return
-    if text == BTN_ADMIN_ARCHIVE_COURSE:
-        list_courses_for_archive(update, context)
-        return
-    if text == BTN_ADMIN_TESTS_PLACEHOLDER:
-        open_admin_course_tests(update, context)
-        return
-    if text == BTN_ADMIN_COURSE_TESTS_MENU:
-        open_admin_manage_exams(update, context)
-        return
-    if text == BTN_ADMIN_CREATE_EXAM:
-        start_exam_creation(update, context)
-        return
-    if text == BTN_ADMIN_LIST_EXAMS:
-        list_exams_for_admin(update, context)
-        return
-    if text == BTN_ADMIN_EXAM_ADD_QUESTION:
-        start_question_creation(update, context)
-        return
-    if text == BTN_ADMIN_EXAM_ADD_ANSWER:
-        prompt_answer_text(update, context)
-        return
-    if text == BTN_ADMIN_QUESTION_FINISH:
-        finalize_question(update, context)
-        return
-    if text == BTN_ADMIN_QUESTION_CANCEL:
-        cancel_question(update, context)
-        return
-    if text == BTN_ADMIN_EXAM_PUBLISH:
-        publish_exam(update, context)
-        return
-    if text == BTN_ADMIN_EXAM_CANCEL:
-        cancel_exam_draft(update, context)
-        return
-    if text == BTN_ADMIN_EXAM_BACK:
-        open_admin_manage_exams(update, context)
-        return
-    if text == BTN_ADMIN_ADD_LESSON:
-        start_lesson_creation(update, context)
+    if text == "⚙️ إعداد الدورات":
+        courses_admin_menu(update, context)
         return
 
-    if handle_admin_course_selection(update, context, text):
+    if text == "➕ إنشاء دورة جديدة":
+        admin_start_course_creation(update, context)
         return
 
-    if user_id in WAITING_COURSE_NAME:
-        save_new_course(update, context)
+    if text == "📋 إدارة الدورات":
+        admin_list_courses(update, context)
         return
 
-    if handle_exam_title_input(update, context):
+    if text == "🗃 أرشفة دورة":
+        admin_list_courses(update, context)
         return
 
-    if handle_question_text(update, context):
-        return
-
-    if handle_answer_text(update, context):
-        return
-
-    if handle_answer_points(update, context):
-        return
-
-    if handle_lesson_title(update, context):
-        return
-
-    if handle_lesson_description(update, context):
-        return
-
-    # قوائم الدورات والدروس للمستخدمين
-    course_state = COURSE_SELECTION_STATE.get(user_id, {})
-
-    if text == BTN_COURSE_USER_MENU:
-        _clear_course_flow_state(user_id)
-        open_courses_menu(update, context)
-        return
-
-    if text == BTN_COURSE_REGISTER:
-        selected_course = course_state.get("courses:selected_course") or {}
-        if course_state.get("courses:source") != "available" or not selected_course:
-            update.message.reply_text(
-                "يرجى اختيار دورة متاحة أولًا.", reply_markup=COURSES_MENU_KB
-            )
-            return
-        course_id = selected_course.get("id")
-        course_name = selected_course.get("name") or ""
-        register_user_to_course(course_id, user)
-        WAITING_COURSE_SELECTION.discard(user_id)
-        COURSE_SELECTION_STATE[user_id]["courses:source"] = "my"
-        update.message.reply_text(
-            f"✅ تم تسجيلك في دورة {course_name} وتمت إضافتها إلى دوراتك.",
-            reply_markup=COURSES_MENU_KB,
-        )
-        open_course_lessons(update, context, course_id, course_name)
-        return
-
-    if text == BTN_COURSE_LESSONS:
-        selected_course = course_state.get("courses:selected_course") or {}
-        if not selected_course:
-            update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
-            return
-        open_course_lessons(update, context, selected_course.get("id"), selected_course.get("name", ""))
-        return
-
-    if text == BTN_COURSE_TESTS:
-        selected_course = course_state.get("courses:selected_course") or {}
-        if not selected_course:
-            update.message.reply_text("يرجى اختيار دورة أولاً.", reply_markup=COURSES_MENU_KB)
-            return
-        if not user_is_registered(selected_course.get("id"), user_id):
-            update.message.reply_text("يرجى التسجيل في الدورة أولاً.", reply_markup=COURSES_MENU_KB)
-            return
-        open_course_tests(update, context, selected_course.get("id"), selected_course.get("name", ""))
-        return
-
-    courses_map = course_state.get("courses:courses_map") or {}
-    if text in courses_map:
-        course_id = courses_map[text]
-        course_data = fetch_course(course_id) or {"course_id": course_id, "name": text}
-        COURSE_SELECTION_STATE.setdefault(user_id, {})["courses:selected_course"] = {
-            "id": course_id,
-            "name": course_data.get("name", text),
-        }
-        if course_state.get("courses:source") == "available":
-            if user_is_registered(course_id, user.id):
-                COURSE_SELECTION_STATE[user_id]["courses:source"] = "my"
-                update.message.reply_text(
-                    f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
-                    reply_markup=COURSE_USER_KB,
-                )
-                return
-            WAITING_COURSE_SELECTION.add(user_id)
-            update.message.reply_text(
-                f"الدورة {course_data.get('name', text)} متاحة للتسجيل.\n"
-                f"اضغط زر '{BTN_COURSE_REGISTER}' للتسجيل أو استخدم زر الرجوع أدناه.",
-                reply_markup=ReplyKeyboardMarkup(
-                    [[KeyboardButton(BTN_COURSE_REGISTER)]], resize_keyboard=True
-                ),
-            )
-            update.message.reply_text(
-                "للرجوع لقائمة الدورات:",
-                reply_markup=_course_back_to_courses_list_kb(),
-            )
-            return
-        update.message.reply_text(
-            f"تم اختيار دورة {course_data.get('name', text)}. اختر من القائمة:",
-            reply_markup=COURSE_USER_KB,
-        )
-        update.message.reply_text(
-            "للوصول إلى قائمة الدورات اضغط رجوع:",
-            reply_markup=_course_back_to_courses_list_kb(),
-        )
-        return
-
-    exams_map = course_state.get("courses:exams_map") or {}
-    if text in exams_map:
-        exam = exams_map[text]
-        course_info = course_state.get("courses:selected_course") or {}
-        _start_exam_session(update, context, exam, course_info.get("name", ""))
-        return
-
-    lessons_map = course_state.get("courses:lessons_map") or {}
-    if text in lessons_map:
-        lesson = lessons_map[text]
-        course_info = course_state.get("courses:selected_course") or {}
-        _send_lesson_to_user(update, context, lesson, course_info.get("name", ""))
+    if admin_handle_text(update, context):
         return
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
@@ -10099,7 +9327,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
-        dispatcher.add_handler(CallbackQueryHandler(handle_course_callback, pattern=r"^courses_"))
+        dispatcher.add_handler(CallbackQueryHandler(courses_callback_handler, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
