@@ -1711,11 +1711,11 @@ BTN_AVAILABLE_COURSES = "📚 الدورات المتاحة"
 BTN_ARCHIVED_COURSES = "🗂️ أرشيف دوراتي"
 BTN_COURSES_BACK = "⬅️ رجوع للقائمة الرئيسية"
 BTN_COURSE_REGISTER = "✅ تسجيل في الدورة"
-BTN_COURSE_BACK = "⬅️ رجوع"
+BTN_COURSE_BACK = "↩️ رجوع"
 BTN_COURSE_USER_MENU = "⬅️ رجوع للدورات"
-BTN_COURSE_LESSONS = "📚 الدروس"
-BTN_COURSE_TESTS = "🧪 الاختبارات"
-BTN_COURSE_STATS = "📊 احصائياتي في هذه الدورة"
+BTN_COURSE_LESSONS = "📘 الدروس"
+BTN_COURSE_TESTS = "📝 الاختبارات"
+BTN_COURSE_STATS = "📊 إحصائياتي"
 BTN_LESSON_OPEN = "▶️ فتح محتوى الدرس"
 BTN_LESSON_ATTENDANCE = "✅ تسجيل الحضور"
 
@@ -1932,7 +1932,7 @@ COURSE_USER_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_COURSE_LESSONS)],
         [KeyboardButton(BTN_COURSE_TESTS)],
         [KeyboardButton(BTN_COURSE_STATS)],
-        [KeyboardButton(BTN_COURSE_USER_MENU)],
+        [KeyboardButton(BTN_COURSE_BACK)],
     ],
     resize_keyboard=True,
 )
@@ -7501,14 +7501,35 @@ def open_my_courses(update: Update, context: CallbackContext, include_archived: 
     else:
         courses = [c for c in courses if not c.get("archived")]
     if not courses:
-        update.message.reply_text("لا توجد دورات مسجلة.", reply_markup=COURSES_MENU_KB)
+        update.message.reply_text(
+            "لا توجد دورات مسجل فيها حاليًا.",
+            reply_markup=ReplyKeyboardMarkup(
+                [
+                    [KeyboardButton(BTN_AVAILABLE_COURSES)],
+                    [KeyboardButton(BTN_BACK_MAIN)],
+                ],
+                resize_keyboard=True,
+            ),
+        )
+        return
+    source = "archived" if include_archived else "my"
+    if len(courses) == 1:
+        course = courses[0]
+        course_name = course.get("name") or "دورة"
+        mapping = {course_name: course.get("course_id")}
+        _set_course_selection_state(user.id, mapping, source=source)
+        COURSE_SELECTION_STATE[user.id]["selected_course"] = {
+            "id": course.get("course_id"),
+            "name": course_name,
+        }
+        update.message.reply_text(
+            f"تم فتح دورة {course_name}. اختر من القائمة:",
+            reply_markup=COURSE_USER_KB,
+        )
         return
     mapping = {c.get("name"): c.get("course_id") for c in courses if c.get("name")}
-    source = "archived" if include_archived else "my"
     _set_course_selection_state(user.id, mapping, source=source)
-    update.message.reply_text(
-        "اختر الدورة:", reply_markup=_course_list_keyboard(courses)
-    )
+    update.message.reply_text("اختر الدورة:", reply_markup=_course_list_keyboard(courses))
 
 
 def _course_lessons_keyboard(course_name: str, lessons: List[Dict]):
@@ -7817,6 +7838,8 @@ def list_courses_for_archive(update: Update, context: CallbackContext):
 
 def handle_admin_course_selection(update: Update, context: CallbackContext, text: str):
     user_id = update.effective_user.id
+    if not _is_admin_or_supervisor(user_id):
+        return False
     if not _require_course_admin(update):
         return False
     ctx = ADMIN_COURSE_CONTEXT.get(user_id, {})
