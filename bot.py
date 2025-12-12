@@ -4,8 +4,8 @@ import json
 import logging
 import re
 import random
-from datetime import datetime, timezone, time, timedelta\nimport uuid
-from threading import Thread
+from datetime import datetime, timezone, time, timedelta
+import uuid\nfrom threading import Thread
 from typing import List, Dict, Optional
 
 import pytz
