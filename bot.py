@@ -32,6 +32,17 @@ from telegram.ext import (
     CallbackQueryHandler,
 )
 
+# =================== استيراد قسم الدورات ===================
+try:
+    from courses_callbacks import handle_courses_callback, handle_courses_text_message
+    COURSES_MODULE_LOADED = True
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.info("✅ تم تحميل قسم الدورات بنجاح")
+except Exception as e:
+    COURSES_MODULE_LOADED = False
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.error(f"❌ خطأ في تحميل قسم الدورات: {e}")
+
 # =================== إعدادات أساسية ===================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -1651,7 +1662,7 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
-BTN_TASBIH_MAIN = "السبحة 📿"
+BTN_COURSES_MAIN = "قسم الدورات 🎓"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
@@ -1773,7 +1784,7 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -1791,7 +1802,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -1811,7 +1822,7 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton(BTN_COURSES_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -7317,6 +7328,14 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
+    # معالجة قسم الدورات
+    if COURSES_MODULE_LOADED:
+        try:
+            if handle_courses_text_message(update, context):
+                return
+        except Exception as e:
+            logger.error(f"خطأ في معالجة رسالة الدورات: {e}")
+    
     if text == BTN_TASBIH_MAIN:
         open_tasbih_menu(update, context)
         return
@@ -8325,6 +8344,19 @@ def start_bot():
         logger.info("جاري تسجيل المعالجات...")
         dispatcher.add_handler(CommandHandler("start", start_command))
         dispatcher.add_handler(CommandHandler("help", help_command))
+        
+        # معالجات قسم الدورات
+        if COURSES_MODULE_LOADED:
+            try:
+                dispatcher.add_handler(
+                    CallbackQueryHandler(
+                        handle_courses_callback,
+                        pattern=r"^C:",
+                    )
+                )
+                logger.info("✅ تم تفعيل معالجات قسم الدورات")
+            except Exception as e:
+                logger.error(f"❌ خطأ في تفعيل معالجات الدورات: {e}")
         
         dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
