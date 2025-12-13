@@ -4582,6 +4582,14 @@ def is_course_admin(user_id: int) -> bool:
     """التحقق مما إذا كان المستخدم أدمن أو مشرفة"""
     return is_admin(user_id) or is_supervisor(user_id)
 
+
+def normalize_course_button_text(text: str) -> str:
+    """إزالة البادئات الرمزية من أزرار قسم الدورات لإجراء مقارنة موحدة"""
+    for prefix in ("🎓 ", "📋 "):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return text.strip()
+
 def get_course_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
     """لوحة مفاتيح قائمة الدورات الرئيسية (للطالب/الأدمن)"""
     if is_course_admin(user_id):
@@ -4855,31 +4863,35 @@ def handle_course_menu_buttons(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     text = update.message.text
-    record = get_user_record(user)
-    
+    normalized_text = normalize_course_button_text(text)
+    # منع الوصول الإداري لغير المخولين
+    if normalized_text in [BTN_COURSE_ADMIN_CREATE, BTN_COURSE_ADMIN_MANAGE, BTN_COURSE_ADMIN_ARCHIVE] and not is_course_admin(user_id):
+        update.message.reply_text("هذه الميزة خاصة بالإدارة فقط.")
+        return
+
     # منطق الطالب
-    if text == BTN_COURSE_AVAILABLE:
+    if normalized_text == BTN_COURSE_AVAILABLE:
         list_available_courses(update, context)
         return
-    elif text == BTN_COURSE_MY:
+    elif normalized_text == BTN_COURSE_MY:
         list_my_courses(update, context)
         return
-    elif text == BTN_COURSE_ARCHIVE:
+    elif normalized_text == BTN_COURSE_ARCHIVE:
         update.message.reply_text("🗂️ قسم أرشيف الدورات قيد الإنشاء حالياً.")
         return
-    elif text == BTN_COURSE_BACK_MAIN:
+    elif normalized_text == BTN_COURSE_BACK_MAIN:
         # العودة إلى القائمة الرئيسية (يتم معالجتها في handle_text_message)
         return
-    
+
     # منطق الإدارة
     if is_course_admin(user_id):
-        if text == BTN_COURSE_ADMIN_CREATE:
+        if normalized_text == BTN_COURSE_ADMIN_CREATE:
             start_create_course_wizard(update, context)
             return
-        elif text == BTN_COURSE_ADMIN_MANAGE:
+        elif normalized_text == BTN_COURSE_ADMIN_MANAGE:
             list_courses_for_admin(update, context)
             return
-        elif text == BTN_COURSE_ADMIN_ARCHIVE:
+        elif normalized_text == BTN_COURSE_ADMIN_ARCHIVE:
             update.message.reply_text("🗂️ قسم أرشيف الدورات للإدارة قيد الإنشاء حالياً.")
             return
 
@@ -9712,9 +9724,17 @@ def handle_text(update: Update, context: CallbackContext):
 
     # --- حالات قسم الدورات ---
     course_state = record.get("current_state", "")
+    normalized_course_text = normalize_course_button_text(text)
 
     # معالجة أزرار القائمة الرئيسية للدورات
-    if course_state == COURSE_STATE_MAIN and text in [BTN_COURSE_AVAILABLE, BTN_COURSE_MY, BTN_COURSE_ARCHIVE, BTN_COURSE_ADMIN_CREATE, BTN_COURSE_ADMIN_MANAGE, BTN_COURSE_ADMIN_ARCHIVE]:
+    if course_state == COURSE_STATE_MAIN and normalized_course_text in [
+        BTN_COURSE_AVAILABLE,
+        BTN_COURSE_MY,
+        BTN_COURSE_ARCHIVE,
+        BTN_COURSE_ADMIN_CREATE,
+        BTN_COURSE_ADMIN_MANAGE,
+        BTN_COURSE_ADMIN_ARCHIVE,
+    ]:
         handle_course_menu_buttons(update, context)
         return
     
@@ -9966,7 +9986,7 @@ def handle_text(update: Update, context: CallbackContext):
 
     # الأزرار الرئيسية
     # معالجة زر قسم الدورات (القائمة الرئيسية)
-    if text == BTN_COURSE_MAIN:
+    if normalize_course_button_text(text) == BTN_COURSE_MAIN:
         open_course_menu(update, context)
         return
 
@@ -10252,7 +10272,10 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # معالجة زر إدارة الدورات (لوحة التحكم)
-    if text == BTN_COURSE_ADMIN_MANAGE:
+    if normalize_course_button_text(text) == BTN_COURSE_ADMIN_MANAGE:
+        if not is_course_admin(user_id):
+            msg.reply_text("هذه الميزة خاصة بالإدارة فقط.")
+            return
         open_course_menu(update, context)
         return
 
