@@ -9258,6 +9258,260 @@ def handle_text(update: Update, context: CallbackContext):
         # منع أي استخدام آخر للبوت
         return
     
+    # --- منطق التجاوز لأزرار القائمة الرئيسية ---
+    BYPASS_BUTTONS = [
+        BTN_ADHKAR_MAIN, BTN_QURAN_MAIN, BTN_COURSE_MAIN, BTN_MEMOS_MAIN, BTN_WATER_MAIN,
+        BTN_STATS, BTN_STATS_ONLY, BTN_MEDALS_ONLY, BTN_MEDALS, BTN_LETTER_MAIN,
+        BTN_SUPPORT, BTN_COMP_MAIN, BTN_BENEFITS_MAIN, BTN_NOTIFICATIONS_MAIN,
+        BTN_BACK_MAIN, BTN_ADMIN_PANEL, BTN_COURSE_ADMIN_MANAGE, BTN_STATS_BACK_MAIN,
+        BTN_COURSE_BACK_MAIN,
+    ]
+
+    # إذا كان النص هو أحد أزرار القائمة الرئيسية، نتجاوز منطق حالات الانتظار
+    if text in BYPASS_BUTTONS:
+        # تجاوز حالات الانتظار والانتقال مباشرة إلى معالجة الأزرار في نهاية الدالة
+        pass
+    else:
+        # --- معالجات حالات الانتظار (Wizards) ---
+        
+        # تحديد الجنس للدعم
+        if user_id in WAITING_SUPPORT_GENDER:
+            if text == BTN_GENDER_MALE:
+                record["gender"] = "male"
+                update_user_record(user.id, gender="male")
+                save_data()
+                WAITING_SUPPORT_GENDER.discard(user_id)
+                WAITING_SUPPORT.add(user_id)
+                msg.reply_text(
+                    "جميل 🤍\n"
+                    "الآن اكتب رسالتك التي تريد إرسالها للدعم:",
+                    reply_markup=CANCEL_KB,
+                )
+                return
+            elif text == BTN_GENDER_FEMALE:
+                record["gender"] = "female"
+                update_user_record(user.id, gender="female")
+                save_data()
+                WAITING_SUPPORT_GENDER.discard(user_id)
+                WAITING_SUPPORT.add(user_id)
+                msg.reply_text(
+                    "جميل 🤍\n"
+                    "الآن اكتب رسالتك التي تريد إرسالها للدعم النسائي:",
+                    reply_markup=CANCEL_KB,
+                )
+                return
+            elif text == BTN_CANCEL:
+                WAITING_SUPPORT_GENDER.discard(user_id)
+                msg.reply_text(
+                    "تم الإلغاء. عدنا للقائمة الرئيسية.",
+                    reply_markup=user_main_keyboard(user_id),
+                )
+                return
+            else:
+                msg.reply_text(
+                    "رجاءً اختر من الأزرار الموجودة 👇",
+                    reply_markup=GENDER_KB,
+                )
+                return
+        
+        # حالة إضافة ورد قرآني
+        if user_id in WAITING_QURAN_GOAL:
+            handle_quran_goal_input(update, context)
+            return
+        
+        # ... (بقية منطق حالات الانتظار سيأتي هنا)
+        
+        # إذا لم يكن في حالة انتظار، ننتقل إلى معالجة الأزرار الرئيسية
+        
+        # حالة إضافة ورد قرآني
+        if user_id in WAITING_QURAN_GOAL:
+            handle_quran_goal_input(update, context)
+            return
+        
+        # حالة إضافة صفحات ورد قرآني
+        if user_id in WAITING_QURAN_PAGES:
+            handle_quran_pages_input(update, context)
+            return
+        
+        # حالة إضافة فائدة
+        if user_id in WAITING_BENEFIT_ADD:
+            handle_benefit_add_input(update, context)
+            return
+        
+        # حالة تعديل فائدة
+        if user_id in WAITING_BENEFIT_EDIT_SELECT:
+            handle_benefit_edit_index_input(update, context)
+            return
+        
+        if user_id in WAITING_BENEFIT_EDIT_TEXT:
+            handle_benefit_edit_text_input(update, context)
+            return
+        
+        # حالة حذف فائدة
+        if user_id in WAITING_BENEFIT_DELETE_SELECT:
+            handle_benefit_delete_index_input(update, context)
+            return
+        
+        # حالة حظر مستخدم
+        if user_id in WAITING_ADMIN_BAN_USER:
+            handle_admin_ban_user_input(update, context)
+            return
+        
+        # حالة فك حظر مستخدم
+        if user_id in WAITING_ADMIN_UNBAN_USER:
+            handle_admin_unban_user_input(update, context)
+            return
+        
+        # حالة رسالة جماعية
+        if user_id in WAITING_ADMIN_BROADCAST:
+            handle_admin_broadcast_input(update, context)
+            return
+        
+        # حالة إضافة رسالة تحفيزية
+        if user_id in WAITING_ADMIN_MOTIVATION_ADD:
+            handle_admin_motivation_add_input(update, context)
+            return
+        
+        # حالة حذف رسالة تحفيزية
+        if user_id in WAITING_ADMIN_MOTIVATION_DELETE:
+            handle_admin_motivation_delete_input(update, context)
+            return
+        
+        # حالة تعديل أوقات الجرعة التحفيزية
+        if user_id in WAITING_ADMIN_MOTIVATION_TIMES:
+            handle_admin_motivation_times_input(update, context)
+            return
+        
+        # حالة إضافة كوب ماء
+        if user_id in WAITING_WATER_ADD_CUPS:
+            handle_water_add_cups_input(update, context)
+            return
+        
+        # حالة حساب احتياج الماء
+        if user_id in WAITING_WATER_NEED_WEIGHT:
+            handle_water_need_weight_input(update, context)
+            return
+        
+        # حالة رسالة إلى نفسي (كتابة الرسالة)
+        if user_id in WAITING_LETTER_ADD:
+            handle_letter_add_input(update, context)
+            return
+        
+        # حالة رسالة إلى نفسي (تاريخ التذكير)
+        if user_id in WAITING_LETTER_REMINDER_DATE:
+            handle_letter_reminder_date_input(update, context)
+            return
+        
+        # حالة رسالة إلى نفسي (حذف الرسالة)
+        if user_id in WAITING_LETTER_DELETE:
+            handle_letter_delete_input(update, context)
+            return
+        
+        # حالة تأكيد تصفير النقاط
+        if user_id in WAITING_CONFIRM_RESET_POINTS:
+            handle_confirm_reset_points_input(update, context)
+            return
+        
+        # حالة تأكيد تصفير الميداليات
+        if user_id in WAITING_CONFIRM_RESET_MEDALS:
+            handle_confirm_reset_medals_input(update, context)
+            return
+        
+        # --- حالات قسم الدورات ---
+        
+        # معالج إضافة درس - الخطوة 1: العنوان
+        if record.get("current_state") == COURSE_STATE_ADMIN_LESSON_WIZARD_TITLE:
+            handle_lesson_wizard_title_input(update, context)
+            return
+        
+        # معالج إضافة درس - الخطوة 2: نوع المحتوى
+        elif record.get("current_state") == COURSE_STATE_ADMIN_LESSON_WIZARD_TYPE:
+            handle_lesson_wizard_type_input(update, context)
+            return
+        
+        # معالج إضافة درس - الخطوة 3: المحتوى
+        elif record.get("current_state") == COURSE_STATE_ADMIN_LESSON_WIZARD_CONTENT:
+            handle_lesson_wizard_content_input(update, context)
+            return
+        
+        # معالج إضافة درس - الخطوة 4: التأكيد والنشر
+        elif record.get("current_state") == COURSE_STATE_ADMIN_LESSON_WIZARD_CONFIRM:
+            handle_lesson_wizard_confirm_input(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 1: العنوان
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_TITLE:
+            handle_exam_wizard_title_input(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 2: قائمة الأسئلة
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_MENU:
+            handle_exam_wizard_menu_buttons(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 3: نص السؤال
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_Q_TEXT:
+            handle_question_text_input(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 4: نص الخيار
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_O_TEXT:
+            handle_question_options_menu_buttons(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 5: نقاط الخيار
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_O_POINTS:
+            handle_option_points_input(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 1: العنوان
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_TITLE:
+            handle_exam_wizard_title_input(update, context)
+            return
+        
+        # معالج إضافة اختبار - الخطوة 2: قائمة الأسئلة
+        elif record.get("current_state") == COURSE_STATE_ADMIN_EXAM_WIZARD_MENU:
+            handle_exam_wizard_menu_buttons(update, context)
+            return
+        
+        # --- نهاية حالات قسم الدورات ---
+        
+        # حالة السبحة (المنطق الداخلي يبقى لمن بدأ جلسة قديمة)
+        if user_id in WAITING_TASBIH:
+            if text == BTN_TASBIH_TICK:
+                handle_tasbih_tick(update, context)
+                return
+            elif text == BTN_TASBIH_END:
+                handle_tasbih_end(update, context)
+                return
+            else:
+                handle_tasbih_tick(update, context)
+                return
+        
+        # مذكّرات قلبي
+        if user_id in WAITING_MEMO_ADD:
+            handle_memo_add_input(update, context)
+            return
+        
+        if user_id in WAITING_MEMO_EDIT_SELECT:
+            handle_memo_edit_index_input(update, context)
+            return
+        
+        if user_id in WAITING_MEMO_EDIT_TEXT:
+            handle_memo_edit_text_input(update, context)
+            return
+        
+        if user_id in WAITING_MEMO_DELETE_SELECT:
+            handle_memo_delete_index_input(update, context)
+            return
+        
+        # الدعم الفني
+        if user_id in WAITING_SUPPORT:
+            handle_support_input(update, context)
+            return
+        
+        # إذا لم يكن في أي حالة انتظار، ننتقل إلى معالجة الأزرار الرئيسية
+        
     main_kb = user_main_keyboard(user_id)
 
     # تحديد الجنس للدعم
