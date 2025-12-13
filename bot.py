@@ -51,7 +51,7 @@ ALLOWED_UPDATES = [
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -1575,11 +1575,24 @@ def get_banned_user_ids():
 
 
 def is_admin(user_id: int) -> bool:
-    return ADMIN_ID is not None and user_id == ADMIN_ID
+    """التحقق من أن المستخدم هو الأدمن"""
+    result = ADMIN_ID is not None and user_id == ADMIN_ID
+    if result:
+        logger.info(f"[AUTH] المستخدم {user_id} هو الأدمن")
+    return result
 
 
 def is_supervisor(user_id: int) -> bool:
-    return SUPERVISOR_ID is not None and user_id == SUPERVISOR_ID
+    """التحقق من أن المستخدم هو المشرفة"""
+    result = SUPERVISOR_ID is not None and user_id == SUPERVISOR_ID
+    if result:
+        logger.info(f"[AUTH] المستخدم {user_id} هو المشرفة")
+    return result
+
+
+def is_admin_or_supervisor(user_id: int) -> bool:
+    """التحقق من أن المستخدم هو أدمن أو مشرفة"""
+    return is_admin(user_id) or is_supervisor(user_id)
 
 # =================== حالات الإدخال ===================
 
@@ -8452,7 +8465,7 @@ def open_courses_menu(update: Update, context: CallbackContext):
     msg = update.message
     
     # فصل الصلاحيات: أدمن/مشرفة فقط للإدارة
-    if is_admin(user_id) or is_supervisor(user_id):
+    if is_admin_or_supervisor(user_id):
         msg.reply_text(
             "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
             reply_markup=COURSES_ADMIN_MENU_KB,
@@ -9089,7 +9102,7 @@ def open_courses_menu(update: Update, context: CallbackContext):
     
     try:
         # فصل الصلاحيات: أدمن/مشرفة فقط للإدارة
-        if is_admin(user_id) or is_supervisor(user_id):
+        if is_admin_or_supervisor(user_id):
             logger.info(f"[COURSES_ADMIN] المستخدم {user_id} فتح قائمة إدارة الدورات")
             msg.reply_text(
                 "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
@@ -10110,7 +10123,7 @@ def open_courses_menu(update: Update, context: CallbackContext):
     msg = update.message
     
     # فصل الصلاحيات: أدمن/مشرفة فقط للإدارة
-    if is_admin(user_id) or is_supervisor(user_id):
+    if is_admin_or_supervisor(user_id):
         msg.reply_text(
             "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
             reply_markup=COURSES_ADMIN_MENU_KB,
