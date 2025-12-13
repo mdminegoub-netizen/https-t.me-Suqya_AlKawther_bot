@@ -51,7 +51,7 @@ ALLOWED_UPDATES = [
 ADMIN_ID = 931350292  # غيّره لو احتجت مستقبلاً
 
 # معرف المشرفة (الأخوات)
-SUPERVISOR_ID = 8395818573  # المشرفة
+SUPERVISOR_ID = 1745150161  # المشرفة
 
 # ملف اللوج
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -8346,6 +8346,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
@@ -8415,19 +8416,16 @@ def start_bot():
         raise
 
 
-# =================== قسم الدورات (نظام مستقل) ===================
+# =================== قسم الدورات - Handlers الفعلية ===================
 
-# ثوابت Firestore للدورات
+# ثوابت Firestore
 COURSES_COLLECTION = "courses"
 COURSE_LESSONS_COLLECTION = "course_lessons"
 COURSE_QUIZZES_COLLECTION = "course_quizzes"
 COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
 
-# متغيرات الحالة
-COURSES_USER_STATE = {}
-COURSES_TEMP_DATA = {}
+# =================== لوحات المفاتيح للدورات ===================
 
-# لوحات المفاتيح للدورات
 COURSES_USER_MENU_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("📚 الدورات المتاحة", callback_data="COURSES:available")],
     [InlineKeyboardButton("📒 دوراتي", callback_data="COURSES:my_courses")],
@@ -8445,28 +8443,492 @@ COURSES_ADMIN_MENU_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")],
 ])
 
+# =================== Handlers للمستخدمين العاديين ===================
+
 def open_courses_menu(update: Update, context: CallbackContext):
     """فتح قائمة الدورات الرئيسية"""
     user_id = update.effective_user.id
     msg = update.message
     
-    if is_admin_or_supervisor(user_id):
+    # فصل الصلاحيات: أدمن/مشرفة فقط للإدارة
+    if is_admin(user_id) or is_supervisor(user_id):
         msg.reply_text(
             "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
             reply_markup=COURSES_ADMIN_MENU_KB,
         )
     else:
+        # المستخدمون العاديون فقط
         msg.reply_text(
             "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
             reply_markup=COURSES_USER_MENU_KB,
         )
 
-def is_admin_or_supervisor(user_id: int) -> bool:
-    """التحقق من أن المستخدم أدمن أو مشرفة"""
-    return is_admin(user_id) or is_supervisor(user_id)
+def show_available_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض الدورات المتاحة"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.\n\nحاول لاحقاً.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات النشطة من Firestore
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "active").stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "📚 الدورات المتاحة\n\nلا توجد دورات متاحة حالياً.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "📚 الدورات المتاحة:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            text += f"• {course_name}\n"
+            keyboard.append([InlineKeyboardButton(f"🔍 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الدورات المتاحة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+def show_my_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض دورات المستخدم"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات المشترك بها المستخدم
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        subs_docs = subs_ref.where("user_id", "==", user_id).stream()
+        
+        course_ids = []
+        for doc in subs_docs:
+            data = doc.to_dict()
+            course_ids.append(data.get("course_id"))
+        
+        if not course_ids:
+            query.edit_message_text(
+                "📒 دوراتي\n\nأنت لم تشترك في أي دورة حتى الآن.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # جلب بيانات الدورات
+        text = "📒 دوراتي:\n\n"
+        keyboard = []
+        
+        for course_id in course_ids:
+            doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+            if doc.exists:
+                course = doc.to_dict()
+                course_name = course.get("name", "دورة")
+                text += f"• {course_name}\n"
+                keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب دورات المستخدم: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+def show_archived_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض الدورات المؤرشفة"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات المؤرشفة
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "inactive").stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗂 أرشيف الدورات\n\nلا توجد دورات مؤرشفة.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # عرض الدورات المؤرشفة
+        text = "🗂 أرشيف الدورات:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            text += f"• {course_name}\n"
+            keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الدورات المؤرشفة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+# =================== Handlers للأدمن والمشرفة ===================
+
+def admin_create_course(query: Update.callback_query, context: CallbackContext):
+    """إنشاء دورة جديدة"""
+    user_id = query.from_user.id
+    
+    # التحقق من الصلاحيات
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    query.edit_message_text(
+        "➕ إنشاء دورة جديدة\n\n"
+        "قريباً: سيتم إضافة نموذج الإنشاء\n"
+        "الخطوات:\n"
+        "1. اسم الدورة\n"
+        "2. الوصف\n"
+        "3. المستوى\n"
+        "4. عدد الدروس",
+        reply_markup=COURSES_ADMIN_MENU_KB
+    )
+
+def admin_manage_lessons(query: Update.callback_query, context: CallbackContext):
+    """إدارة الدروس"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🧩 إدارة الدروس\n\nلا توجد دورات لإضافة دروس إليها.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🧩 اختر دورة لإدارة دروسها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:lessons_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الدروس: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_manage_quizzes(query: Update.callback_query, context: CallbackContext):
+    """إدارة الاختبارات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "📝 إدارة الاختبارات\n\nلا توجد دورات لإضافة اختبارات إليها.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "📝 اختر دورة لإدارة اختباراتها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"📝 {course_name}", callback_data=f"COURSES:quizzes_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الاختبارات: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_statistics(query: Update.callback_query, context: CallbackContext):
+    """عرض إحصائيات الدورات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب إحصائيات الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        courses_docs = courses_ref.stream()
+        
+        stats_text = "📊 إحصائيات الدورات:\n\n"
+        total_courses = 0
+        total_subscribers = 0
+        
+        for doc in courses_docs:
+            total_courses += 1
+            course = doc.to_dict()
+            course_name = course.get("name", "دورة")
+            course_id = doc.id
+            
+            # عد المشتركين
+            subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+            subs_count = len(list(subs_ref.where("course_id", "==", course_id).stream()))
+            total_subscribers += subs_count
+            
+            stats_text += f"📚 {course_name}: {subs_count} مشترك\n"
+        
+        stats_text += f"\n📊 الإجمالي:\n"
+        stats_text += f"• عدد الدورات: {total_courses}\n"
+        stats_text += f"• عدد المشتركين: {total_subscribers}\n"
+        
+        query.edit_message_text(
+            stats_text,
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الإحصائيات: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_archive_manage(query: Update.callback_query, context: CallbackContext):
+    """إدارة أرشفة الدورات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب جميع الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗂 أرشفة/إيقاف/تشغيل\n\nلا توجد دورات.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🗂 اختر دورة لتغيير حالتها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            status = course.get("status", "active")
+            status_emoji = "✅" if status == "active" else "❌"
+            
+            keyboard.append([InlineKeyboardButton(f"{status_emoji} {course_name}", callback_data=f"COURSES:toggle_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الأرشفة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_delete_course(query: Update.callback_query, context: CallbackContext):
+    """حذف دورة"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب جميع الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗑 حذف دورة\n\nلا توجد دورات.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🗑 اختر دورة للحذف النهائي:\n\n⚠️ تحذير: هذا الإجراء لا يمكن التراجع عنه\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"🗑 {course_name}", callback_data=f"COURSES:confirm_delete_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في حذف الدورة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+# =================== معالج Callback الرئيسي ===================
 
 def handle_courses_callback(update: Update, context: CallbackContext):
-    """معالجة جميع callbacks الدورات"""
+    """معالج جميع callbacks الدورات"""
     query = update.callback_query
     user_id = query.from_user.id
     data = query.data
@@ -8474,21 +8936,19 @@ def handle_courses_callback(update: Update, context: CallbackContext):
     try:
         query.answer()
         
+        # معالجات المستخدمين العاديين
         if data == "COURSES:available":
-            query.edit_message_text(
-                "📚 الدورات المتاحة\n\nقريباً: سيتم عرض الدورات المتاحة هنا",
-                reply_markup=COURSES_USER_MENU_KB
-            )
+            show_available_courses(query, context)
         
         elif data == "COURSES:my_courses":
-            query.edit_message_text(
-                "📒 دوراتي\n\nقريباً: سيتم عرض دوراتك هنا",
-                reply_markup=COURSES_USER_MENU_KB
-            )
+            show_my_courses(query, context)
         
         elif data == "COURSES:archive":
+            show_archived_courses(query, context)
+        
+        elif data == "COURSES:back_user":
             query.edit_message_text(
-                "🗂 أرشيف الدورات\n\nقريباً: سيتم عرض الدورات المؤرشفة هنا",
+                "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
                 reply_markup=COURSES_USER_MENU_KB
             )
         
@@ -8499,41 +8959,24 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 reply_markup=main_kb
             )
         
+        # معالجات الأدمن والمشرفة
         elif data == "COURSES:create":
-            query.edit_message_text(
-                "➕ إنشاء دورة جديدة\n\nقريباً: سيتم إضافة نموذج الإنشاء هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_create_course(query, context)
         
         elif data == "COURSES:manage_lessons":
-            query.edit_message_text(
-                "🧩 إدارة الدروس\n\nقريباً: سيتم إضافة إدارة الدروس هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_manage_lessons(query, context)
         
         elif data == "COURSES:manage_quizzes":
-            query.edit_message_text(
-                "📝 إدارة الاختبارات\n\nقريباً: سيتم إضافة إدارة الاختبارات هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_manage_quizzes(query, context)
         
         elif data == "COURSES:statistics":
-            query.edit_message_text(
-                "📊 إحصائيات الدورات\n\nقريباً: سيتم عرض الإحصائيات هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_statistics(query, context)
         
         elif data == "COURSES:archive_manage":
-            query.edit_message_text(
-                "🗂 أرشفة/إيقاف/تشغيل\n\nقريباً: سيتم إضافة إدارة الأرشفة هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_archive_manage(query, context)
         
         elif data == "COURSES:delete":
-            query.edit_message_text(
-                "🗑 حذف نهائي للدورة\n\nقريباً: سيتم إضافة حذف الدورات هنا",
-                reply_markup=COURSES_ADMIN_MENU_KB
-            )
+            admin_delete_course(query, context)
         
         elif data == "COURSES:admin_back":
             admin_kb = admin_panel_keyboard_for(user_id)
@@ -8541,12 +8984,60 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 "عدنا إلى لوحة التحكم",
                 reply_markup=admin_kb
             )
+        
+        # معالجات إضافية
+        elif data.startswith("COURSES:view_"):
+            course_id = data.replace("COURSES:view_", "")
+            # سيتم إضافة عرض تفاصيل الدورة لاحقاً
+            query.edit_message_text(
+                "📖 تفاصيل الدورة\n\nقريباً: سيتم عرض التفاصيل هنا",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:lessons_"):
+            course_id = data.replace("COURSES:lessons_", "")
+            query.edit_message_text(
+                "📖 إدارة الدروس\n\nقريباً: سيتم عرض الدروس هنا",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:quizzes_"):
+            course_id = data.replace("COURSES:quizzes_", "")
+            query.edit_message_text(
+                "📝 إدارة الاختبارات\n\nقريباً: سيتم عرض الاختبارات هنا",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:toggle_"):
+            course_id = data.replace("COURSES:toggle_", "")
+            # تبديل حالة الدورة
+            doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+            if doc.exists:
+                course = doc.to_dict()
+                new_status = "inactive" if course.get("status") == "active" else "active"
+                db.collection(COURSES_COLLECTION).document(course_id).update({"status": new_status})
+                query.edit_message_text(
+                    f"✅ تم تحديث حالة الدورة إلى: {'مفعلة' if new_status == 'active' else 'معطلة'}",
+                    reply_markup=COURSES_ADMIN_MENU_KB
+                )
+            else:
+                query.edit_message_text("❌ الدورة غير موجودة.", reply_markup=COURSES_ADMIN_MENU_KB)
+        
+        elif data.startswith("COURSES:confirm_delete_"):
+            course_id = data.replace("COURSES:confirm_delete_", "")
+            # حذف الدورة
+            db.collection(COURSES_COLLECTION).document(course_id).delete()
+            query.edit_message_text(
+                "✅ تم حذف الدورة بنجاح",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
     
     except Exception as e:
         logger.error(f"خطأ في معالجة callback الدورات: {e}")
         query.edit_message_text("❌ حدث خطأ. حاول مرة أخرى.")
 
 # =================== نهاية قسم الدورات ===================
+
 
 if __name__ == "__main__":
     logger.info("=" * 50)
@@ -8618,5 +9109,629 @@ if __name__ == "__main__":
             updater.stop()
     except Exception as e:
         logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
+
+# =================== قسم الدورات - Handlers الفعلية ===================
+
+# ثوابت Firestore
+COURSES_COLLECTION = "courses"
+COURSE_LESSONS_COLLECTION = "course_lessons"
+COURSE_QUIZZES_COLLECTION = "course_quizzes"
+COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
+
+# =================== لوحات المفاتيح للدورات ===================
+
+COURSES_USER_MENU_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("📚 الدورات المتاحة", callback_data="COURSES:available")],
+    [InlineKeyboardButton("📒 دوراتي", callback_data="COURSES:my_courses")],
+    [InlineKeyboardButton("🗂 أرشيف الدورات", callback_data="COURSES:archive")],
+    [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="COURSES:back_main")],
+])
+
+COURSES_ADMIN_MENU_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("➕ إنشاء دورة", callback_data="COURSES:create")],
+    [InlineKeyboardButton("🧩 إدارة الدروس", callback_data="COURSES:manage_lessons")],
+    [InlineKeyboardButton("📝 إدارة الاختبارات", callback_data="COURSES:manage_quizzes")],
+    [InlineKeyboardButton("📊 إحصائيات الدورات", callback_data="COURSES:statistics")],
+    [InlineKeyboardButton("🗂 أرشفة/إيقاف/تشغيل", callback_data="COURSES:archive_manage")],
+    [InlineKeyboardButton("🗑 حذف نهائي للدورة", callback_data="COURSES:delete")],
+    [InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")],
+])
+
+# =================== Handlers للمستخدمين العاديين ===================
+
+def open_courses_menu(update: Update, context: CallbackContext):
+    """فتح قائمة الدورات الرئيسية"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    # فصل الصلاحيات: أدمن/مشرفة فقط للإدارة
+    if is_admin(user_id) or is_supervisor(user_id):
+        msg.reply_text(
+            "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
+            reply_markup=COURSES_ADMIN_MENU_KB,
+        )
+    else:
+        # المستخدمون العاديون فقط
+        msg.reply_text(
+            "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+
+def show_available_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض الدورات المتاحة"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.\n\nحاول لاحقاً.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات النشطة من Firestore
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "active").stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "📚 الدورات المتاحة\n\nلا توجد دورات متاحة حالياً.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "📚 الدورات المتاحة:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            text += f"• {course_name}\n"
+            keyboard.append([InlineKeyboardButton(f"🔍 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الدورات المتاحة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+def show_my_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض دورات المستخدم"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات المشترك بها المستخدم
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        subs_docs = subs_ref.where("user_id", "==", user_id).stream()
+        
+        course_ids = []
+        for doc in subs_docs:
+            data = doc.to_dict()
+            course_ids.append(data.get("course_id"))
+        
+        if not course_ids:
+            query.edit_message_text(
+                "📒 دوراتي\n\nأنت لم تشترك في أي دورة حتى الآن.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # جلب بيانات الدورات
+        text = "📒 دوراتي:\n\n"
+        keyboard = []
+        
+        for course_id in course_ids:
+            doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+            if doc.exists:
+                course = doc.to_dict()
+                course_name = course.get("name", "دورة")
+                text += f"• {course_name}\n"
+                keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب دورات المستخدم: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+def show_archived_courses(query: Update.callback_query, context: CallbackContext):
+    """عرض الدورات المؤرشفة"""
+    user_id = query.from_user.id
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات المؤرشفة
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "inactive").stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗂 أرشيف الدورات\n\nلا توجد دورات مؤرشفة.",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+            return
+        
+        # عرض الدورات المؤرشفة
+        text = "🗂 أرشيف الدورات:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            text += f"• {course_name}\n"
+            keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:view_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الدورات المؤرشفة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_USER_MENU_KB
+        )
+
+# =================== Handlers للأدمن والمشرفة ===================
+
+def admin_create_course(query: Update.callback_query, context: CallbackContext):
+    """إنشاء دورة جديدة"""
+    user_id = query.from_user.id
+    
+    # التحقق من الصلاحيات
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    query.edit_message_text(
+        "➕ إنشاء دورة جديدة\n\n"
+        "قريباً: سيتم إضافة نموذج الإنشاء\n"
+        "الخطوات:\n"
+        "1. اسم الدورة\n"
+        "2. الوصف\n"
+        "3. المستوى\n"
+        "4. عدد الدروس",
+        reply_markup=COURSES_ADMIN_MENU_KB
+    )
+
+def admin_manage_lessons(query: Update.callback_query, context: CallbackContext):
+    """إدارة الدروس"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🧩 إدارة الدروس\n\nلا توجد دورات لإضافة دروس إليها.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🧩 اختر دورة لإدارة دروسها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=f"COURSES:lessons_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الدروس: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_manage_quizzes(query: Update.callback_query, context: CallbackContext):
+    """إدارة الاختبارات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "📝 إدارة الاختبارات\n\nلا توجد دورات لإضافة اختبارات إليها.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "📝 اختر دورة لإدارة اختباراتها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"📝 {course_name}", callback_data=f"COURSES:quizzes_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الاختبارات: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_statistics(query: Update.callback_query, context: CallbackContext):
+    """عرض إحصائيات الدورات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب إحصائيات الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        courses_docs = courses_ref.stream()
+        
+        stats_text = "📊 إحصائيات الدورات:\n\n"
+        total_courses = 0
+        total_subscribers = 0
+        
+        for doc in courses_docs:
+            total_courses += 1
+            course = doc.to_dict()
+            course_name = course.get("name", "دورة")
+            course_id = doc.id
+            
+            # عد المشتركين
+            subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+            subs_count = len(list(subs_ref.where("course_id", "==", course_id).stream()))
+            total_subscribers += subs_count
+            
+            stats_text += f"📚 {course_name}: {subs_count} مشترك\n"
+        
+        stats_text += f"\n📊 الإجمالي:\n"
+        stats_text += f"• عدد الدورات: {total_courses}\n"
+        stats_text += f"• عدد المشتركين: {total_subscribers}\n"
+        
+        query.edit_message_text(
+            stats_text,
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في جلب الإحصائيات: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_archive_manage(query: Update.callback_query, context: CallbackContext):
+    """إدارة أرشفة الدورات"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب جميع الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗂 أرشفة/إيقاف/تشغيل\n\nلا توجد دورات.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🗂 اختر دورة لتغيير حالتها:\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            status = course.get("status", "active")
+            status_emoji = "✅" if status == "active" else "❌"
+            
+            keyboard.append([InlineKeyboardButton(f"{status_emoji} {course_name}", callback_data=f"COURSES:toggle_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في إدارة الأرشفة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+def admin_delete_course(query: Update.callback_query, context: CallbackContext):
+    """حذف دورة"""
+    user_id = query.from_user.id
+    
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        query.edit_message_text("❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+    
+    if not firestore_available():
+        query.edit_message_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+        return
+    
+    try:
+        # جلب جميع الدورات
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.stream()
+        
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        
+        if not courses:
+            query.edit_message_text(
+                "🗑 حذف دورة\n\nلا توجد دورات.",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+            return
+        
+        # عرض الدورات
+        text = "🗑 اختر دورة للحذف النهائي:\n\n⚠️ تحذير: هذا الإجراء لا يمكن التراجع عنه\n\n"
+        keyboard = []
+        
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            course_id = course.get("id")
+            keyboard.append([InlineKeyboardButton(f"🗑 {course_name}", callback_data=f"COURSES:confirm_delete_{course_id}")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
+        
+        query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    except Exception as e:
+        logger.error(f"خطأ في حذف الدورة: {e}")
+        query.edit_message_text(
+            "❌ حدث خطأ. حاول مرة أخرى.",
+            reply_markup=COURSES_ADMIN_MENU_KB
+        )
+
+# =================== معالج Callback الرئيسي ===================
+
+def handle_courses_callback(update: Update, context: CallbackContext):
+    """معالج جميع callbacks الدورات"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data
+    
+    try:
+        query.answer()
+        
+        # معالجات المستخدمين العاديين
+        if data == "COURSES:available":
+            show_available_courses(query, context)
+        
+        elif data == "COURSES:my_courses":
+            show_my_courses(query, context)
+        
+        elif data == "COURSES:archive":
+            show_archived_courses(query, context)
+        
+        elif data == "COURSES:back_user":
+            query.edit_message_text(
+                "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+        
+        elif data == "COURSES:back_main":
+            main_kb = user_main_keyboard(user_id)
+            query.edit_message_text(
+                "عدنا إلى القائمة الرئيسية",
+                reply_markup=main_kb
+            )
+        
+        # معالجات الأدمن والمشرفة
+        elif data == "COURSES:create":
+            admin_create_course(query, context)
+        
+        elif data == "COURSES:manage_lessons":
+            admin_manage_lessons(query, context)
+        
+        elif data == "COURSES:manage_quizzes":
+            admin_manage_quizzes(query, context)
+        
+        elif data == "COURSES:statistics":
+            admin_statistics(query, context)
+        
+        elif data == "COURSES:archive_manage":
+            admin_archive_manage(query, context)
+        
+        elif data == "COURSES:delete":
+            admin_delete_course(query, context)
+        
+        elif data == "COURSES:admin_back":
+            admin_kb = admin_panel_keyboard_for(user_id)
+            query.edit_message_text(
+                "عدنا إلى لوحة التحكم",
+                reply_markup=admin_kb
+            )
+        
+        # معالجات إضافية
+        elif data.startswith("COURSES:view_"):
+            course_id = data.replace("COURSES:view_", "")
+            # سيتم إضافة عرض تفاصيل الدورة لاحقاً
+            query.edit_message_text(
+                "📖 تفاصيل الدورة\n\nقريباً: سيتم عرض التفاصيل هنا",
+                reply_markup=COURSES_USER_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:lessons_"):
+            course_id = data.replace("COURSES:lessons_", "")
+            query.edit_message_text(
+                "📖 إدارة الدروس\n\nقريباً: سيتم عرض الدروس هنا",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:quizzes_"):
+            course_id = data.replace("COURSES:quizzes_", "")
+            query.edit_message_text(
+                "📝 إدارة الاختبارات\n\nقريباً: سيتم عرض الاختبارات هنا",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+        
+        elif data.startswith("COURSES:toggle_"):
+            course_id = data.replace("COURSES:toggle_", "")
+            # تبديل حالة الدورة
+            doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+            if doc.exists:
+                course = doc.to_dict()
+                new_status = "inactive" if course.get("status") == "active" else "active"
+                db.collection(COURSES_COLLECTION).document(course_id).update({"status": new_status})
+                query.edit_message_text(
+                    f"✅ تم تحديث حالة الدورة إلى: {'مفعلة' if new_status == 'active' else 'معطلة'}",
+                    reply_markup=COURSES_ADMIN_MENU_KB
+                )
+            else:
+                query.edit_message_text("❌ الدورة غير موجودة.", reply_markup=COURSES_ADMIN_MENU_KB)
+        
+        elif data.startswith("COURSES:confirm_delete_"):
+            course_id = data.replace("COURSES:confirm_delete_", "")
+            # حذف الدورة
+            db.collection(COURSES_COLLECTION).document(course_id).delete()
+            query.edit_message_text(
+                "✅ تم حذف الدورة بنجاح",
+                reply_markup=COURSES_ADMIN_MENU_KB
+            )
+    
+    except Exception as e:
+        logger.error(f"خطأ في معالجة callback الدورات: {e}")
+        query.edit_message_text("❌ حدث خطأ. حاول مرة أخرى.")
+
+# =================== نهاية قسم الدورات ===================
+
+
 if __name__ == "__main__":
     main()
