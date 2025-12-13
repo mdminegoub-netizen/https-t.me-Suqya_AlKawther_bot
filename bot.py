@@ -403,7 +403,7 @@ def enroll_user_in_course(course_id: str, user_id: int, user_info: User) -> bool
         
         # إضافة نقطة تسجيل (اختياري حسب التعليمات)
         add_points(user_id, 1, f"تسجيل في دورة {course_id}")
-                return False
+        return True
     except Exception as e:
         logger.error(f"خطأ في تسجيل المستخدم {user_id} في الدورة {course_id}: {e}")
         return False
