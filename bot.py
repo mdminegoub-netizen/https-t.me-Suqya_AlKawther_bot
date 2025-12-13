@@ -1957,7 +1957,7 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 BTN_ADHKAR_MAIN = "أذكاري 🤲"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
 BTN_TASBIH_MAIN = "السبحة 📿"
-BTN_COURSE_MAIN = "🎓 قسم الدورات"
+BTN_COURSE_MAIN = "قسم الدورات"
 BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
 BTN_WATER_MAIN = "منبّه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
@@ -2079,7 +2079,7 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton("🎓 " + BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -2097,7 +2097,7 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton("🎓 " + BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -2117,7 +2117,7 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         # السطر الأول: وردي القرآني بجانب أذكاري
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: منبه الماء بجانب الدورات
-        [KeyboardButton(BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
+        [KeyboardButton("🎓 " + BTN_COURSE_MAIN), KeyboardButton(BTN_WATER_MAIN)],
         # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
         [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
@@ -2377,7 +2377,7 @@ BTN_COURSE_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 
 # لوحات مفاتيح الدورات (Admin UI)
 BTN_COURSE_ADMIN_CREATE = "➕ إنشاء دورة جديدة"
-BTN_COURSE_ADMIN_MANAGE = "📋 إدارة الدورات"
+BTN_COURSE_ADMIN_MANAGE = "إدارة الدورات"
 BTN_COURSE_ADMIN_ARCHIVE = "🗂️ أرشيف الدورات"
 
 # لوحات مفاتيح داخل الدورة (Student)
@@ -2424,7 +2424,7 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
-        [KeyboardButton(BTN_COURSE_ADMIN_MANAGE)],
+        [KeyboardButton("📋 " + BTN_COURSE_ADMIN_MANAGE)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2437,7 +2437,7 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
-        [KeyboardButton(BTN_COURSE_ADMIN_MANAGE)],
+        [KeyboardButton("📋 " + BTN_COURSE_ADMIN_MANAGE)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -4587,7 +4587,7 @@ def get_course_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
     if is_course_admin(user_id):
         return ReplyKeyboardMarkup(
             [
-                [KeyboardButton(BTN_COURSE_ADMIN_CREATE), KeyboardButton(BTN_COURSE_ADMIN_MANAGE)],
+                [KeyboardButton(BTN_COURSE_ADMIN_CREATE), KeyboardButton("📋 " + BTN_COURSE_ADMIN_MANAGE)],
                 [KeyboardButton(BTN_COURSE_ADMIN_ARCHIVE)],
                 [KeyboardButton(BTN_COURSE_BACK_MAIN)],
             ],
@@ -9258,18 +9258,12 @@ def handle_text(update: Update, context: CallbackContext):
         # منع أي استخدام آخر للبوت
         return
     
-    # --- المعالج الصريح لأزرار الدورات (للتأكد من الاستجابة) ---
-    # هذا المعالج يجب أن يكون هنا لضمان الاستجابة حتى لو كان المستخدم في حالة انتظار
-    if text == BTN_COURSE_MAIN or text == BTN_COURSE_ADMIN_MANAGE:
-        open_course_menu(update, context)
-        return
-    
     # --- منطق التجاوز لأزرار القائمة الرئيسية ---
     BYPASS_BUTTONS = [
-        BTN_ADHKAR_MAIN, BTN_QURAN_MAIN, BTN_COURSE_MAIN, BTN_MEMOS_MAIN, BTN_WATER_MAIN,
+        BTN_ADHKAR_MAIN, BTN_QURAN_MAIN, "🎓 " + BTN_COURSE_MAIN, BTN_MEMOS_MAIN, BTN_WATER_MAIN,
         BTN_STATS, BTN_STATS_ONLY, BTN_MEDALS_ONLY, BTN_MEDALS, BTN_LETTER_MAIN,
         BTN_SUPPORT, BTN_COMP_MAIN, BTN_BENEFITS_MAIN, BTN_NOTIFICATIONS_MAIN,
-        BTN_BACK_MAIN, BTN_ADMIN_PANEL, BTN_COURSE_ADMIN_MANAGE, BTN_STATS_BACK_MAIN,
+        BTN_BACK_MAIN, BTN_ADMIN_PANEL, "📋 " + BTN_COURSE_ADMIN_MANAGE, BTN_STATS_BACK_MAIN,
         BTN_COURSE_BACK_MAIN,
     ]
 
