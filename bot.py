@@ -4797,8 +4797,6 @@ def list_my_courses(update: Update, context: CallbackContext):
         message.reply_text(text, reply_markup=kb)
     else:
         context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
-    else:
-        context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
 
 def handle_course_creation_name_input(update: Update, context: CallbackContext):
     """معالجة إدخال اسم الدورة الجديدة وإنشائها"""
