@@ -2366,6 +2366,55 @@ REMINDER_OPTIONS_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+# ثابت لـ Callback Data Prefix
+COURSE_CALLBACK_PREFIX = "C:"
+
+# لوحات مفاتيح الدورات (Student UI)
+BTN_COURSE_AVAILABLE = "📚 الدورات المتاحة"
+BTN_COURSE_MY = "📖 دوراتي"
+BTN_COURSE_ARCHIVE = "🗂️ أرشيف دوراتي"
+BTN_COURSE_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
+
+# لوحات مفاتيح الدورات (Admin UI)
+BTN_COURSE_ADMIN_CREATE = "➕ إنشاء دورة جديدة"
+BTN_COURSE_ADMIN_MANAGE = "📋 إدارة الدورات"
+BTN_COURSE_ADMIN_ARCHIVE = "🗂️ أرشيف الدورات"
+
+# لوحات مفاتيح داخل الدورة (Student)
+BTN_COURSE_LESSONS = "📘 الدروس"
+BTN_COURSE_EXAMS = "📝 الاختبارات"
+BTN_COURSE_RESULTS = "📊 نتائجي"
+BTN_COURSE_BACK_TO_MENU = "↩️ رجوع"
+
+# لوحات مفاتيح داخل الدورة (Admin)
+BTN_COURSE_ADMIN_RENAME = "✍️ تغيير اسم الدورة"
+BTN_COURSE_ADMIN_TOGGLE_STATUS = "⛔ إيقاف الدورة / ✅ تفعيل الدورة"
+BTN_COURSE_ADMIN_MANAGE_LESSONS = "📘 إدارة الدروس"
+BTN_COURSE_ADMIN_MANAGE_EXAMS = "📝 إدارة الاختبارات"
+BTN_COURSE_ADMIN_STATS = "📊 إحصائيات الطلاب"
+BTN_COURSE_ADMIN_ARCHIVE_COURSE = "🗄️ أرشفة الدورة"
+
+# لوحات مفاتيح إدارة الدروس (Admin)
+BTN_LESSON_ADMIN_ADD = "➕ إضافة درس"
+BTN_LESSON_ADMIN_LIST = "📚 قائمة الدروس"
+BTN_LESSON_TYPE_TEXT = "📝 نص"
+BTN_LESSON_TYPE_AUDIO = "🎧 صوت"
+BTN_LESSON_TYPE_FILE = "📎 ملف"
+BTN_LESSON_PUBLISH = "✅ نشر الدرس"
+BTN_LESSON_EDIT = "✏️ تعديل"
+
+# لوحات مفاتيح إدارة الاختبارات (Admin)
+BTN_EXAM_ADMIN_ADD = "➕ إضافة اختبار"
+BTN_EXAM_ADMIN_LIST = "📋 قائمة الاختبارات"
+BTN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
+BTN_EXAM_PUBLISH = "✅ نشر الاختبار"
+BTN_EXAM_ADD_OPTION = "➕ إضافة خيار"
+BTN_EXAM_FINISH_QUESTION = "✅ إنهاء السؤال"
+
+# أزرار التسجيل والحضور
+BTN_COURSE_ENROLL = "✅ التسجيل في الدورة"
+BTN_LESSON_ATTEND = "✅ تسجيل الحضور"
+
 # ---- لوحة التحكم ----
 ADMIN_PANEL_KB = ReplyKeyboardMarkup(
     [
@@ -4499,53 +4548,7 @@ def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
 
 # =================== قسم الدورات ===================
 
-# ثابت لـ Callback Data Prefix
-COURSE_CALLBACK_PREFIX = "C:"
 
-# لوحات مفاتيح الدورات (Student UI)
-BTN_COURSE_AVAILABLE = "📚 الدورات المتاحة"
-BTN_COURSE_MY = "📖 دوراتي"
-BTN_COURSE_ARCHIVE = "🗂️ أرشيف دوراتي"
-BTN_COURSE_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
-
-# لوحات مفاتيح الدورات (Admin UI)
-BTN_COURSE_ADMIN_CREATE = "➕ إنشاء دورة جديدة"
-BTN_COURSE_ADMIN_MANAGE = "📋 إدارة الدورات"
-BTN_COURSE_ADMIN_ARCHIVE = "🗂️ أرشيف الدورات"
-
-# لوحات مفاتيح داخل الدورة (Student)
-BTN_COURSE_LESSONS = "📘 الدروس"
-BTN_COURSE_EXAMS = "📝 الاختبارات"
-BTN_COURSE_RESULTS = "📊 نتائجي"
-BTN_COURSE_BACK_TO_MENU = "↩️ رجوع"
-
-# لوحات مفاتيح داخل الدورة (Admin)
-BTN_COURSE_ADMIN_RENAME = "✍️ تغيير اسم الدورة"
-BTN_COURSE_ADMIN_TOGGLE_STATUS = "⛔ إيقاف الدورة / ✅ تفعيل الدورة"
-BTN_COURSE_ADMIN_MANAGE_LESSONS = "📘 إدارة الدروس"
-BTN_COURSE_ADMIN_MANAGE_EXAMS = "📝 إدارة الاختبارات"
-BTN_COURSE_ADMIN_STATS = "📊 إحصائيات الطلاب"
-BTN_COURSE_ADMIN_ARCHIVE_COURSE = "🗄️ أرشفة الدورة"
-
-# لوحات مفاتيح إدارة الدروس (Admin)
-BTN_LESSON_ADMIN_ADD = "➕ إضافة درس"
-BTN_LESSON_ADMIN_LIST = "📚 قائمة الدروس"
-BTN_LESSON_TYPE_TEXT = "📝 نص"
-BTN_LESSON_TYPE_AUDIO = "🎧 صوت"
-BTN_LESSON_TYPE_FILE = "📎 ملف"
-BTN_LESSON_PUBLISH = "✅ نشر الدرس"
-BTN_LESSON_EDIT = "✏️ تعديل"
-
-# لوحات مفاتيح إدارة الاختبارات (Admin)
-BTN_EXAM_ADMIN_ADD = "➕ إضافة اختبار"
-BTN_EXAM_ADMIN_LIST = "📋 قائمة الاختبارات"
-BTN_EXAM_ADD_QUESTION = "➕ إضافة سؤال"
-BTN_EXAM_PUBLISH = "✅ نشر الاختبار"
-BTN_EXAM_ADD_OPTION = "➕ إضافة خيار"
-BTN_EXAM_FINISH_QUESTION = "✅ إنهاء السؤال"
-
-# أزرار التسجيل والحضور
-BTN_COURSE_ENROLL = "✅ التسجيل في الدورة"
 BTN_LESSON_ATTEND = "✅ تسجيل الحضور"
 
 # حالة المستخدم داخل قسم الدورات
