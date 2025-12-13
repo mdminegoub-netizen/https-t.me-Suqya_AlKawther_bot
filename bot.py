@@ -9711,6 +9711,11 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # الأزرار الرئيسية
+    # معالجة أزرار الدورات (قسم الدورات وإدارة الدورات)
+    if text == BTN_COURSE_MAIN or text == BTN_COURSE_ADMIN_MANAGE:
+        open_course_menu(update, context)
+        return
+
     if text == BTN_ADHKAR_MAIN:
         open_adhkar_menu(update, context)
         return
@@ -9719,9 +9724,7 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
-    if text == BTN_COURSE_MAIN:
-        open_course_menu(update, context)
-        return
+
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
         return
@@ -9994,9 +9997,7 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_motivation_times_start(update, context)
         return
 
-    if text == BTN_COURSE_ADMIN_MANAGE:
-        open_course_menu(update, context)
-        return
+
 
     if text == BTN_ADMIN_MANAGE_COMPETITION:
         update.message.reply_text(
