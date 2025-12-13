@@ -9994,6 +9994,10 @@ def handle_text(update: Update, context: CallbackContext):
         handle_admin_motivation_times_start(update, context)
         return
 
+    if text == BTN_COURSE_ADMIN_MANAGE:
+        open_course_menu(update, context)
+        return
+
     if text == BTN_ADMIN_MANAGE_COMPETITION:
         update.message.reply_text(
             "🔹 التحكم في المنافسات والمجتمع:\n"
