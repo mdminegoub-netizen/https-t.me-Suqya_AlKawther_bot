@@ -2366,8 +2366,8 @@ REMINDER_OPTIONS_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# ثابت لـ Callback Data Prefix
-COURSE_CALLBACK_PREFIX = "C:"
+# ثابت لـ Callback Data Prefix (قسم الدورات)
+COURSE_CALLBACK_PREFIX = "COURSES:"
 
 # لوحات مفاتيح الدورات (Student UI)
 BTN_COURSE_AVAILABLE = "📚 الدورات المتاحة"
@@ -4583,6 +4583,12 @@ def is_course_admin(user_id: int) -> bool:
     return is_admin(user_id) or is_supervisor(user_id)
 
 
+def clear_support_states(user_id: int):
+    """مسح حالات الدعم عند الدخول لقسم الدورات لمنع التداخل."""
+    WAITING_SUPPORT.discard(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
+
+
 def normalize_course_button_text(text: str) -> str:
     """إزالة البادئات الرمزية من أزرار قسم الدورات لإجراء مقارنة موحدة"""
     for prefix in ("🎓 ", "📋 "):
@@ -4664,9 +4670,12 @@ def open_course_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     record = get_user_record(user)
-    
+
     if record.get("is_banned", False):
         return
+
+    # مسح أي حالة دعم نشطة قبل الدخول للقسم
+    clear_support_states(user_id)
 
     # حفظ حالة الرجوع
     record["current_state"] = COURSE_STATE_MAIN
@@ -4680,7 +4689,11 @@ def open_course_menu(update: Update, context: CallbackContext):
     else:
         text = "🎓 مرحباً بك في قسم الدورات."
 
-    update.message.reply_text(text, reply_markup=kb)
+    message = update.effective_message
+    if message:
+        message.reply_text(text, reply_markup=kb)
+    else:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
 
 # =================== قسم الدورات (تكملة) ===================
 
@@ -4689,11 +4702,18 @@ def list_available_courses(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     record = get_user_record(user)
-    
+
+    clear_support_states(user_id)
+
+    message = update.effective_message
+
     courses = get_all_courses(status="active")
-    
+
     if not courses:
-        update.message.reply_text("لا توجد دورات متاحة حالياً. نعتذر لك.")
+        if message:
+            message.reply_text("لا توجد دورات متاحة حالياً. نعتذر لك.")
+        else:
+            context.bot.send_message(chat_id=user_id, text="لا توجد دورات متاحة حالياً. نعتذر لك.")
         return
 
     text = "📚 الدورات المتاحة حالياً:\n\n"
@@ -4713,21 +4733,28 @@ def list_available_courses(update: Update, context: CallbackContext):
         callback_data = f"{COURSE_CALLBACK_PREFIX}VIEW:{course_id}"
         keyboard_rows.append([InlineKeyboardButton(course['title'], callback_data=callback_data)])
 
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
-    
+    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK:ADMIN_MENU")])
+
     kb = InlineKeyboardMarkup(keyboard_rows)
-    
+
     record["current_state"] = COURSE_STATE_AVAILABLE
     save_user_record(user_id, record)
-    
-    update.message.reply_text(text, reply_markup=kb)
+
+    if message:
+        message.reply_text(text, reply_markup=kb)
+    else:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
 
 def list_my_courses(update: Update, context: CallbackContext):
     """عرض الدورات التي سجل فيها الطالب"""
     user = update.effective_user
     user_id = user.id
     record = get_user_record(user)
-    
+
+    clear_support_states(user_id)
+
+    message = update.effective_message
+
     # هذه الدالة تحتاج إلى جلب الدورات التي سجل فيها المستخدم فقط
     # سنفترض أننا سنقوم بجلب جميع الدورات ثم التحقق من التسجيل
     all_courses = get_all_courses()
@@ -4739,7 +4766,10 @@ def list_my_courses(update: Update, context: CallbackContext):
             my_courses.append(course)
             
     if not my_courses:
-        update.message.reply_text("لم تسجل في أي دورة بعد. تفضل بزيارة «الدورات المتاحة» للتسجيل.")
+        if message:
+            message.reply_text("لم تسجل في أي دورة بعد. تفضل بزيارة «الدورات المتاحة» للتسجيل.")
+        else:
+            context.bot.send_message(chat_id=user_id, text="لم تسجل في أي دورة بعد. تفضل بزيارة «الدورات المتاحة» للتسجيل.")
         return
 
     text = "📖 دوراتك المسجل فيها:\n\n"
@@ -4755,14 +4785,20 @@ def list_my_courses(update: Update, context: CallbackContext):
         callback_data = f"{COURSE_CALLBACK_PREFIX}ENTER:{course_id}"
         keyboard_rows.append([InlineKeyboardButton(course['title'], callback_data=callback_data)])
 
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
+    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK:MAIN")])
     
     kb = InlineKeyboardMarkup(keyboard_rows)
     
     record["current_state"] = COURSE_STATE_MY_COURSES
     save_user_record(user_id, record)
     
-    update.message.reply_text(text, reply_markup=kb)
+    message = update.effective_message
+    if message:
+        message.reply_text(text, reply_markup=kb)
+    else:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
+    else:
+        context.bot.send_message(chat_id=user_id, text=text, reply_markup=kb)
 
 def handle_course_creation_name_input(update: Update, context: CallbackContext):
     """معالجة إدخال اسم الدورة الجديدة وإنشائها"""
@@ -4807,7 +4843,9 @@ def start_create_course_wizard(update: Update, context: CallbackContext):
     
     if not is_course_admin(user_id):
         return
-    
+
+    clear_support_states(user_id)
+
     record["current_state"] = COURSE_STATE_ADMIN_CREATE_NAME
     save_user_record(user_id, record)
     
@@ -4826,10 +4864,12 @@ def list_courses_for_admin(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
     record = get_user_record(user)
-    
+
     if not is_course_admin(user_id):
         return
-    
+
+    clear_support_states(user_id)
+
     courses = get_all_courses() # جلب جميع الدورات
     
     if not courses:
@@ -4849,14 +4889,16 @@ def list_courses_for_admin(update: Update, context: CallbackContext):
         callback_data = f"{COURSE_CALLBACK_PREFIX}MANAGE:{course_id}"
         keyboard_rows.append([InlineKeyboardButton(f"{course['title']} ({status_text})", callback_data=callback_data)])
 
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
+    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK:MAIN")])
     
     kb = InlineKeyboardMarkup(keyboard_rows)
     
     record["current_state"] = COURSE_STATE_ADMIN_MANAGE
     save_user_record(user_id, record)
     
-    update.message.reply_text(text, reply_markup=kb)
+    message = update.effective_message
+    if message:
+        message.reply_text(text, reply_markup=kb)
 
 def handle_course_menu_buttons(update: Update, context: CallbackContext):
     """معالجة أزرار قائمة الدورات الرئيسية (Reply Keyboard)"""
@@ -4897,86 +4939,6 @@ def handle_course_menu_buttons(update: Update, context: CallbackContext):
 
 # =================== قسم الدورات (تكملة) ===================
 
-def list_available_courses(update: Update, context: CallbackContext):
-    """عرض الدورات المتاحة للطالب"""
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    
-    courses = get_all_courses(status="active")
-    
-    if not courses:
-        update.message.reply_text("لا توجد دورات متاحة حالياً. نعتذر لك.")
-        return
-
-    text = "📚 الدورات المتاحة حالياً:\n\n"
-    keyboard_rows = []
-    
-    for course in courses:
-        course_id = course["id"]
-        enrollment = get_enrollment(course_id, user_id)
-        
-        status_text = "✅ نشطة"
-        if enrollment:
-            status_text += " (مسجل)"
-            
-        text += f"• {course['title']} ({status_text})\n"
-        
-        # زر لعرض تفاصيل الدورة (أو التسجيل إذا لم يكن مسجلاً)
-        callback_data = f"{COURSE_CALLBACK_PREFIX}VIEW:{course_id}"
-        keyboard_rows.append([InlineKeyboardButton(course['title'], callback_data=callback_data)])
-
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
-    
-    kb = InlineKeyboardMarkup(keyboard_rows)
-    
-    record["current_state"] = COURSE_STATE_AVAILABLE
-    save_user_record(user_id, record)
-    
-    update.message.reply_text(text, reply_markup=kb)
-
-def list_my_courses(update: Update, context: CallbackContext):
-    """عرض الدورات التي سجل فيها الطالب"""
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    
-    # هذه الدالة تحتاج إلى جلب الدورات التي سجل فيها المستخدم فقط
-    # سنفترض أننا سنقوم بجلب جميع الدورات ثم التحقق من التسجيل
-    all_courses = get_all_courses()
-    my_courses = []
-    
-    for course in all_courses:
-        enrollment = get_enrollment(course["id"], user_id)
-        if enrollment:
-            my_courses.append(course)
-            
-    if not my_courses:
-        update.message.reply_text("لم تسجل في أي دورة بعد. تفضل بزيارة «الدورات المتاحة» للتسجيل.")
-        return
-
-    text = "📖 دوراتك المسجل فيها:\n\n"
-    keyboard_rows = []
-    
-    for course in my_courses:
-        course_id = course["id"]
-        status_text = "✅ نشطة" if course.get("status") == "active" else "🗂️ مؤرشفة"
-        
-        text += f"• {course['title']} ({status_text})\n"
-        
-        # زر لدخول الدورة
-        callback_data = f"{COURSE_CALLBACK_PREFIX}ENTER:{course_id}"
-        keyboard_rows.append([InlineKeyboardButton(course['title'], callback_data=callback_data)])
-
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
-    
-    kb = InlineKeyboardMarkup(keyboard_rows)
-    
-    record["current_state"] = COURSE_STATE_MY_COURSES
-    save_user_record(user_id, record)
-    
-    update.message.reply_text(text, reply_markup=kb)
-
 def handle_course_creation_name_input(update: Update, context: CallbackContext):
     """معالجة إدخال اسم الدورة الجديدة وإنشائها"""
     user = update.effective_user
@@ -5033,43 +4995,6 @@ def start_create_course_wizard(update: Update, context: CallbackContext):
         "✍️ أدخل اسم الدورة الجديدة:",
         reply_markup=kb
     )
-
-def list_courses_for_admin(update: Update, context: CallbackContext):
-    """عرض الدورات للإدارة (النشطة والموقوفة)"""
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user)
-    
-    if not is_course_admin(user_id):
-        return
-    
-    courses = get_all_courses() # جلب جميع الدورات
-    
-    if not courses:
-        update.message.reply_text("لا توجد دورات مسجلة بعد.")
-        return
-
-    text = "📋 إدارة الدورات (النشطة والموقوفة):\n\n"
-    keyboard_rows = []
-    
-    for course in courses:
-        course_id = course["id"]
-        status_text = "✅ نشطة" if course.get("status") == "active" else "⛔ موقوفة"
-        
-        text += f"• {course['title']} ({status_text})\n"
-        
-        # زر لإدارة الدورة
-        callback_data = f"{COURSE_CALLBACK_PREFIX}MANAGE:{course_id}"
-        keyboard_rows.append([InlineKeyboardButton(f"{course['title']} ({status_text})", callback_data=callback_data)])
-
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK_MAIN")])
-    
-    kb = InlineKeyboardMarkup(keyboard_rows)
-    
-    record["current_state"] = COURSE_STATE_ADMIN_MANAGE
-    save_user_record(user_id, record)
-    
-    update.message.reply_text(text, reply_markup=kb)
 
 def handle_course_menu_buttons(update: Update, context: CallbackContext):
     """معالجة أزرار قائمة الدورات الرئيسية (Reply Keyboard)"""
@@ -5125,11 +5050,11 @@ def show_course_details(update: Update, context: CallbackContext, course_id: str
     
     if enrollment:
         text += "\n✅ أنت مسجل في هذه الدورة."
-        keyboard_rows.append([InlineKeyboardButton("📖 الذهاب إلى دوراتي", callback_data=f"{COURSE_CALLBACK_PREFIX}MY")])
+        keyboard_rows.append([InlineKeyboardButton("📖 الذهاب إلى دوراتي", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK:MY")])
     elif course.get('status') == 'active':
         keyboard_rows.append([InlineKeyboardButton(BTN_COURSE_ENROLL, callback_data=f"{COURSE_CALLBACK_PREFIX}ENROLL:{course_id}")])
-    
-    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع لقائمة الدورات المتاحة", callback_data=f"{COURSE_CALLBACK_PREFIX}AVAILABLE")])
+
+    keyboard_rows.append([InlineKeyboardButton("↩️ رجوع لقائمة الدورات المتاحة", callback_data=f"{COURSE_CALLBACK_PREFIX}BACK:AVAILABLE")])
     
     kb = InlineKeyboardMarkup(keyboard_rows)
     
@@ -5182,7 +5107,9 @@ def manage_course_admin_menu(update: Update, context: CallbackContext, course_id
     if not course:
         query.answer("❌ الدورة غير موجودة.")
         return
-    
+
+    clear_support_states(user_id)
+
     record["current_state"] = COURSE_STATE_ADMIN_IN_COURSE
     record["course_context"]["course_id"] = course_id
     save_user_record(user_id, record)
@@ -6106,7 +6033,9 @@ def enter_course_student_menu(update: Update, context: CallbackContext, course_i
     if not enrollment:
         query.answer("❌ يجب أن تكون مسجلاً في الدورة للدخول إليها.")
         return
-    
+
+    clear_support_states(user_id)
+
     record["current_state"] = COURSE_STATE_IN_COURSE
     record["course_context"]["course_id"] = course_id
     save_user_record(user_id, record)
@@ -6426,68 +6355,69 @@ def handle_exam_answer(update: Update, context: CallbackContext, course_id: str,
 def handle_course_callback_query(update: Update, context: CallbackContext):
     """معالجة الـ Callback Query الخاصة بقسم الدورات"""
     query = update.callback_query
-    data = query.data.replace(COURSE_CALLBACK_PREFIX, "")
-    
-    parts = data.split(":")
+    data = query.data or ""
+
+    if not data.startswith(COURSE_CALLBACK_PREFIX):
+        query.answer("❌ إجراء غير معروف.")
+        return
+
+    payload = data[len(COURSE_CALLBACK_PREFIX):]
+    parts = payload.split(":")
     action = parts[0]
-    course_id = parts[1] if len(parts) > 1 else None
-    
-    if action == "BACK_MAIN":
-        # العودة إلى القائمة الرئيسية للدورات (Reply Keyboard)
-        open_course_menu(update, context)
+    primary = parts[1] if len(parts) > 1 else None
+    secondary = parts[2] if len(parts) > 2 else None
+    user_id = query.from_user.id
+
+    if action == "BACK":
+        target = primary or ""
+        clear_support_states(user_id)
+
+        if target == "MAIN":
+            open_course_menu(update, context)
+        elif target == "AVAILABLE":
+            list_available_courses(update, context)
+        elif target == "MY":
+            list_my_courses(update, context)
+        elif target == "ADMIN_MENU":
+            open_course_menu(update, context)
+        else:
+            query.answer("❌ إجراء رجوع غير معروف.")
+            return
+
         query.answer()
         return
-    
-    elif action == "AVAILABLE":
-        # العودة إلى قائمة الدورات المتاحة (Inline Keyboard)
-        list_available_courses(update, context)
-        query.answer()
-        return
-    
-    elif action == "MY":
-        # العودة إلى قائمة دوراتي (Inline Keyboard)
-        list_my_courses(update, context)
-        query.answer()
-        return
-    
-    elif action == "VIEW" and course_id:
-        # عرض تفاصيل الدورة للطالب
+
+    course_id = primary
+
+    if action == "VIEW" and course_id:
         show_course_details(update, context, course_id)
         query.answer()
         return
-    
-    elif action == "ENROLL" and course_id:
-        # التسجيل في الدورة
+
+    if action == "ENROLL" and course_id:
         enroll_in_course_action(update, context, course_id)
         return
-    
-    elif action == "MANAGE" and course_id:
-        # إدارة الدورة للأدمن
+
+    if action == "MANAGE" and course_id:
         manage_course_admin_menu(update, context, course_id)
         return
-    
-    elif action == "LESSON_VIEW" and course_id and item_id:
-        # عرض الدرس للطالب
-        view_lesson_student(update, context, course_id, item_id)
+
+    if action == "LESSON_VIEW" and course_id and secondary:
+        view_lesson_student(update, context, course_id, secondary)
         return
-    
-    elif action == "EXAM_START" and course_id and item_id:
-        # بدء الاختبار للطالب
-        start_exam_student(update, context, course_id, item_id)
+
+    if action == "EXAM_START" and course_id and secondary:
+        start_exam_student(update, context, course_id, secondary)
         return
-    
-    elif action == "EXAM_ANSWER" and course_id and item_id:
-        # إجابة الطالب على سؤال الاختبار
-        handle_exam_answer(update, context, course_id, item_id)
+
+    if action == "EXAM_ANSWER" and primary and secondary:
+        handle_exam_answer(update, context, primary, secondary)
         return
-    
-    elif action == "ENTER" and course_id:
-        # دخول الطالب إلى الدورة
+
+    if action == "ENTER" and course_id:
         enter_course_student_menu(update, context, course_id)
         return
-    
     query.answer("❌ إجراء غير معروف.")
-
 # =================== قسم السبحة ===================
 
 
@@ -9924,6 +9854,19 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in WAITING_BAN_REASON:
         handle_ban_reason_input(update, context)
         return
+
+    # الدخول إلى مسارات الدورات يلغي أي حالة دعم نشطة
+    normalized_course_text = normalize_course_button_text(text)
+    if normalized_course_text in [
+        BTN_COURSE_MAIN,
+        BTN_COURSE_AVAILABLE,
+        BTN_COURSE_MY,
+        BTN_COURSE_ARCHIVE,
+        BTN_COURSE_ADMIN_CREATE,
+        BTN_COURSE_ADMIN_MANAGE,
+        BTN_COURSE_ADMIN_ARCHIVE,
+    ]:
+        clear_support_states(user_id)
 
     # الدعم
     if user_id in WAITING_SUPPORT:
