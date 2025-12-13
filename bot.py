@@ -8346,12 +8346,16 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
-        dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES_(ADMIN|STUDENT):"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_level_selection, pattern=r"^COURSES_ADMIN:level_"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_creation_confirm, pattern=r"^COURSES_ADMIN:confirm_create$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_creation_cancel, pattern=r"^COURSES_ADMIN:cancel_create$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.status_update & Filters.chat_type.channel, handle_deleted_channel_post))
+        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_course_creation_input))
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
         
         logger.info("✅ تم تسجيل جميع المعالجات")
