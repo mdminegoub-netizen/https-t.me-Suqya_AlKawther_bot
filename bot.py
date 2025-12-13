@@ -1613,6 +1613,30 @@ LETTER_CURRENT_DATA = {}  # user_id -> { "content": str, "reminder_date": str }
 # دعم / إدارة
 WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
+
+# =================== حالات الإدخال للدورات ===================
+WAITING_COURSE_NAME = "waiting_course_name"
+WAITING_COURSE_SELECT = "waiting_course_select"
+WAITING_LESSON_TITLE = "waiting_lesson_title"
+WAITING_LESSON_TYPE = "waiting_lesson_type"
+WAITING_LESSON_CONTENT = "waiting_lesson_content"
+WAITING_QUIZ_TITLE = "waiting_quiz_title"
+WAITING_QUIZ_QUESTION = "waiting_quiz_question"
+WAITING_QUIZ_ANSWER = "waiting_quiz_answer"
+WAITING_QUIZ_POINTS = "waiting_quiz_points"
+WAITING_QUIZ_IS_CORRECT = "waiting_quiz_is_correct"
+
+# مجموعات Firestore للدورات
+COURSES_COLLECTION = "courses"
+COURSE_LESSONS_COLLECTION = "course_lessons"
+COURSE_QUIZZES_COLLECTION = "course_quizzes"
+COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
+COURSE_STATISTICS_COLLECTION = "course_statistics"
+
+# متغيرات الحالة للدورات
+COURSES_USER_STATE = {}
+COURSES_TEMP_DATA = {}
+
 WAITING_BROADCAST = set()
 
 # فوائد ونصائح
@@ -1663,6 +1687,26 @@ BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
+# =================== أزرار قسم الدورات ===================
+BTN_COURSES_SECTION = "قسم الدورات 🎓"
+BTN_MANAGE_COURSES = "إدارة الدورات 📋"
+BTN_AVAILABLE_COURSES = "الدورات المتاحة 📚"
+BTN_MY_COURSES = "دوراتي 🧾"
+BTN_COURSES_ARCHIVE = "الأرشيف 📂"
+BTN_CREATE_COURSE = "إنشاء دورة ➕"
+BTN_EDIT_COURSE = "تعديل دورة ✏️"
+BTN_DELETE_COURSE = "حذف دورة 🗑️"
+BTN_COURSE_STATISTICS = "إحصائيات الدورات 📊"
+BTN_ADD_LESSON = "إضافة درس ➕"
+BTN_ADD_QUIZ = "إنشاء اختبار ✏️"
+BTN_VIEW_LESSONS = "عرض الدروس 📖"
+BTN_VIEW_QUIZZES = "عرض الاختبارات 📝"
+BTN_LESSONS = "الدروس 📘"
+BTN_QUIZZES = "الاختبارات 📝"
+BTN_MY_POINTS = "نقاطي 🏆"
+BTN_COURSES_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
+BTN_MANAGE_BACK = "رجوع ⬅️"
+
 BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 
 BTN_CANCEL = "إلغاء ❌"
@@ -1822,6 +1866,65 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
+    ],
+    resize_keyboard=True,
+)
+
+
+# =================== لوحات المفاتيح للدورات ===================
+
+COURSES_USER_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_AVAILABLE_COURSES), KeyboardButton(BTN_MY_COURSES)],
+        [KeyboardButton(BTN_COURSES_ARCHIVE)],
+        [KeyboardButton(BTN_COURSES_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSES_ADMIN_MENU_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_CREATE_COURSE)],
+        [KeyboardButton(BTN_EDIT_COURSE), KeyboardButton(BTN_DELETE_COURSE)],
+        [KeyboardButton(BTN_COURSE_STATISTICS)],
+        [KeyboardButton(BTN_MANAGE_BACK)],
+    ],
+    resize_keyboard=True,
+)
+
+COURSE_DETAILS_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_LESSONS), KeyboardButton(BTN_QUIZZES)],
+        [KeyboardButton(BTN_MY_POINTS)],
+        [KeyboardButton(BTN_COURSES_BACK_MAIN)],
+    ],
+    resize_keyboard=True,
+)
+
+LESSON_TYPE_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("📝 نص")],
+        [KeyboardButton("🎧 ملف صوتي")],
+        [KeyboardButton("📎 ملف (PDF/DOC)")],
+        [KeyboardButton("🔗 رابط")],
+        [KeyboardButton(BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
+QUIZ_ANSWER_CORRECT_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("✅ صحيح"), KeyboardButton("❌ خطأ")],
+        [KeyboardButton(BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
+QUIZ_ADD_ANSWER_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton("إضافة جواب آخر ➕")],
+        [KeyboardButton("إنهاء الاختبار ✅")],
+        [KeyboardButton(BTN_CANCEL)],
     ],
     resize_keyboard=True,
 )
@@ -7360,6 +7463,14 @@ def handle_text(update: Update, context: CallbackContext):
         open_comp_menu(update, context)
         return
 
+    if text == BTN_COURSES_SECTION:
+        open_courses_menu(update, context)
+        return
+
+    if text == BTN_MANAGE_COURSES:
+        open_courses_menu(update, context)
+        return
+
     if text == BTN_BENEFITS_MAIN:
         open_benefits_menu(update, context)
         return
@@ -8332,6 +8443,8 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^courses_|^course_|^subscribe_|^lesson_|^attendance_|^quiz_|^answer_|^archived_|^lessons_|^quizzes_|^points_"))
+
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
@@ -8398,6 +8511,1025 @@ def start_bot():
     except Exception as e:
         logger.error(f"❌ خطأ في البوت: {e}", exc_info=True)
         raise
+
+
+# =================== دوال مساعدة للدورات ===================
+
+def is_admin_or_supervisor(user_id: int) -> bool:
+    """التحقق من أن المستخدم أدمن أو مشرفة"""
+    return is_admin(user_id) or is_supervisor(user_id)
+
+
+def get_user_courses(user_id: int) -> list:
+    """الحصول على الدورات المشترك بها المستخدم"""
+    if not firestore_available():
+        return []
+    
+    try:
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            courses.append(data.get("course_id"))
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على دورات المستخدم: {e}")
+        return []
+
+
+def get_active_courses() -> list:
+    """الحصول على الدورات النشطة فقط"""
+    if not firestore_available():
+        return []
+    
+    try:
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "active").stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورات النشطة: {e}")
+        return []
+
+
+def get_archived_courses() -> list:
+    """الحصول على الدورات المؤرشفة (غير النشطة)"""
+    if not firestore_available():
+        return []
+    
+    try:
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "inactive").stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورات المؤرشفة: {e}")
+        return []
+
+
+def get_course_by_id(course_id: str) -> dict:
+    """الحصول على بيانات دورة معينة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            return data
+        return {}
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورة: {e}")
+        return {}
+
+
+def get_course_lessons(course_id: str) -> list:
+    """الحصول على دروس دورة معينة"""
+    if not firestore_available():
+        return []
+    
+    try:
+        lessons_ref = db.collection(COURSE_LESSONS_COLLECTION)
+        docs = lessons_ref.where("course_id", "==", course_id).stream()
+        lessons = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            lessons.append(data)
+        return sorted(lessons, key=lambda x: x.get("order", 0))
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على دروس الدورة: {e}")
+        return []
+
+
+def get_course_quizzes(course_id: str) -> list:
+    """الحصول على اختبارات دورة معينة"""
+    if not firestore_available():
+        return []
+    
+    try:
+        quizzes_ref = db.collection(COURSE_QUIZZES_COLLECTION)
+        docs = quizzes_ref.where("course_id", "==", course_id).stream()
+        quizzes = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            quizzes.append(data)
+        return sorted(quizzes, key=lambda x: x.get("order", 0))
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على اختبارات الدورة: {e}")
+        return []
+
+
+def user_subscribed_to_course(user_id: int, course_id: str) -> bool:
+    """التحقق من اشتراك المستخدم في دورة معينة"""
+    if not firestore_available():
+        return False
+    
+    try:
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        for doc in docs:
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"خطأ في التحقق من الاشتراك: {e}")
+        return False
+
+
+def subscribe_user_to_course(user_id: int, course_id: str, context: CallbackContext):
+    """اشتراك المستخدم في دورة"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم الاشتراك مسبقاً
+        if user_subscribed_to_course(user_id, course_id):
+            return False
+        
+        # إضافة الاشتراك
+        sub_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "subscribed_at": datetime.now(timezone.utc).isoformat(),
+            "attendance_count": 0,
+            "quiz_points": 0,
+            "total_points": 0,
+        }
+        
+        db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).add(sub_data)
+        
+        # إرسال إشعار للأدمن والمشرفة
+        try:
+            user = db.collection(USERS_COLLECTION).document(str(user_id)).get()
+            user_data = user.to_dict() if user.exists else {}
+            user_name = user_data.get("first_name", "مستخدم")
+            course = get_course_by_id(course_id)
+            course_name = course.get("name", "دورة")
+            
+            notification = f"🎓 مستخدم جديد انضم إلى دورة\n\nالمستخدم: {user_name} (ID: {user_id})\nالدورة: {course_name}"
+            
+            if ADMIN_ID:
+                try:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=notification)
+                except Exception as e:
+                    logger.error(f"خطأ في إرسال إشعار للأدمن: {e}")
+            
+            if SUPERVISOR_ID:
+                try:
+                    context.bot.send_message(chat_id=SUPERVISOR_ID, text=notification)
+                except Exception as e:
+                    logger.error(f"خطأ في إرسال إشعار للمشرفة: {e}")
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الإشعارات: {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في اشتراك المستخدم في الدورة: {e}")
+        return False
+
+
+def record_attendance(user_id: int, course_id: str, lesson_id: str) -> bool:
+    """تسجيل حضور المستخدم في درس"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم التسجيل مسبقاً
+        attendance_ref = db.collection("course_attendance")
+        docs = attendance_ref.where("user_id", "==", user_id)\
+                              .where("course_id", "==", course_id)\
+                              .where("lesson_id", "==", lesson_id).stream()
+        
+        for doc in docs:
+            return False  # تم التسجيل مسبقاً
+        
+        # تسجيل الحضور
+        attendance_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "lesson_id": lesson_id,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "points": 1,
+        }
+        
+        db.collection("course_attendance").add(attendance_data)
+        
+        # تحديث نقاط الاشتراك
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        
+        for doc in docs:
+            current_data = doc.to_dict()
+            current_attendance = current_data.get("attendance_count", 0)
+            current_total = current_data.get("total_points", 0)
+            
+            doc.reference.update({
+                "attendance_count": current_attendance + 1,
+                "total_points": current_total + 1,
+            })
+            break
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل الحضور: {e}")
+        return False
+
+
+def record_quiz_answer(user_id: int, course_id: str, quiz_id: str, answer_id: str, points: int) -> bool:
+    """تسجيل إجابة المستخدم على اختبار"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم الإجابة مسبقاً
+        answers_ref = db.collection("course_quiz_answers")
+        docs = answers_ref.where("user_id", "==", user_id)\
+                          .where("quiz_id", "==", quiz_id).stream()
+        
+        for doc in docs:
+            return False  # تم الإجابة مسبقاً
+        
+        # تسجيل الإجابة
+        answer_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "quiz_id": quiz_id,
+            "answer_id": answer_id,
+            "points": points,
+            "answered_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        db.collection("course_quiz_answers").add(answer_data)
+        
+        # تحديث نقاط الاشتراك
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        
+        for doc in docs:
+            current_data = doc.to_dict()
+            current_quiz_points = current_data.get("quiz_points", 0)
+            current_total = current_data.get("total_points", 0)
+            
+            doc.reference.update({
+                "quiz_points": current_quiz_points + points,
+                "total_points": current_total + points,
+            })
+            break
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل إجابة الاختبار: {e}")
+        return False
+
+
+def get_user_quiz_results(user_id: int, course_id: str) -> dict:
+    """الحصول على نتائج اختبارات المستخدم في دورة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        results = {}
+        quizzes = get_course_quizzes(course_id)
+        
+        for quiz in quizzes:
+            quiz_id = quiz.get("id")
+            answers_ref = db.collection("course_quiz_answers")
+            docs = answers_ref.where("user_id", "==", user_id)\
+                              .where("quiz_id", "==", quiz_id).stream()
+            
+            for doc in docs:
+                data = doc.to_dict()
+                results[quiz_id] = {
+                    "quiz_title": quiz.get("title"),
+                    "points": data.get("points", 0),
+                    "answered_at": data.get("answered_at"),
+                }
+                break
+        
+        return results
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على نتائج الاختبارات: {e}")
+        return {}
+
+
+def get_course_statistics(course_id: str) -> dict:
+    """الحصول على إحصائيات الدورة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        stats = {
+            "total_subscribers": 0,
+            "total_lessons": 0,
+            "total_quizzes": 0,
+            "subscribers": [],
+        }
+        
+        # عدد المشتركين
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("course_id", "==", course_id).stream()
+        subscribers = []
+        for doc in docs:
+            data = doc.to_dict()
+            subscribers.append({
+                "user_id": data.get("user_id"),
+                "subscribed_at": data.get("subscribed_at"),
+                "attendance_count": data.get("attendance_count", 0),
+                "quiz_points": data.get("quiz_points", 0),
+                "total_points": data.get("total_points", 0),
+            })
+        
+        stats["total_subscribers"] = len(subscribers)
+        stats["subscribers"] = subscribers
+        stats["total_lessons"] = len(get_course_lessons(course_id))
+        stats["total_quizzes"] = len(get_course_quizzes(course_id))
+        
+        return stats
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على إحصائيات الدورة: {e}")
+        return {}
+
+
+# =================== معالجات الأزرار الرئيسية للدورات ===================
+
+def open_courses_menu(update: Update, context: CallbackContext):
+    """فتح قائمة الدورات الرئيسية"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if is_admin_or_supervisor(user_id):
+        # لوحة تحكم الأدمن والمشرفة
+        msg.reply_text(
+            "🎓 لوحة إدارة الدورات\n\n"
+            "اختر ما تريد القيام به:",
+            reply_markup=COURSES_ADMIN_MENU_KB,
+        )
+    else:
+        # قائمة المستخدمين العادية
+        msg.reply_text(
+            "🎓 قسم الدورات\n\n"
+            "اختر من الخيارات التالية:",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+
+
+def open_available_courses(update: Update, context: CallbackContext):
+    """عرض الدورات المتاحة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    courses = get_active_courses()
+    
+    if not courses:
+        msg.reply_text(
+            "لا توجد دورات متاحة حالياً 😔",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "📚 الدورات المتاحة:\n\n"
+    
+    for i, course in enumerate(courses, 1):
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة بدون اسم")
+        course_desc = course.get("description", "")
+        
+        is_subscribed = user_subscribed_to_course(user_id, course_id)
+        status = "✅ مشترك" if is_subscribed else "❌ غير مشترك"
+        
+        text += f"{i}. {course_name}\n"
+        text += f"   الوصف: {course_desc}\n"
+        text += f"   الحالة: {status}\n\n"
+    
+    # إنشاء أزرار للدورات
+    keyboard = []
+    for course in courses:
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة")
+        keyboard.append([InlineKeyboardButton(course_name, callback_data=f"course_view_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def open_my_courses(update: Update, context: CallbackContext):
+    """عرض دورات المستخدم"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    user_courses = get_user_courses(user_id)
+    
+    if not user_courses:
+        msg.reply_text(
+            "أنت لم تشترك في أي دورة حتى الآن 😔\n"
+            "اذهب إلى 'الدورات المتاحة' للاشتراك في دورة.",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "🧾 دوراتي:\n\n"
+    keyboard = []
+    
+    for course_id in user_courses:
+        course = get_course_by_id(course_id)
+        if course:
+            course_name = course.get("name", "دورة")
+            text += f"📖 {course_name}\n"
+            keyboard.append([InlineKeyboardButton(course_name, callback_data=f"course_details_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def open_archived_courses(update: Update, context: CallbackContext):
+    """عرض الدورات المؤرشفة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    archived = get_archived_courses()
+    
+    if not archived:
+        msg.reply_text(
+            "لا توجد دورات مؤرشفة حالياً 📂",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "📂 الدورات المؤرشفة:\n\n"
+    keyboard = []
+    
+    for course in archived:
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة")
+        text += f"🗂️ {course_name}\n"
+        keyboard.append([InlineKeyboardButton(course_name, callback_data=f"archived_course_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def start_create_course(update: Update, context: CallbackContext):
+    """بدء عملية إنشاء دورة جديدة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_COURSE_NAME
+    msg.reply_text(
+        "📝 أدخل اسم الدورة الجديدة:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def start_create_lesson(update: Update, context: CallbackContext, course_id: str):
+    """بدء عملية إضافة درس جديد"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_LESSON_TITLE
+    COURSES_TEMP_DATA[user_id] = {"course_id": course_id}
+    
+    msg.reply_text(
+        "📝 أدخل عنوان الدرس:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def start_create_quiz(update: Update, context: CallbackContext, course_id: str):
+    """بدء عملية إنشاء اختبار جديد"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_QUIZ_TITLE
+    COURSES_TEMP_DATA[user_id] = {"course_id": course_id, "questions": []}
+    
+    msg.reply_text(
+        "📝 أدخل عنوان الاختبار:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def handle_courses_text_input(update: Update, context: CallbackContext):
+    """معالجة مدخلات النصوص في نظام الدورات"""
+    user_id = update.effective_user.id
+    msg = update.message
+    text = (msg.text or "").strip()
+    
+    if user_id not in COURSES_USER_STATE:
+        return False
+    
+    state = COURSES_USER_STATE[user_id]
+    
+    # إنشاء دورة جديدة
+    if state == WAITING_COURSE_NAME:
+        if not firestore_available():
+            msg.reply_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+            return True
+        
+        try:
+            course_data = {
+                "name": text,
+                "description": "",
+                "status": "active",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": user_id,
+            }
+            
+            db.collection(COURSES_COLLECTION).add(course_data)
+            msg.reply_text(
+                f"✅ تم إنشاء الدورة '{text}' بنجاح!",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            COURSES_USER_STATE.pop(user_id, None)
+            return True
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الدورة: {e}")
+            msg.reply_text("❌ حدث خطأ أثناء إنشاء الدورة.")
+            return True
+    
+    # إضافة درس جديد
+    elif state == WAITING_LESSON_TITLE:
+        COURSES_TEMP_DATA[user_id]["lesson_title"] = text
+        COURSES_USER_STATE[user_id] = WAITING_LESSON_TYPE
+        msg.reply_text(
+            "📌 اختر نوع محتوى الدرس:",
+            reply_markup=LESSON_TYPE_KB,
+        )
+        return True
+    
+    elif state == WAITING_LESSON_TYPE:
+        if text not in ["📝 نص", "🎧 ملف صوتي", "📎 ملف (PDF/DOC)", "🔗 رابط"]:
+            msg.reply_text(
+                "❌ اختر من الخيارات المتاحة:",
+                reply_markup=LESSON_TYPE_KB,
+            )
+            return True
+        
+        COURSES_TEMP_DATA[user_id]["lesson_type"] = text
+        COURSES_USER_STATE[user_id] = WAITING_LESSON_CONTENT
+        msg.reply_text(
+            f"📝 أدخل محتوى الدرس ({text}):",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_LESSON_CONTENT:
+        if not firestore_available():
+            msg.reply_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+            return True
+        
+        try:
+            temp_data = COURSES_TEMP_DATA[user_id]
+            lesson_data = {
+                "course_id": temp_data.get("course_id"),
+                "title": temp_data.get("lesson_title"),
+                "type": temp_data.get("lesson_type"),
+                "content": text,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "order": 0,
+            }
+            
+            db.collection(COURSE_LESSONS_COLLECTION).add(lesson_data)
+            msg.reply_text(
+                f"✅ تم إضافة الدرس '{temp_data.get('lesson_title')}' بنجاح!",
+                reply_markup=LESSON_MANAGEMENT_KB,
+            )
+            COURSES_USER_STATE.pop(user_id, None)
+            COURSES_TEMP_DATA.pop(user_id, None)
+            return True
+        except Exception as e:
+            logger.error(f"خطأ في إضافة الدرس: {e}")
+            msg.reply_text("❌ حدث خطأ أثناء إضافة الدرس.")
+            return True
+    
+    # إنشاء اختبار جديد
+    elif state == WAITING_QUIZ_TITLE:
+        COURSES_TEMP_DATA[user_id]["quiz_title"] = text
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_QUESTION
+        msg.reply_text(
+            "❓ أدخل السؤال الأول:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_QUESTION:
+        temp_data = COURSES_TEMP_DATA[user_id]
+        temp_data["current_question"] = text
+        temp_data["current_answers"] = []
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_ANSWER
+        msg.reply_text(
+            "📝 أدخل الجواب الأول:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_ANSWER:
+        temp_data = COURSES_TEMP_DATA[user_id]
+        temp_data["current_answer_text"] = text
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_POINTS
+        msg.reply_text(
+            "🏆 أدخل عدد النقاط للجواب:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_POINTS:
+        try:
+            points = int(text)
+            temp_data = COURSES_TEMP_DATA[user_id]
+            temp_data["current_answer_points"] = points
+            COURSES_USER_STATE[user_id] = WAITING_QUIZ_IS_CORRECT
+            msg.reply_text(
+                "✅ هل هذا الجواب صحيح؟",
+                reply_markup=QUIZ_ANSWER_CORRECT_KB,
+            )
+            return True
+        except ValueError:
+            msg.reply_text("❌ أدخل رقماً صحيحاً:")
+            return True
+    
+    elif state == WAITING_QUIZ_IS_CORRECT:
+        if text not in ["✅ صحيح", "❌ خطأ"]:
+            msg.reply_text(
+                "❌ اختر من الخيارات:",
+                reply_markup=QUIZ_ANSWER_CORRECT_KB,
+            )
+            return True
+        
+        temp_data = COURSES_TEMP_DATA[user_id]
+        is_correct = text == "✅ صحيح"
+        
+        answer = {
+            "text": temp_data.get("current_answer_text"),
+            "points": temp_data.get("current_answer_points", 0),
+            "is_correct": is_correct,
+        }
+        
+        temp_data["current_answers"].append(answer)
+        
+        if len(temp_data["current_answers"]) < 3:
+            COURSES_USER_STATE[user_id] = WAITING_QUIZ_ANSWER
+            msg.reply_text(
+                f"📝 أدخل الجواب {len(temp_data['current_answers']) + 1}:",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+        else:
+            msg.reply_text(
+                "هل تريد إضافة جواب رابع (اختياري)؟",
+                reply_markup=QUIZ_ADD_ANSWER_KB,
+            )
+        
+        return True
+    
+    return False
+
+
+# =================== معالجات Callback للدورات ===================
+
+def handle_courses_callback(update: Update, context: CallbackContext):
+    """معالجة جميع callbacks الدورات"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data
+    
+    try:
+        query.answer()
+        
+        if data == "courses_menu":
+            open_courses_menu(update, context)
+        
+        elif data.startswith("course_view_"):
+            course_id = data.replace("course_view_", "")
+            show_course_details(update, context, course_id)
+        
+        elif data.startswith("course_details_"):
+            course_id = data.replace("course_details_", "")
+            show_my_course_details(update, context, course_id)
+        
+        elif data.startswith("archived_course_"):
+            course_id = data.replace("archived_course_", "")
+            show_archived_course_details(update, context, course_id)
+        
+        elif data.startswith("subscribe_"):
+            course_id = data.replace("subscribe_", "")
+            handle_subscribe_course(update, context, course_id)
+        
+        elif data.startswith("lesson_"):
+            lesson_id = data.replace("lesson_", "")
+            show_lesson_details(update, context, lesson_id)
+        
+        elif data.startswith("attendance_"):
+            lesson_id = data.replace("attendance_", "")
+            handle_attendance(update, context, lesson_id)
+        
+        elif data.startswith("quiz_"):
+            quiz_id = data.replace("quiz_", "")
+            show_quiz(update, context, quiz_id)
+        
+        elif data.startswith("answer_"):
+            parts = data.replace("answer_", "").split("_")
+            quiz_id = parts[0]
+            answer_id = parts[1]
+            handle_quiz_answer(update, context, quiz_id, answer_id)
+    
+    except Exception as e:
+        logger.error(f"خطأ في معالجة callback الدورات: {e}")
+        query.edit_message_text("❌ حدث خطأ. حاول مرة أخرى.")
+
+
+def show_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة مع خيار الاشتراك"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    is_subscribed = user_subscribed_to_course(user_id, course_id)
+    
+    text = f"📚 {course.get('name', 'دورة')}\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    
+    if is_subscribed:
+        text += "✅ أنت مشترك في هذه الدورة"
+    else:
+        text += "❌ أنت غير مشترك في هذه الدورة"
+    
+    keyboard = []
+    
+    if not is_subscribed:
+        keyboard.append([InlineKeyboardButton("الاشتراك 📝", callback_data=f"subscribe_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def show_my_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة للمشترك"""
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    text = f"📚 {course.get('name', 'دورة')}\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    
+    lessons = get_course_lessons(course_id)
+    quizzes = get_course_quizzes(course_id)
+    
+    text += f"📖 عدد الدروس: {len(lessons)}\n"
+    text += f"📝 عدد الاختبارات: {len(quizzes)}\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("الدروس 📖", callback_data=f"lessons_{course_id}"),
+         InlineKeyboardButton("الاختبارات 📝", callback_data=f"quizzes_{course_id}")],
+        [InlineKeyboardButton("نقاطي 🏆", callback_data=f"points_{course_id}")],
+        [InlineKeyboardButton("رجوع", callback_data="courses_menu")],
+    ]
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def show_archived_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة المؤرشفة"""
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    text = f"📂 {course.get('name', 'دورة')} (مؤرشفة)\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    text += "هذه الدورة مؤرشفة ولا يمكن الاشتراك بها حالياً."
+    
+    keyboard = [[InlineKeyboardButton("رجوع", callback_data="courses_menu")]]
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def handle_subscribe_course(update: Update, context: CallbackContext, course_id: str):
+    """معالجة اشتراك المستخدم في الدورة"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    success = subscribe_user_to_course(user_id, course_id, context)
+    
+    if success:
+        query.edit_message_text(
+            "✅ تم اشتراكك في الدورة بنجاح! 🎉",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data="courses_menu")]])
+        )
+    else:
+        query.edit_message_text(
+            "❌ فشل الاشتراك. قد تكون مشترك بالفعل.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data="courses_menu")]])
+        )
+
+
+def show_lesson_details(update: Update, context: CallbackContext, lesson_id: str):
+    """عرض تفاصيل الدرس"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الدرس غير موجود.")
+            return
+        
+        lesson = doc.to_dict()
+        course_id = lesson.get("course_id")
+        
+        text = f"📖 {lesson.get('title', 'درس')}\n\n"
+        text += f"النوع: {lesson.get('type')}\n"
+        text += f"المحتوى: {lesson.get('content')}\n\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("تسجيل الحضور ✅", callback_data=f"attendance_{lesson_id}")],
+            [InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")],
+        ]
+        
+        query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    except Exception as e:
+        logger.error(f"خطأ في عرض الدرس: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def handle_attendance(update: Update, context: CallbackContext, lesson_id: str):
+    """معالجة تسجيل الحضور"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الدرس غير موجود.")
+            return
+        
+        lesson = doc.to_dict()
+        course_id = lesson.get("course_id")
+        
+        success = record_attendance(user_id, course_id, lesson_id)
+        
+        if success:
+            query.edit_message_text(
+                "✅ تم تسجيل حضورك بنجاح! تم إضافة نقطة واحدة.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")]])
+            )
+        else:
+            query.edit_message_text(
+                "❌ تم تسجيل حضورك مسبقاً في هذا الدرس.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")]])
+            )
+    
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل الحضور: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def show_quiz(update: Update, context: CallbackContext, quiz_id: str):
+    """عرض الاختبار مع الأسئلة"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الاختبار غير موجود.")
+            return
+        
+        quiz = doc.to_dict()
+        course_id = quiz.get("course_id")
+        
+        # التحقق من عدم الإجابة مسبقاً
+        answers_ref = db.collection("course_quiz_answers")
+        docs = answers_ref.where("user_id", "==", user_id).where("quiz_id", "==", quiz_id).stream()
+        
+        for doc in docs:
+            query.edit_message_text(
+                "❌ لقد أجبت على هذا الاختبار مسبقاً.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+            return
+        
+        text = f"📝 {quiz.get('title', 'اختبار')}\n\n"
+        text += f"❓ {quiz.get('question')}\n\n"
+        
+        answers = quiz.get("answers", [])
+        keyboard = []
+        
+        for i, answer in enumerate(answers):
+            answer_text = answer.get("text")
+            keyboard.append([InlineKeyboardButton(answer_text, callback_data=f"answer_{quiz_id}_{i}")])
+        
+        keyboard.append([InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")])
+        
+        query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    except Exception as e:
+        logger.error(f"خطأ في عرض الاختبار: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def handle_quiz_answer(update: Update, context: CallbackContext, quiz_id: str, answer_id: str):
+    """معالجة إجابة الاختبار"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الاختبار غير موجود.")
+            return
+        
+        quiz = doc.to_dict()
+        course_id = quiz.get("course_id")
+        answers = quiz.get("answers", [])
+        
+        answer_idx = int(answer_id)
+        if answer_idx >= len(answers):
+            query.edit_message_text("❌ الجواب غير موجود.")
+            return
+        
+        answer = answers[answer_idx]
+        points = answer.get("points", 0)
+        
+        success = record_quiz_answer(user_id, course_id, quiz_id, str(answer_idx), points)
+        
+        if success:
+            query.edit_message_text(
+                f"✅ تم إضافة {points} نقطة إلى رصيدك! 🎉",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+        else:
+            query.edit_message_text(
+                "❌ حدث خطأ في تسجيل الإجابة.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+    
+    except Exception as e:
+        logger.error(f"خطأ في معالجة إجابة الاختبار: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+# =================== نهاية قسم الدورات ===================
 
 if __name__ == "__main__":
     logger.info("=" * 50)
@@ -8469,5 +9601,1024 @@ if __name__ == "__main__":
             updater.stop()
     except Exception as e:
         logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
+
+# =================== دوال مساعدة للدورات ===================
+
+def is_admin_or_supervisor(user_id: int) -> bool:
+    """التحقق من أن المستخدم أدمن أو مشرفة"""
+    return is_admin(user_id) or is_supervisor(user_id)
+
+
+def get_user_courses(user_id: int) -> list:
+    """الحصول على الدورات المشترك بها المستخدم"""
+    if not firestore_available():
+        return []
+    
+    try:
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            courses.append(data.get("course_id"))
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على دورات المستخدم: {e}")
+        return []
+
+
+def get_active_courses() -> list:
+    """الحصول على الدورات النشطة فقط"""
+    if not firestore_available():
+        return []
+    
+    try:
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "active").stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورات النشطة: {e}")
+        return []
+
+
+def get_archived_courses() -> list:
+    """الحصول على الدورات المؤرشفة (غير النشطة)"""
+    if not firestore_available():
+        return []
+    
+    try:
+        courses_ref = db.collection(COURSES_COLLECTION)
+        docs = courses_ref.where("status", "==", "inactive").stream()
+        courses = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            courses.append(data)
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورات المؤرشفة: {e}")
+        return []
+
+
+def get_course_by_id(course_id: str) -> dict:
+    """الحصول على بيانات دورة معينة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            return data
+        return {}
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على الدورة: {e}")
+        return {}
+
+
+def get_course_lessons(course_id: str) -> list:
+    """الحصول على دروس دورة معينة"""
+    if not firestore_available():
+        return []
+    
+    try:
+        lessons_ref = db.collection(COURSE_LESSONS_COLLECTION)
+        docs = lessons_ref.where("course_id", "==", course_id).stream()
+        lessons = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            lessons.append(data)
+        return sorted(lessons, key=lambda x: x.get("order", 0))
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على دروس الدورة: {e}")
+        return []
+
+
+def get_course_quizzes(course_id: str) -> list:
+    """الحصول على اختبارات دورة معينة"""
+    if not firestore_available():
+        return []
+    
+    try:
+        quizzes_ref = db.collection(COURSE_QUIZZES_COLLECTION)
+        docs = quizzes_ref.where("course_id", "==", course_id).stream()
+        quizzes = []
+        for doc in docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            quizzes.append(data)
+        return sorted(quizzes, key=lambda x: x.get("order", 0))
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على اختبارات الدورة: {e}")
+        return []
+
+
+def user_subscribed_to_course(user_id: int, course_id: str) -> bool:
+    """التحقق من اشتراك المستخدم في دورة معينة"""
+    if not firestore_available():
+        return False
+    
+    try:
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        for doc in docs:
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"خطأ في التحقق من الاشتراك: {e}")
+        return False
+
+
+def subscribe_user_to_course(user_id: int, course_id: str, context: CallbackContext):
+    """اشتراك المستخدم في دورة"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم الاشتراك مسبقاً
+        if user_subscribed_to_course(user_id, course_id):
+            return False
+        
+        # إضافة الاشتراك
+        sub_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "subscribed_at": datetime.now(timezone.utc).isoformat(),
+            "attendance_count": 0,
+            "quiz_points": 0,
+            "total_points": 0,
+        }
+        
+        db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).add(sub_data)
+        
+        # إرسال إشعار للأدمن والمشرفة
+        try:
+            user = db.collection(USERS_COLLECTION).document(str(user_id)).get()
+            user_data = user.to_dict() if user.exists else {}
+            user_name = user_data.get("first_name", "مستخدم")
+            course = get_course_by_id(course_id)
+            course_name = course.get("name", "دورة")
+            
+            notification = f"🎓 مستخدم جديد انضم إلى دورة\n\nالمستخدم: {user_name} (ID: {user_id})\nالدورة: {course_name}"
+            
+            if ADMIN_ID:
+                try:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=notification)
+                except Exception as e:
+                    logger.error(f"خطأ في إرسال إشعار للأدمن: {e}")
+            
+            if SUPERVISOR_ID:
+                try:
+                    context.bot.send_message(chat_id=SUPERVISOR_ID, text=notification)
+                except Exception as e:
+                    logger.error(f"خطأ في إرسال إشعار للمشرفة: {e}")
+        except Exception as e:
+            logger.error(f"خطأ في إرسال الإشعارات: {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في اشتراك المستخدم في الدورة: {e}")
+        return False
+
+
+def record_attendance(user_id: int, course_id: str, lesson_id: str) -> bool:
+    """تسجيل حضور المستخدم في درس"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم التسجيل مسبقاً
+        attendance_ref = db.collection("course_attendance")
+        docs = attendance_ref.where("user_id", "==", user_id)\
+                              .where("course_id", "==", course_id)\
+                              .where("lesson_id", "==", lesson_id).stream()
+        
+        for doc in docs:
+            return False  # تم التسجيل مسبقاً
+        
+        # تسجيل الحضور
+        attendance_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "lesson_id": lesson_id,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "points": 1,
+        }
+        
+        db.collection("course_attendance").add(attendance_data)
+        
+        # تحديث نقاط الاشتراك
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        
+        for doc in docs:
+            current_data = doc.to_dict()
+            current_attendance = current_data.get("attendance_count", 0)
+            current_total = current_data.get("total_points", 0)
+            
+            doc.reference.update({
+                "attendance_count": current_attendance + 1,
+                "total_points": current_total + 1,
+            })
+            break
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل الحضور: {e}")
+        return False
+
+
+def record_quiz_answer(user_id: int, course_id: str, quiz_id: str, answer_id: str, points: int) -> bool:
+    """تسجيل إجابة المستخدم على اختبار"""
+    if not firestore_available():
+        return False
+    
+    try:
+        # التحقق من عدم الإجابة مسبقاً
+        answers_ref = db.collection("course_quiz_answers")
+        docs = answers_ref.where("user_id", "==", user_id)\
+                          .where("quiz_id", "==", quiz_id).stream()
+        
+        for doc in docs:
+            return False  # تم الإجابة مسبقاً
+        
+        # تسجيل الإجابة
+        answer_data = {
+            "user_id": user_id,
+            "course_id": course_id,
+            "quiz_id": quiz_id,
+            "answer_id": answer_id,
+            "points": points,
+            "answered_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        db.collection("course_quiz_answers").add(answer_data)
+        
+        # تحديث نقاط الاشتراك
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("user_id", "==", user_id).where("course_id", "==", course_id).stream()
+        
+        for doc in docs:
+            current_data = doc.to_dict()
+            current_quiz_points = current_data.get("quiz_points", 0)
+            current_total = current_data.get("total_points", 0)
+            
+            doc.reference.update({
+                "quiz_points": current_quiz_points + points,
+                "total_points": current_total + points,
+            })
+            break
+        
+        return True
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل إجابة الاختبار: {e}")
+        return False
+
+
+def get_user_quiz_results(user_id: int, course_id: str) -> dict:
+    """الحصول على نتائج اختبارات المستخدم في دورة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        results = {}
+        quizzes = get_course_quizzes(course_id)
+        
+        for quiz in quizzes:
+            quiz_id = quiz.get("id")
+            answers_ref = db.collection("course_quiz_answers")
+            docs = answers_ref.where("user_id", "==", user_id)\
+                              .where("quiz_id", "==", quiz_id).stream()
+            
+            for doc in docs:
+                data = doc.to_dict()
+                results[quiz_id] = {
+                    "quiz_title": quiz.get("title"),
+                    "points": data.get("points", 0),
+                    "answered_at": data.get("answered_at"),
+                }
+                break
+        
+        return results
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على نتائج الاختبارات: {e}")
+        return {}
+
+
+def get_course_statistics(course_id: str) -> dict:
+    """الحصول على إحصائيات الدورة"""
+    if not firestore_available():
+        return {}
+    
+    try:
+        stats = {
+            "total_subscribers": 0,
+            "total_lessons": 0,
+            "total_quizzes": 0,
+            "subscribers": [],
+        }
+        
+        # عدد المشتركين
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        docs = subs_ref.where("course_id", "==", course_id).stream()
+        subscribers = []
+        for doc in docs:
+            data = doc.to_dict()
+            subscribers.append({
+                "user_id": data.get("user_id"),
+                "subscribed_at": data.get("subscribed_at"),
+                "attendance_count": data.get("attendance_count", 0),
+                "quiz_points": data.get("quiz_points", 0),
+                "total_points": data.get("total_points", 0),
+            })
+        
+        stats["total_subscribers"] = len(subscribers)
+        stats["subscribers"] = subscribers
+        stats["total_lessons"] = len(get_course_lessons(course_id))
+        stats["total_quizzes"] = len(get_course_quizzes(course_id))
+        
+        return stats
+    except Exception as e:
+        logger.error(f"خطأ في الحصول على إحصائيات الدورة: {e}")
+        return {}
+
+
+# =================== معالجات الأزرار الرئيسية للدورات ===================
+
+def open_courses_menu(update: Update, context: CallbackContext):
+    """فتح قائمة الدورات الرئيسية"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if is_admin_or_supervisor(user_id):
+        # لوحة تحكم الأدمن والمشرفة
+        msg.reply_text(
+            "🎓 لوحة إدارة الدورات\n\n"
+            "اختر ما تريد القيام به:",
+            reply_markup=COURSES_ADMIN_MENU_KB,
+        )
+    else:
+        # قائمة المستخدمين العادية
+        msg.reply_text(
+            "🎓 قسم الدورات\n\n"
+            "اختر من الخيارات التالية:",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+
+
+def open_available_courses(update: Update, context: CallbackContext):
+    """عرض الدورات المتاحة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    courses = get_active_courses()
+    
+    if not courses:
+        msg.reply_text(
+            "لا توجد دورات متاحة حالياً 😔",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "📚 الدورات المتاحة:\n\n"
+    
+    for i, course in enumerate(courses, 1):
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة بدون اسم")
+        course_desc = course.get("description", "")
+        
+        is_subscribed = user_subscribed_to_course(user_id, course_id)
+        status = "✅ مشترك" if is_subscribed else "❌ غير مشترك"
+        
+        text += f"{i}. {course_name}\n"
+        text += f"   الوصف: {course_desc}\n"
+        text += f"   الحالة: {status}\n\n"
+    
+    # إنشاء أزرار للدورات
+    keyboard = []
+    for course in courses:
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة")
+        keyboard.append([InlineKeyboardButton(course_name, callback_data=f"course_view_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def open_my_courses(update: Update, context: CallbackContext):
+    """عرض دورات المستخدم"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    user_courses = get_user_courses(user_id)
+    
+    if not user_courses:
+        msg.reply_text(
+            "أنت لم تشترك في أي دورة حتى الآن 😔\n"
+            "اذهب إلى 'الدورات المتاحة' للاشتراك في دورة.",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "🧾 دوراتي:\n\n"
+    keyboard = []
+    
+    for course_id in user_courses:
+        course = get_course_by_id(course_id)
+        if course:
+            course_name = course.get("name", "دورة")
+            text += f"📖 {course_name}\n"
+            keyboard.append([InlineKeyboardButton(course_name, callback_data=f"course_details_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def open_archived_courses(update: Update, context: CallbackContext):
+    """عرض الدورات المؤرشفة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    archived = get_archived_courses()
+    
+    if not archived:
+        msg.reply_text(
+            "لا توجد دورات مؤرشفة حالياً 📂",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+    
+    text = "📂 الدورات المؤرشفة:\n\n"
+    keyboard = []
+    
+    for course in archived:
+        course_id = course.get("id")
+        course_name = course.get("name", "دورة")
+        text += f"🗂️ {course_name}\n"
+        keyboard.append([InlineKeyboardButton(course_name, callback_data=f"archived_course_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    msg.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def start_create_course(update: Update, context: CallbackContext):
+    """بدء عملية إنشاء دورة جديدة"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_COURSE_NAME
+    msg.reply_text(
+        "📝 أدخل اسم الدورة الجديدة:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def start_create_lesson(update: Update, context: CallbackContext, course_id: str):
+    """بدء عملية إضافة درس جديد"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_LESSON_TITLE
+    COURSES_TEMP_DATA[user_id] = {"course_id": course_id}
+    
+    msg.reply_text(
+        "📝 أدخل عنوان الدرس:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def start_create_quiz(update: Update, context: CallbackContext, course_id: str):
+    """بدء عملية إنشاء اختبار جديد"""
+    user_id = update.effective_user.id
+    msg = update.message
+    
+    if not is_admin_or_supervisor(user_id):
+        msg.reply_text("❌ ليس لديك صلاحيات كافية لهذا الإجراء.")
+        return
+    
+    COURSES_USER_STATE[user_id] = WAITING_QUIZ_TITLE
+    COURSES_TEMP_DATA[user_id] = {"course_id": course_id, "questions": []}
+    
+    msg.reply_text(
+        "📝 أدخل عنوان الاختبار:",
+        reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+    )
+
+
+def handle_courses_text_input(update: Update, context: CallbackContext):
+    """معالجة مدخلات النصوص في نظام الدورات"""
+    user_id = update.effective_user.id
+    msg = update.message
+    text = (msg.text or "").strip()
+    
+    if user_id not in COURSES_USER_STATE:
+        return False
+    
+    state = COURSES_USER_STATE[user_id]
+    
+    # إنشاء دورة جديدة
+    if state == WAITING_COURSE_NAME:
+        if not firestore_available():
+            msg.reply_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+            return True
+        
+        try:
+            course_data = {
+                "name": text,
+                "description": "",
+                "status": "active",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_by": user_id,
+            }
+            
+            db.collection(COURSES_COLLECTION).add(course_data)
+            msg.reply_text(
+                f"✅ تم إنشاء الدورة '{text}' بنجاح!",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            COURSES_USER_STATE.pop(user_id, None)
+            return True
+        except Exception as e:
+            logger.error(f"خطأ في إنشاء الدورة: {e}")
+            msg.reply_text("❌ حدث خطأ أثناء إنشاء الدورة.")
+            return True
+    
+    # إضافة درس جديد
+    elif state == WAITING_LESSON_TITLE:
+        COURSES_TEMP_DATA[user_id]["lesson_title"] = text
+        COURSES_USER_STATE[user_id] = WAITING_LESSON_TYPE
+        msg.reply_text(
+            "📌 اختر نوع محتوى الدرس:",
+            reply_markup=LESSON_TYPE_KB,
+        )
+        return True
+    
+    elif state == WAITING_LESSON_TYPE:
+        if text not in ["📝 نص", "🎧 ملف صوتي", "📎 ملف (PDF/DOC)", "🔗 رابط"]:
+            msg.reply_text(
+                "❌ اختر من الخيارات المتاحة:",
+                reply_markup=LESSON_TYPE_KB,
+            )
+            return True
+        
+        COURSES_TEMP_DATA[user_id]["lesson_type"] = text
+        COURSES_USER_STATE[user_id] = WAITING_LESSON_CONTENT
+        msg.reply_text(
+            f"📝 أدخل محتوى الدرس ({text}):",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_LESSON_CONTENT:
+        if not firestore_available():
+            msg.reply_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+            return True
+        
+        try:
+            temp_data = COURSES_TEMP_DATA[user_id]
+            lesson_data = {
+                "course_id": temp_data.get("course_id"),
+                "title": temp_data.get("lesson_title"),
+                "type": temp_data.get("lesson_type"),
+                "content": text,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "order": 0,
+            }
+            
+            db.collection(COURSE_LESSONS_COLLECTION).add(lesson_data)
+            msg.reply_text(
+                f"✅ تم إضافة الدرس '{temp_data.get('lesson_title')}' بنجاح!",
+                reply_markup=LESSON_MANAGEMENT_KB,
+            )
+            COURSES_USER_STATE.pop(user_id, None)
+            COURSES_TEMP_DATA.pop(user_id, None)
+            return True
+        except Exception as e:
+            logger.error(f"خطأ في إضافة الدرس: {e}")
+            msg.reply_text("❌ حدث خطأ أثناء إضافة الدرس.")
+            return True
+    
+    # إنشاء اختبار جديد
+    elif state == WAITING_QUIZ_TITLE:
+        COURSES_TEMP_DATA[user_id]["quiz_title"] = text
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_QUESTION
+        msg.reply_text(
+            "❓ أدخل السؤال الأول:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_QUESTION:
+        temp_data = COURSES_TEMP_DATA[user_id]
+        temp_data["current_question"] = text
+        temp_data["current_answers"] = []
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_ANSWER
+        msg.reply_text(
+            "📝 أدخل الجواب الأول:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_ANSWER:
+        temp_data = COURSES_TEMP_DATA[user_id]
+        temp_data["current_answer_text"] = text
+        COURSES_USER_STATE[user_id] = WAITING_QUIZ_POINTS
+        msg.reply_text(
+            "🏆 أدخل عدد النقاط للجواب:",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return True
+    
+    elif state == WAITING_QUIZ_POINTS:
+        try:
+            points = int(text)
+            temp_data = COURSES_TEMP_DATA[user_id]
+            temp_data["current_answer_points"] = points
+            COURSES_USER_STATE[user_id] = WAITING_QUIZ_IS_CORRECT
+            msg.reply_text(
+                "✅ هل هذا الجواب صحيح؟",
+                reply_markup=QUIZ_ANSWER_CORRECT_KB,
+            )
+            return True
+        except ValueError:
+            msg.reply_text("❌ أدخل رقماً صحيحاً:")
+            return True
+    
+    elif state == WAITING_QUIZ_IS_CORRECT:
+        if text not in ["✅ صحيح", "❌ خطأ"]:
+            msg.reply_text(
+                "❌ اختر من الخيارات:",
+                reply_markup=QUIZ_ANSWER_CORRECT_KB,
+            )
+            return True
+        
+        temp_data = COURSES_TEMP_DATA[user_id]
+        is_correct = text == "✅ صحيح"
+        
+        answer = {
+            "text": temp_data.get("current_answer_text"),
+            "points": temp_data.get("current_answer_points", 0),
+            "is_correct": is_correct,
+        }
+        
+        temp_data["current_answers"].append(answer)
+        
+        if len(temp_data["current_answers"]) < 3:
+            COURSES_USER_STATE[user_id] = WAITING_QUIZ_ANSWER
+            msg.reply_text(
+                f"📝 أدخل الجواب {len(temp_data['current_answers']) + 1}:",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+        else:
+            msg.reply_text(
+                "هل تريد إضافة جواب رابع (اختياري)؟",
+                reply_markup=QUIZ_ADD_ANSWER_KB,
+            )
+        
+        return True
+    
+    return False
+
+
+# =================== معالجات Callback للدورات ===================
+
+def handle_courses_callback(update: Update, context: CallbackContext):
+    """معالجة جميع callbacks الدورات"""
+    query = update.callback_query
+    user_id = query.from_user.id
+    data = query.data
+    
+    try:
+        query.answer()
+        
+        if data == "courses_menu":
+            open_courses_menu(update, context)
+        
+        elif data.startswith("course_view_"):
+            course_id = data.replace("course_view_", "")
+            show_course_details(update, context, course_id)
+        
+        elif data.startswith("course_details_"):
+            course_id = data.replace("course_details_", "")
+            show_my_course_details(update, context, course_id)
+        
+        elif data.startswith("archived_course_"):
+            course_id = data.replace("archived_course_", "")
+            show_archived_course_details(update, context, course_id)
+        
+        elif data.startswith("subscribe_"):
+            course_id = data.replace("subscribe_", "")
+            handle_subscribe_course(update, context, course_id)
+        
+        elif data.startswith("lesson_"):
+            lesson_id = data.replace("lesson_", "")
+            show_lesson_details(update, context, lesson_id)
+        
+        elif data.startswith("attendance_"):
+            lesson_id = data.replace("attendance_", "")
+            handle_attendance(update, context, lesson_id)
+        
+        elif data.startswith("quiz_"):
+            quiz_id = data.replace("quiz_", "")
+            show_quiz(update, context, quiz_id)
+        
+        elif data.startswith("answer_"):
+            parts = data.replace("answer_", "").split("_")
+            quiz_id = parts[0]
+            answer_id = parts[1]
+            handle_quiz_answer(update, context, quiz_id, answer_id)
+    
+    except Exception as e:
+        logger.error(f"خطأ في معالجة callback الدورات: {e}")
+        query.edit_message_text("❌ حدث خطأ. حاول مرة أخرى.")
+
+
+def show_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة مع خيار الاشتراك"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    is_subscribed = user_subscribed_to_course(user_id, course_id)
+    
+    text = f"📚 {course.get('name', 'دورة')}\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    
+    if is_subscribed:
+        text += "✅ أنت مشترك في هذه الدورة"
+    else:
+        text += "❌ أنت غير مشترك في هذه الدورة"
+    
+    keyboard = []
+    
+    if not is_subscribed:
+        keyboard.append([InlineKeyboardButton("الاشتراك 📝", callback_data=f"subscribe_{course_id}")])
+    
+    keyboard.append([InlineKeyboardButton("رجوع", callback_data="courses_menu")])
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def show_my_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة للمشترك"""
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    text = f"📚 {course.get('name', 'دورة')}\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    
+    lessons = get_course_lessons(course_id)
+    quizzes = get_course_quizzes(course_id)
+    
+    text += f"📖 عدد الدروس: {len(lessons)}\n"
+    text += f"📝 عدد الاختبارات: {len(quizzes)}\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("الدروس 📖", callback_data=f"lessons_{course_id}"),
+         InlineKeyboardButton("الاختبارات 📝", callback_data=f"quizzes_{course_id}")],
+        [InlineKeyboardButton("نقاطي 🏆", callback_data=f"points_{course_id}")],
+        [InlineKeyboardButton("رجوع", callback_data="courses_menu")],
+    ]
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def show_archived_course_details(update: Update, context: CallbackContext, course_id: str):
+    """عرض تفاصيل الدورة المؤرشفة"""
+    query = update.callback_query
+    
+    course = get_course_by_id(course_id)
+    if not course:
+        query.edit_message_text("❌ الدورة غير موجودة.")
+        return
+    
+    text = f"📂 {course.get('name', 'دورة')} (مؤرشفة)\n\n"
+    text += f"الوصف: {course.get('description', 'بدون وصف')}\n\n"
+    text += "هذه الدورة مؤرشفة ولا يمكن الاشتراك بها حالياً."
+    
+    keyboard = [[InlineKeyboardButton("رجوع", callback_data="courses_menu")]]
+    
+    query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def handle_subscribe_course(update: Update, context: CallbackContext, course_id: str):
+    """معالجة اشتراك المستخدم في الدورة"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    success = subscribe_user_to_course(user_id, course_id, context)
+    
+    if success:
+        query.edit_message_text(
+            "✅ تم اشتراكك في الدورة بنجاح! 🎉",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data="courses_menu")]])
+        )
+    else:
+        query.edit_message_text(
+            "❌ فشل الاشتراك. قد تكون مشترك بالفعل.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data="courses_menu")]])
+        )
+
+
+def show_lesson_details(update: Update, context: CallbackContext, lesson_id: str):
+    """عرض تفاصيل الدرس"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الدرس غير موجود.")
+            return
+        
+        lesson = doc.to_dict()
+        course_id = lesson.get("course_id")
+        
+        text = f"📖 {lesson.get('title', 'درس')}\n\n"
+        text += f"النوع: {lesson.get('type')}\n"
+        text += f"المحتوى: {lesson.get('content')}\n\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("تسجيل الحضور ✅", callback_data=f"attendance_{lesson_id}")],
+            [InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")],
+        ]
+        
+        query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    except Exception as e:
+        logger.error(f"خطأ في عرض الدرس: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def handle_attendance(update: Update, context: CallbackContext, lesson_id: str):
+    """معالجة تسجيل الحضور"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الدرس غير موجود.")
+            return
+        
+        lesson = doc.to_dict()
+        course_id = lesson.get("course_id")
+        
+        success = record_attendance(user_id, course_id, lesson_id)
+        
+        if success:
+            query.edit_message_text(
+                "✅ تم تسجيل حضورك بنجاح! تم إضافة نقطة واحدة.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")]])
+            )
+        else:
+            query.edit_message_text(
+                "❌ تم تسجيل حضورك مسبقاً في هذا الدرس.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"lessons_{course_id}")]])
+            )
+    
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل الحضور: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def show_quiz(update: Update, context: CallbackContext, quiz_id: str):
+    """عرض الاختبار مع الأسئلة"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الاختبار غير موجود.")
+            return
+        
+        quiz = doc.to_dict()
+        course_id = quiz.get("course_id")
+        
+        # التحقق من عدم الإجابة مسبقاً
+        answers_ref = db.collection("course_quiz_answers")
+        docs = answers_ref.where("user_id", "==", user_id).where("quiz_id", "==", quiz_id).stream()
+        
+        for doc in docs:
+            query.edit_message_text(
+                "❌ لقد أجبت على هذا الاختبار مسبقاً.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+            return
+        
+        text = f"📝 {quiz.get('title', 'اختبار')}\n\n"
+        text += f"❓ {quiz.get('question')}\n\n"
+        
+        answers = quiz.get("answers", [])
+        keyboard = []
+        
+        for i, answer in enumerate(answers):
+            answer_text = answer.get("text")
+            keyboard.append([InlineKeyboardButton(answer_text, callback_data=f"answer_{quiz_id}_{i}")])
+        
+        keyboard.append([InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")])
+        
+        query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    except Exception as e:
+        logger.error(f"خطأ في عرض الاختبار: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+def handle_quiz_answer(update: Update, context: CallbackContext, quiz_id: str, answer_id: str):
+    """معالجة إجابة الاختبار"""
+    user_id = update.effective_user.id
+    query = update.callback_query
+    
+    if not firestore_available():
+        query.edit_message_text("❌ خطأ في الاتصال بقاعدة البيانات.")
+        return
+    
+    try:
+        doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+        if not doc.exists:
+            query.edit_message_text("❌ الاختبار غير موجود.")
+            return
+        
+        quiz = doc.to_dict()
+        course_id = quiz.get("course_id")
+        answers = quiz.get("answers", [])
+        
+        answer_idx = int(answer_id)
+        if answer_idx >= len(answers):
+            query.edit_message_text("❌ الجواب غير موجود.")
+            return
+        
+        answer = answers[answer_idx]
+        points = answer.get("points", 0)
+        
+        success = record_quiz_answer(user_id, course_id, quiz_id, str(answer_idx), points)
+        
+        if success:
+            query.edit_message_text(
+                f"✅ تم إضافة {points} نقطة إلى رصيدك! 🎉",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+        else:
+            query.edit_message_text(
+                "❌ حدث خطأ في تسجيل الإجابة.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("رجوع", callback_data=f"quizzes_{course_id}")]])
+            )
+    
+    except Exception as e:
+        logger.error(f"خطأ في معالجة إجابة الاختبار: {e}")
+        query.edit_message_text("❌ حدث خطأ.")
+
+
+# =================== نهاية قسم الدورات ===================
+
 if __name__ == "__main__":
     main()
