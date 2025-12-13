@@ -9711,8 +9711,8 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # الأزرار الرئيسية
-    # معالجة أزرار الدورات (قسم الدورات وإدارة الدورات)
-    if text == BTN_COURSE_MAIN or text == BTN_COURSE_ADMIN_MANAGE:
+    # معالجة زر قسم الدورات (القائمة الرئيسية)
+    if text == BTN_COURSE_MAIN:
         open_course_menu(update, context)
         return
 
@@ -9995,6 +9995,11 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADMIN_MOTIVATION_TIMES:
         handle_admin_motivation_times_start(update, context)
+        return
+
+    # معالجة زر إدارة الدورات (لوحة التحكم)
+    if text == BTN_COURSE_ADMIN_MANAGE:
+        open_course_menu(update, context)
         return
 
 
