@@ -9258,6 +9258,12 @@ def handle_text(update: Update, context: CallbackContext):
         # منع أي استخدام آخر للبوت
         return
     
+    # --- المعالج الصريح لأزرار الدورات (للتأكد من الاستجابة) ---
+    # هذا المعالج يجب أن يكون هنا لضمان الاستجابة حتى لو كان المستخدم في حالة انتظار
+    if text == BTN_COURSE_MAIN or text == BTN_COURSE_ADMIN_MANAGE:
+        open_course_menu(update, context)
+        return
+    
     # --- منطق التجاوز لأزرار القائمة الرئيسية ---
     BYPASS_BUTTONS = [
         BTN_ADHKAR_MAIN, BTN_QURAN_MAIN, BTN_COURSE_MAIN, BTN_MEMOS_MAIN, BTN_WATER_MAIN,
