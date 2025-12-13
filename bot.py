@@ -2375,6 +2375,7 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
+        [KeyboardButton(BTN_COURSE_ADMIN_MANAGE)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -2387,6 +2388,7 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
+        [KeyboardButton(BTN_COURSE_ADMIN_MANAGE)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
     resize_keyboard=True,
@@ -10723,6 +10725,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_admin_delete_benefit_callback, pattern=r"^admin_delete_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_course_callback_query, pattern=r"^" + COURSE_CALLBACK_PREFIX))
 
         dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
         dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
