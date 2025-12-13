@@ -9714,7 +9714,7 @@ def handle_text(update: Update, context: CallbackContext):
         open_quran_menu(update, context)
         return
 
-   elif text == BTN_COURSE_MAIN:
+    if text == BTN_COURSE_MAIN:
         open_course_menu(update, context)
         return
     if text == BTN_MEMOS_MAIN:
