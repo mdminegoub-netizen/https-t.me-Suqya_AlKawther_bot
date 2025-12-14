@@ -8843,7 +8843,6 @@ COURSES_USER_MENU_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("📚 الدورات المتاحة", callback_data="COURSES:available")],
     [InlineKeyboardButton("📒 دوراتي", callback_data="COURSES:my_courses")],
     [InlineKeyboardButton("🗂 أرشيف الدورات", callback_data="COURSES:archive")],
-    [InlineKeyboardButton("🔙 رجوع للقائمة الرئيسية", callback_data="COURSES:back_main")],
 ])
 
 COURSES_ADMIN_MENU_KB = InlineKeyboardMarkup([
@@ -9941,9 +9940,6 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
                 reply_markup=COURSES_USER_MENU_KB,
             )
-        elif data == "COURSES:back_main":
-            main_kb = user_main_keyboard(user_id)
-            safe_edit_message_text(query, "عدنا إلى القائمة الرئيسية", reply_markup=main_kb)
 
         elif data == "COURSES:create":
             admin_create_course(query, context)
@@ -9978,9 +9974,6 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:back_course_"):
             course_id = data.replace("COURSES:back_course_", "")
             show_course_details(query, user_id, course_id)
-        elif data.startswith("COURSES:view_"):
-            course_id = data.replace("COURSES:view_", "")
-            show_course_details(query, user_id, course_id)
         elif data.startswith("COURSES:subscribe_"):
             course_id = data.replace("COURSES:subscribe_", "")
             subscribe_to_course(query, context, course_id)
@@ -9996,6 +9989,9 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:view_lesson_"):
             lesson_id = data.replace("COURSES:view_lesson_", "")
             user_view_lesson(query, context, lesson_id, user_id)
+        elif data.startswith("COURSES:view_"):
+            course_id = data.replace("COURSES:view_", "")
+            show_course_details(query, user_id, course_id)
         elif data.startswith("COURSES:start_quiz_"):
             quiz_id = data.replace("COURSES:start_quiz_", "")
             start_quiz_flow(query, user_id, quiz_id)
