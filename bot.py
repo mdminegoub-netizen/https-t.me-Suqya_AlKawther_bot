@@ -9439,10 +9439,13 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
     subscription = sub_doc.to_dict() or {}
     attended_lessons = subscription.get("lessons_attended") or []
     if lesson_id in attended_lessons:
-        query.answer("✅ تم تسجيل حضورك مسبقاً لهذا الدرس.", show_alert=True)
+        query.answer("✅ تم تسجيل حضورك من قبل لهذا الدرس.", show_alert=True)
         return
 
     try:
+        current_points = int(subscription.get("points", 0))
+        new_points = current_points + 1
+
         sub_ref.update(
             {
                 "lessons_attended": firestore.ArrayUnion([lesson_id]),
@@ -9450,7 +9453,10 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
-        query.answer("✅ تم تسجيل حضورك وحصلت على نقطة.", show_alert=True)
+        query.answer(
+            f"✅ تم تسجيل حضورك بالعلامة الخضراء (+1 نقطة).\n⭐️ مجموع نقاطك الآن: {new_points}",
+            show_alert=True,
+        )
     except Exception as e:
         logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
@@ -9510,7 +9516,12 @@ def user_points(query: Update.callback_query, user_id: int, course_id: str):
 
     points = subscription.get("points", 0)
     completed = len(subscription.get("completed_quizzes", []))
-    text = f"⭐️ نقاطك في الدورة: {points}\n📝 اختبارات مكتملة: {completed}"
+    lessons_count = len(subscription.get("lessons_attended", []))
+    text = (
+        f"⭐️ نقاطك في الدورة: {points}"
+        f"\n📚 حضور الدروس: {lessons_count}"
+        f"\n📝 اختبارات مكتملة: {completed}"
+    )
     safe_edit_message_text(
         query,
         text,
