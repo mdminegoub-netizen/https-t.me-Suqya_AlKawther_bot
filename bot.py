@@ -1663,6 +1663,20 @@ def _reset_lesson_creation(user_id: int):
     LESSON_CREATION_CONTEXT.pop(user_id, None)
 
 
+def _reset_course_creation(user_id: int):
+    WAITING_NEW_COURSE.discard(user_id)
+    COURSE_CREATION_CONTEXT.pop(user_id, None)
+
+
+def _course_creation_keyboard():
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("❌ إلغاء", callback_data="COURSES:create_cancel")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")],
+        ]
+    )
+
+
 def _reset_quiz_creation(user_id: int):
     WAITING_NEW_QUIZ.discard(user_id)
     WAITING_QUIZ_TITLE.discard(user_id)
@@ -7163,39 +7177,80 @@ def handle_text(update: Update, context: CallbackContext):
 
     # إنشاء دورة جديدة
     if user_id in WAITING_NEW_COURSE:
-        if text == BTN_CANCEL:
-            WAITING_NEW_COURSE.discard(user_id)
-            COURSE_CREATION_CONTEXT.pop(user_id, None)
-            msg.reply_text("تم الإلغاء.", reply_markup=COURSES_ADMIN_MENU_KB)
-            return
-
-        WAITING_NEW_COURSE.discard(user_id)
-        parts = [p.strip() for p in text.split("|", 1)]
-        name = parts[0] if parts else ""
-        desc = parts[1] if len(parts) > 1 else ""
-
-        if not name:
+        if not (is_admin(user_id) or is_supervisor(user_id)):
+            _reset_course_creation(user_id)
             msg.reply_text(
-                "❌ يرجى إرسال اسم الدورة والوصف بالشكل الصحيح (اسم | وصف).",
+                "❌ ليس لديك صلاحية لإنشاء الدورات.",
                 reply_markup=COURSES_ADMIN_MENU_KB,
             )
             return
 
+        if text == BTN_CANCEL:
+            _reset_course_creation(user_id)
+            msg.reply_text("تم الإلغاء بنجاح", reply_markup=COURSES_ADMIN_MENU_KB)
+            return
+
+        course_name = text.strip()
+        if not course_name:
+            msg.reply_text(
+                "⚠️ اسم الدورة لا يمكن أن يكون فارغاً.",
+                reply_markup=_course_creation_keyboard(),
+            )
+            return
+
+        if len(course_name) < COURSE_NAME_MIN_LENGTH:
+            msg.reply_text(
+                f"⚠️ اسم الدورة قصير جداً. الحد الأدنى {COURSE_NAME_MIN_LENGTH} حروف.",
+                reply_markup=_course_creation_keyboard(),
+            )
+            return
+
+        if len(course_name) > COURSE_NAME_MAX_LENGTH:
+            msg.reply_text(
+                f"⚠️ اسم الدورة طويل جداً. الحد الأقصى {COURSE_NAME_MAX_LENGTH} حرفاً.",
+                reply_markup=_course_creation_keyboard(),
+            )
+            return
+
+        normalized = course_name.lower()
         try:
+            existing = list(
+                db.collection(COURSES_COLLECTION)
+                .where("name_lower", "==", normalized)
+                .stream()
+            )
+            if not existing:
+                existing = list(
+                    db.collection(COURSES_COLLECTION)
+                    .where("name", "==", course_name)
+                    .stream()
+                )
+            if existing:
+                msg.reply_text(
+                    "⚠️ توجد دورة بنفس الاسم بالفعل. استخدم اسماً مختلفاً.",
+                    reply_markup=_course_creation_keyboard(),
+                )
+                return
+
             db.collection(COURSES_COLLECTION).add(
                 {
-                    "name": name,
-                    "description": desc,
+                    "name": course_name,
+                    "name_lower": normalized,
+                    "description": COURSE_CREATION_CONTEXT.get(user_id, {}).get(
+                        "description", ""
+                    ),
                     "status": "active",
                     "created_at": firestore.SERVER_TIMESTAMP,
                 }
             )
+            _reset_course_creation(user_id)
             msg.reply_text(
-                "✅ تم إنشاء الدورة بنجاح.",
+                f"✅ تم إنشاء دورة ({course_name}) بنجاح",
                 reply_markup=COURSES_ADMIN_MENU_KB,
             )
         except Exception as e:
             logger.error(f"خطأ في إنشاء الدورة: {e}")
+            _reset_course_creation(user_id)
             msg.reply_text(
                 "❌ تعذر إنشاء الدورة حالياً.",
                 reply_markup=COURSES_ADMIN_MENU_KB,
@@ -8779,6 +8834,9 @@ COURSE_LESSONS_COLLECTION = "course_lessons"
 COURSE_QUIZZES_COLLECTION = "course_quizzes"
 COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
 
+COURSE_NAME_MIN_LENGTH = 3
+COURSE_NAME_MAX_LENGTH = 60
+
 # =================== لوحات المفاتيح للدورات ===================
 
 COURSES_USER_MENU_KB = InlineKeyboardMarkup([
@@ -9135,7 +9193,11 @@ def user_lessons_list(query: Update.callback_query, course_id: str):
                 "📚 لا توجد دروس مضافة بعد لهذه الدورة.",
                 reply_markup=InlineKeyboardMarkup(
                     [
-                        [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")],
+                        [
+                            InlineKeyboardButton(
+                                "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                            )
+                        ],
                     ]
                 ),
             )
@@ -9153,7 +9215,9 @@ def user_lessons_list(query: Update.callback_query, course_id: str):
                 ]
             )
 
-        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")])
+        keyboard.append(
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]
+        )
         safe_edit_message_text(
             query,
             "📚 دروس الدورة:\nاختر درساً للعرض",
@@ -9187,11 +9251,20 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
     title = lesson.get("title", "درس")
     content = lesson.get("content", "")
 
-    if content_type == "audio" and lesson.get("audio_file_id"):
+    if content_type == "audio":
+        file_id = lesson.get("audio_file_id")
+        if not file_id:
+            safe_edit_message_text(
+                query,
+                f"<b>{title}</b>\n\n⚠️ لا يوجد ملف صوتي مرفق لهذا الدرس.",
+                reply_markup=back_markup,
+            )
+            return
+
         try:
             context.bot.send_audio(
                 chat_id=query.message.chat_id,
-                audio=lesson.get("audio_file_id"),
+                audio=file_id,
                 caption=title,
             )
             safe_edit_message_text(
@@ -9203,7 +9276,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             logger.error(f"خطأ في إرسال الدرس الصوتي: {e}")
             safe_edit_message_text(
                 query,
-                f"<b>{title}</b>\n\nتعذر إرسال المقطع الصوتي.",
+                f"<b>{title}</b>\n\nتعذر إرسال المقطع الصوتي. يرجى التأكد من صحة الملف الصوتي.",
                 reply_markup=back_markup,
             )
         return
@@ -9230,7 +9303,13 @@ def user_quizzes_list(query: Update.callback_query, course_id: str):
                 query,
                 "📝 لا توجد اختبارات متاحة حالياً لهذه الدورة.",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                            )
+                        ]
+                    ]
                 ),
             )
             return
@@ -9247,7 +9326,9 @@ def user_quizzes_list(query: Update.callback_query, course_id: str):
                 ]
             )
 
-        keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")])
+        keyboard.append(
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]
+        )
         safe_edit_message_text(
             query,
             "📝 اختبارات الدورة:\nاختر اختباراً للإجابة عنه.",
@@ -9271,7 +9352,13 @@ def user_points(query: Update.callback_query, user_id: int, course_id: str):
         query,
         text,
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                    )
+                ]
+            ]
         ),
     )
 
@@ -9294,7 +9381,13 @@ def start_quiz_flow(query: Update.callback_query, user_id: int, quiz_id: str):
             query,
             "✅ تم حل هذا الاختبار مسبقاً.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                        )
+                    ]
+                ]
             ),
         )
         return
@@ -9305,7 +9398,13 @@ def start_quiz_flow(query: Update.callback_query, user_id: int, quiz_id: str):
             query,
             "❌ هذا الاختبار غير مكتمل حالياً.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                        )
+                    ]
+                ]
             ),
         )
         return
@@ -9347,7 +9446,13 @@ def handle_quiz_answer_selection(query: Update.callback_query, user_id: int, qui
             query,
             "✅ تم تسجيل إجابتك سابقاً.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                        )
+                    ]
+                ]
             ),
         )
         return
@@ -9376,7 +9481,13 @@ def handle_quiz_answer_selection(query: Update.callback_query, user_id: int, qui
             query,
             f"✅ تم تسجيل إجابتك. (+{points} نقاط)",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                        )
+                    ]
+                ]
             ),
         )
     except Exception as e:
@@ -9411,7 +9522,14 @@ def _complete_quiz_answer(user_id: int, answer_text: str, update: Update, contex
             update.message.reply_text(
                 "✅ إجابة صحيحة! تمت إضافة نقاط الاختبار إلى رصيدك.",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔙 رجوع",
+                                callback_data=f"COURSES:back_course_{course_id}",
+                            )
+                        ]
+                    ]
                 ),
             )
         except Exception as e:
@@ -9421,7 +9539,13 @@ def _complete_quiz_answer(user_id: int, answer_text: str, update: Update, contex
         update.message.reply_text(
             "❌ إجابة غير صحيحة. يمكنك المحاولة مرة أخرى من قائمة الاختبارات.",
             reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")]]
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}"
+                        )
+                    ]
+                ]
             ),
         )
 
@@ -9439,12 +9563,13 @@ def admin_create_course(query: Update.callback_query, context: CallbackContext):
         safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
         return
 
+    _reset_course_creation(user_id)
     WAITING_NEW_COURSE.add(user_id)
     COURSE_CREATION_CONTEXT[user_id] = {}
     safe_edit_message_text(
         query,
-        "➕ إنشاء دورة جديدة\n\nأرسل البيانات بالشكل:\nاسم الدورة | وصف مختصر",
-        reply_markup=COURSES_ADMIN_MENU_KB,
+        "➕ إنشاء دورة جديدة\n\nأدخل اسم الدورة",
+        reply_markup=_course_creation_keyboard(),
     )
 
 
@@ -9798,6 +9923,12 @@ def handle_courses_callback(update: Update, context: CallbackContext):
     try:
         query.answer()
 
+        if (
+            user_id in WAITING_NEW_COURSE
+            and not data.startswith("COURSES:create")
+        ):
+            _reset_course_creation(user_id)
+
         if data == "COURSES:available":
             show_available_courses(query, context)
         elif data == "COURSES:my_courses":
@@ -9816,6 +9947,11 @@ def handle_courses_callback(update: Update, context: CallbackContext):
 
         elif data == "COURSES:create":
             admin_create_course(query, context)
+        elif data == "COURSES:create_cancel":
+            _reset_course_creation(user_id)
+            safe_edit_message_text(
+                query, "تم الإلغاء بنجاح", reply_markup=COURSES_ADMIN_MENU_KB
+            )
         elif data == "COURSES:manage_lessons":
             admin_manage_lessons(query, context)
         elif data == "COURSES:manage_quizzes":
@@ -9835,9 +9971,13 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data == "COURSES:delete":
             admin_delete_course(query, context)
         elif data == "COURSES:admin_back":
+            _reset_course_creation(user_id)
             admin_kb = admin_panel_keyboard_for(user_id)
             safe_edit_message_text(query, "عدنا إلى لوحة التحكم", reply_markup=admin_kb)
 
+        elif data.startswith("COURSES:back_course_"):
+            course_id = data.replace("COURSES:back_course_", "")
+            show_course_details(query, user_id, course_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
             show_course_details(query, user_id, course_id)
