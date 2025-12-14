@@ -8936,6 +8936,15 @@ def show_available_courses(query: Update.callback_query, context: CallbackContex
         return
 
     try:
+        try:
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=" ",
+                reply_markup=user_main_keyboard(query.from_user.id),
+            )
+        except Exception:
+            logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
+
         courses_ref = db.collection(COURSES_COLLECTION)
         docs = courses_ref.where("status", "==", "active").stream()
         courses = []
@@ -8988,6 +8997,15 @@ def show_my_courses(query: Update.callback_query, context: CallbackContext):
         return
 
     try:
+        try:
+            context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=" ",
+                reply_markup=user_main_keyboard(user_id),
+            )
+        except Exception:
+            logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
+
         subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
         subs_docs = subs_ref.where("user_id", "==", user_id).stream()
         course_ids = []
@@ -9340,9 +9358,11 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
 
     lesson = lesson_doc.to_dict()
     course_id = lesson.get("course_id")
-    subscription, sub_ref = _ensure_subscription(user_id, course_id)
+    sub_id = _subscription_document_id(user_id, course_id)
+    sub_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).document(sub_id)
+    sub_doc = sub_ref.get()
 
-    if not subscription or not sub_ref:
+    if not sub_doc.exists:
         safe_edit_message_text(
             query,
             "❌ يجب التسجيل في الدورة أولاً لتسجيل الحضور.",
@@ -9350,7 +9370,8 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
         )
         return
 
-    attended_lessons = subscription.get("lessons_attended", [])
+    subscription = sub_doc.to_dict() or {}
+    attended_lessons = subscription.get("lessons_attended") or []
     if lesson_id in attended_lessons:
         query.answer("✅ تم تسجيل حضورك مسبقاً لهذا الدرس.", show_alert=True)
         return
@@ -9360,6 +9381,7 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
             {
                 "lessons_attended": firestore.ArrayUnion([lesson_id]),
                 "points": firestore.Increment(1),
+                "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
         query.answer("✅ تم تسجيل حضورك وحصلت على نقطة.", show_alert=True)
