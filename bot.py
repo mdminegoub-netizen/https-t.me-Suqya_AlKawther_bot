@@ -1862,6 +1862,7 @@ BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
+BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
 
 BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
@@ -2171,7 +2172,6 @@ BTN_ADHKAR_EVENING = "أذكار المساء 🌙"
 BTN_ADHKAR_GENERAL = "أذكار عامة 💭"
 BTN_ADHKAR_SLEEP = "💤 أذكار النوم"
 BTN_SLEEP_ADHKAR_NEXT = "⬅️ التالي"
-BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
 
 ADHKAR_MENU_KB_USER = ReplyKeyboardMarkup(
     [
