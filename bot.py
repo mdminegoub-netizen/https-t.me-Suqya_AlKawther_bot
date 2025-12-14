@@ -8948,6 +8948,26 @@ def open_courses_menu(update: Update, context: CallbackContext):
         logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
 
 
+def _show_courses_admin_menu_from_callback(query: Update.callback_query, user_id: int):
+    """عرض لوحة إدارة الدورات من زر الرجوع داخل الكولباك."""
+
+    safe_edit_message_text(
+        query,
+        "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
+        reply_markup=COURSES_ADMIN_MENU_KB,
+    )
+
+    # تحديث الكيبورد السفلي لضمان بقاء لوحة التحكم للأدمن/المشرفة
+    try:
+        query.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=" ",
+            reply_markup=admin_panel_keyboard_for(user_id),
+        )
+    except Exception:
+        logger.debug("[COURSES] تعذر تحديث كيبورد لوحة التحكم للأدمن/المشرفة بعد الرجوع")
+
+
 def show_available_courses(query: Update.callback_query, context: CallbackContext):
     if not firestore_available():
         safe_edit_message_text(
@@ -10153,8 +10173,9 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             admin_delete_course(query, context)
         elif data == "COURSES:admin_back":
             _reset_course_creation(user_id)
-            admin_kb = admin_panel_keyboard_for(user_id)
-            safe_edit_message_text(query, "عدنا إلى لوحة التحكم", reply_markup=admin_kb)
+            _reset_lesson_creation(user_id)
+            _reset_quiz_creation(user_id)
+            _show_courses_admin_menu_from_callback(query, user_id)
 
         elif data.startswith("COURSES:back_course_"):
             course_id = data.replace("COURSES:back_course_", "")
