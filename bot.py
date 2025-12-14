@@ -9453,12 +9453,11 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
-        chat_id = query.message.chat_id if query.message else user_id
-        query.answer("✅ تم تسجيل حضورك.")
-        query.bot.send_message(chat_id, "✅ تم تسجيل حضورك بالعلامة الخضراء (صح).")
-        query.bot.send_message(
-            chat_id, f"⭐️ تم إضافة 1 نقطة إلى رصيد نقاطك. (المجموع: {new_points})"
+        confirmation_text = (
+            "✅ تم تسجيل حضورك وإضافة 1 نقطة إلى رصيد نقاطك. "
+            f"(المجموع: {new_points})"
         )
+        query.answer(confirmation_text, show_alert=True)
     except Exception as e:
         logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
