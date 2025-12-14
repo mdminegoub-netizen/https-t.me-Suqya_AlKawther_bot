@@ -9439,7 +9439,7 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
     subscription = sub_doc.to_dict() or {}
     attended_lessons = subscription.get("lessons_attended") or []
     if lesson_id in attended_lessons:
-        query.answer("✅ تم تسجيلك من قبل لهذا الدرس.", show_alert=True)
+        query.answer("لقد تم تسجيل حضورك من قبل", show_alert=True)
         return
 
     try:
@@ -9453,10 +9453,7 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
-        confirmation_text = (
-            "✅ تم تسجيل حضورك وإضافة 1 نقطة إلى رصيد نقاطك. "
-            f"(المجموع: {new_points})"
-        )
+        confirmation_text = "تم تسجيل حضورك\nتم إضافة 1 نقطة الى رصيد نقاطك"
         query.answer(confirmation_text, show_alert=True)
     except Exception as e:
         logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
