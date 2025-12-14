@@ -9733,5 +9733,33 @@ def handle_courses_callback(update: Update, context: CallbackContext):
 # =================== نهاية قسم الدورات ===================
 
 
+
+def safe_edit_message_text(query, text, reply_markup=None):
+    """تعديل الرسالة بأمان مع معالجة Message is not modified"""
+    try:
+        query.edit_message_text(
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+    except Exception as e:
+        error_str = str(e)
+        if "Message is not modified" in error_str:
+            logger.debug(f"[COURSES] تم تجاهل Message is not modified")
+            pass
+        elif "Inline keyboard expected" in error_str:
+            logger.warning(f"[COURSES] خطأ: Inline keyboard expected")
+            try:
+                query.answer("❌ خطأ في الكيبورد. حاول مرة أخرى.", show_alert=True)
+            except:
+                pass
+        else:
+            logger.exception(f"[COURSES] خطأ في تعديل الرسالة: {error_str}")
+            try:
+                query.answer("❌ حدث خطأ. حاول مرة أخرى.", show_alert=True)
+            except:
+                pass
+
+
 if __name__ == "__main__":
     main()
