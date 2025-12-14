@@ -1876,6 +1876,27 @@ AUDIO_SECTIONS = {
 }
 AUDIO_SECTION_BY_BUTTON = {cfg["button"]: key for key, cfg in AUDIO_SECTIONS.items()}
 
+# أسماء الدورات التي يجب تجاهلها لأنها ليست دورات حقيقية بل أزرار رجوع خاطئة
+COURSE_NAME_BLACKLIST = {
+    BTN_BACK_MAIN,
+    BTN_STATS_BACK_MAIN,
+    BTN_SLEEP_ADHKAR_BACK,
+    "رجوع للقائمة الرئيسية",
+    "↩️ رجوع للقائمة الرئيسية",
+    "⬅️ رجوع للقائمة الرئيسية",
+}
+
+
+def _is_back_placeholder_course(course_name: str) -> bool:
+    """تحديد إن كان الاسم يمثل زر رجوع تمت إضافته بالخطأ كدورة."""
+
+    if not course_name:
+        return False
+
+    normalized_name = course_name.strip()
+    return normalized_name in COURSE_NAME_BLACKLIST
+
+
 # المنافسات و المجتمع
 BTN_COMP_MAIN = "المنافسات و المجتمع 🏅"
 BTN_MY_PROFILE = "ملفي التنافسي 🎯"
@@ -8954,7 +8975,14 @@ def show_available_courses(query: Update.callback_query, context: CallbackContex
             data["id"] = doc.id
             courses.append(data)
 
-        if not courses:
+        filtered_courses = []
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            if _is_back_placeholder_course(course_name):
+                continue
+            filtered_courses.append(course)
+
+        if not filtered_courses:
             safe_edit_message_text(
                 query,
                 "📚 الدورات المتاحة\n\nلا توجد دورات متاحة حالياً.",
@@ -8964,7 +8992,7 @@ def show_available_courses(query: Update.callback_query, context: CallbackContex
 
         text = "📚 الدورات المتاحة:\n\n"
         keyboard = []
-        for course in courses:
+        for course in filtered_courses:
             course_name = course.get("name", "دورة")
             course_id = course.get("id")
             text += f"• {course_name}\n"
@@ -9029,6 +9057,8 @@ def show_my_courses(query: Update.callback_query, context: CallbackContext):
             if not course:
                 continue
             course_name = course.get("name", "دورة")
+            if _is_back_placeholder_course(course_name):
+                continue
             text += f"• {course_name}\n"
             keyboard.append(
                 [
@@ -9037,6 +9067,14 @@ def show_my_courses(query: Update.callback_query, context: CallbackContext):
                     )
                 ]
             )
+
+        if not keyboard:
+            safe_edit_message_text(
+                query,
+                "📒 دوراتي\n\nأنت لم تشترك في أي دورة صالحة للعرض حالياً.",
+                reply_markup=COURSES_USER_MENU_KB,
+            )
+            return
 
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
         safe_edit_message_text(query, text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -9067,7 +9105,14 @@ def show_archived_courses(query: Update.callback_query, context: CallbackContext
             data["id"] = doc.id
             courses.append(data)
 
-        if not courses:
+        filtered_courses = []
+        for course in courses:
+            course_name = course.get("name", "دورة")
+            if _is_back_placeholder_course(course_name):
+                continue
+            filtered_courses.append(course)
+
+        if not filtered_courses:
             safe_edit_message_text(
                 query,
                 "🗂 أرشيف الدورات\n\nلا توجد دورات مؤرشفة.",
@@ -9077,7 +9122,7 @@ def show_archived_courses(query: Update.callback_query, context: CallbackContext
 
         text = "🗂 أرشيف الدورات:\n\n"
         keyboard = []
-        for course in courses:
+        for course in filtered_courses:
             course_name = course.get("name", "دورة")
             course_id = course.get("id")
             text += f"• {course_name}\n"
