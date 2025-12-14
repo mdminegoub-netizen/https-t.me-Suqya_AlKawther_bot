@@ -9740,13 +9740,22 @@ def admin_manage_lessons(query: Update.callback_query, context: CallbackContext)
             )
             return
 
+        filtered_courses = [c for c in courses if not _is_back_placeholder_course(c.get("name"))]
+        if not filtered_courses:
+            safe_edit_message_text(
+                query,
+                "🧩 إدارة الدروس\n\nلا توجد دورات صالحة لإدارة الدروس حاليًا.",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            return
+
         keyboard = [
             [
                 InlineKeyboardButton(
                     f"📖 {c.get('name', 'دورة')}", callback_data=f"COURSES:lessons_{c.get('id')}"
                 )
             ]
-            for c in courses
+            for c in filtered_courses
         ]
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
         safe_edit_message_text(
@@ -9807,13 +9816,22 @@ def admin_manage_quizzes(query: Update.callback_query, context: CallbackContext)
             )
             return
 
+        filtered_courses = [c for c in courses if not _is_back_placeholder_course(c.get("name"))]
+        if not filtered_courses:
+            safe_edit_message_text(
+                query,
+                "📝 إدارة الاختبارات\n\nلا توجد دورات صالحة لإضافة اختبارات إليها.",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            return
+
         keyboard = [
             [
                 InlineKeyboardButton(
                     f"📝 {c.get('name', 'دورة')}", callback_data=f"COURSES:quizzes_{c.get('id')}"
                 )
             ]
-            for c in courses
+            for c in filtered_courses
         ]
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
         safe_edit_message_text(
@@ -9869,9 +9887,14 @@ def admin_statistics(query: Update.callback_query, context: CallbackContext):
             safe_edit_message_text(query, "لا توجد دورات حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
             return
 
+        filtered_courses = [c for c in courses if not _is_back_placeholder_course(c.get("name"))]
+        if not filtered_courses:
+            safe_edit_message_text(query, "لا توجد دورات صالحة حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
+            return
+
         keyboard = [
             [InlineKeyboardButton(course.get("name", "دورة"), callback_data=f"COURSES:stats_course_{course.get('id')}")]
-            for course in courses
+            for course in filtered_courses
         ]
         keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")])
 
@@ -9908,9 +9931,18 @@ def admin_archive_manage(query: Update.callback_query, context: CallbackContext)
             )
             return
 
+        filtered_courses = [c for c in courses if not _is_back_placeholder_course(c.get("name"))]
+        if not filtered_courses:
+            safe_edit_message_text(
+                query,
+                "🗂 أرشفة/إيقاف/تشغيل\n\nلا توجد دورات صالحة للتعديل.",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            return
+
         keyboard = []
         text = "🗂 اختر دورة لتغيير حالتها:\n\n"
-        for course in courses:
+        for course in filtered_courses:
             status = course.get("status", "active")
             status_emoji = "✅" if status == "active" else "❌"
             keyboard.append(
@@ -10030,8 +10062,17 @@ def admin_delete_course(query: Update.callback_query, context: CallbackContext):
             return
 
         text = "🗑 اختر دورة للحذف النهائي:\n\n⚠️ تحذير: هذا الإجراء لا يمكن التراجع عنه\n\n"
+        filtered_courses = [c for c in courses if not _is_back_placeholder_course(c.get("name"))]
+        if not filtered_courses:
+            safe_edit_message_text(
+                query,
+                "🗑 حذف دورة\n\nلا توجد دورات صالحة للحذف.",
+                reply_markup=COURSES_ADMIN_MENU_KB,
+            )
+            return
+
         keyboard = []
-        for course in courses:
+        for course in filtered_courses:
             course_name = course.get("name", "دورة")
             course_id = course.get("id")
             keyboard.append(
