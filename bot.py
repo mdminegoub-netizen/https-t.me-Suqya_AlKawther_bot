@@ -18,6 +18,7 @@ from telegram import (
     KeyboardButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 
 import firebase_admin
@@ -8940,7 +8941,7 @@ def show_available_courses(query: Update.callback_query, context: CallbackContex
             context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=" ",
-                reply_markup=user_main_keyboard(query.from_user.id),
+                reply_markup=ReplyKeyboardRemove(),
             )
         except Exception:
             logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
@@ -9001,7 +9002,7 @@ def show_my_courses(query: Update.callback_query, context: CallbackContext):
             context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=" ",
-                reply_markup=user_main_keyboard(user_id),
+                reply_markup=ReplyKeyboardRemove(),
             )
         except Exception:
             logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
