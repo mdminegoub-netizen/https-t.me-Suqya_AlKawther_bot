@@ -8916,6 +8916,14 @@ def open_courses_menu(update: Update, context: CallbackContext):
             "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
             reply_markup=COURSES_USER_MENU_KB,
         )
+    # إعادة الكيبورد الرئيسي لمنع ظهور زر الرجوع للقائمة الرئيسية في قوائم الدورات
+    try:
+        msg.reply_text(
+            " ",  # رسالة فارغة لإجبار تحديث الكيبورد فقط
+            reply_markup=user_main_keyboard(user_id),
+        )
+    except Exception:
+        logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
 
 
 def show_available_courses(query: Update.callback_query, context: CallbackContext):
@@ -9227,6 +9235,19 @@ def user_lessons_list(query: Update.callback_query, course_id: str):
         safe_edit_message_text(query, "❌ تعذر تحميل الدروس حالياً.", reply_markup=COURSES_USER_MENU_KB)
 
 
+def _lesson_view_keyboard(course_id: str, lesson_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:user_lessons_{course_id}")],
+            [
+                InlineKeyboardButton(
+                    "✅ تسجيل الحضور", callback_data=f"COURSES:attend_{lesson_id}"
+                )
+            ],
+        ]
+    )
+
+
 def user_view_lesson(query: Update.callback_query, context: CallbackContext, lesson_id: str, user_id: int):
     doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
     if not doc.exists:
@@ -9235,16 +9256,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
 
     lesson = doc.to_dict()
     course_id = lesson.get("course_id")
-    back_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:user_lessons_{course_id}")]]
-    )
-
-    try:
-        _, sub_ref = _ensure_subscription(user_id, course_id)
-        if sub_ref:
-            sub_ref.set({"lessons_attended": firestore.ArrayUnion([lesson_id])}, merge=True)
-    except Exception as e:
-        logger.warning(f"تعذر تحديث حضور الدرس: {e}")
+    view_keyboard = _lesson_view_keyboard(course_id, lesson_id)
 
     content_type = lesson.get("content_type", "text")
     title = lesson.get("title", "درس")
@@ -9256,7 +9268,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             safe_edit_message_text(
                 query,
                 f"<b>{title}</b>\n\n⚠️ لا يوجد ملف صوتي مرفق لهذا الدرس.",
-                reply_markup=back_markup,
+                reply_markup=view_keyboard,
             )
             return
 
@@ -9269,14 +9281,34 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             safe_edit_message_text(
                 query,
                 f"📖 {title}\nتم إرسال المقطع الصوتي أعلاه.",
-                reply_markup=back_markup,
+                reply_markup=view_keyboard,
             )
         except Exception as e:
             logger.error(f"خطأ في إرسال الدرس الصوتي: {e}")
             safe_edit_message_text(
                 query,
                 f"<b>{title}</b>\n\nتعذر إرسال المقطع الصوتي. يرجى التأكد من صحة الملف الصوتي.",
-                reply_markup=back_markup,
+                reply_markup=view_keyboard,
+            )
+        return
+
+    document_id = lesson.get("document_file_id") or lesson.get("file_id")
+    if content_type in {"document", "file"} and document_id:
+        try:
+            context.bot.send_document(
+                chat_id=query.message.chat_id, document=document_id, caption=title
+            )
+            safe_edit_message_text(
+                query,
+                f"📖 {title}\nتم إرسال الملف أعلاه.",
+                reply_markup=view_keyboard,
+            )
+        except Exception as e:
+            logger.error(f"خطأ في إرسال ملف الدرس: {e}")
+            safe_edit_message_text(
+                query,
+                f"<b>{title}</b>\n\nتعذر إرسال الملف المرفق لهذا الدرس.",
+                reply_markup=view_keyboard,
             )
         return
 
@@ -9288,8 +9320,52 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
     safe_edit_message_text(
         query,
         content_display,
-        reply_markup=back_markup,
+        reply_markup=view_keyboard,
     )
+
+
+def register_lesson_attendance(query: Update.callback_query, user_id: int, lesson_id: str):
+    if not firestore_available():
+        safe_edit_message_text(
+            query,
+            "❌ لا يمكن تسجيل الحضور حالياً. حاول لاحقاً.",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_USER_MENU_KB)
+        return
+
+    lesson = lesson_doc.to_dict()
+    course_id = lesson.get("course_id")
+    subscription, sub_ref = _ensure_subscription(user_id, course_id)
+
+    if not subscription or not sub_ref:
+        safe_edit_message_text(
+            query,
+            "❌ يجب التسجيل في الدورة أولاً لتسجيل الحضور.",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+
+    attended_lessons = subscription.get("lessons_attended", [])
+    if lesson_id in attended_lessons:
+        query.answer("✅ تم تسجيل حضورك مسبقاً لهذا الدرس.", show_alert=True)
+        return
+
+    try:
+        sub_ref.update(
+            {
+                "lessons_attended": firestore.ArrayUnion([lesson_id]),
+                "points": firestore.Increment(1),
+            }
+        )
+        query.answer("✅ تم تسجيل حضورك وحصلت على نقطة.", show_alert=True)
+    except Exception as e:
+        logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
+        query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
 
 
 def user_quizzes_list(query: Update.callback_query, course_id: str):
@@ -9989,6 +10065,9 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:view_lesson_"):
             lesson_id = data.replace("COURSES:view_lesson_", "")
             user_view_lesson(query, context, lesson_id, user_id)
+        elif data.startswith("COURSES:attend_"):
+            lesson_id = data.replace("COURSES:attend_", "")
+            register_lesson_attendance(query, user_id, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
             show_course_details(query, user_id, course_id)
