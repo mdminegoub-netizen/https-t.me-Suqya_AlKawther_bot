@@ -8703,7 +8703,24 @@ def process_channel_audio_message(message, is_edit: bool = False):
     )
 
     normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message)
+    logger.info(
+        "🏷️ بيانات الهاشتاقات | chat.id=%s | chat.username=%s | msg_id=%s | raw=%s | normalized=%s",
+        getattr(message.chat, "id", ""),
+        getattr(message.chat, "username", ""),
+        message.message_id,
+        raw_hashtags,
+        normalized_hashtags,
+    )
     section_key = _match_audio_section(normalized_hashtags)
+    available_hashtags = {
+        key: _normalize_hashtag(cfg.get("hashtag", "")) for key, cfg in AUDIO_SECTIONS.items()
+    }
+    logger.info(
+        "📚 نتيجة مطابقة القسم | msg_id=%s | section_key=%s | available=%s",
+        message.message_id,
+        section_key,
+        available_hashtags,
+    )
 
     file_id, file_type, file_unique_id = _extract_audio_file(message)
 
@@ -8714,6 +8731,11 @@ def process_channel_audio_message(message, is_edit: bool = False):
             message.message_id,
             raw_hashtags,
             normalized_hashtags,
+        )
+        logger.info(
+            "ℹ️ لم يتم تحديد قسم للمقطع | msg_id=%s | available_hashtags=%s",
+            message.message_id,
+            available_hashtags,
         )
 
     if not section_key or not file_id:
@@ -8973,13 +8995,13 @@ def start_bot():
 
         dispatcher.add_handler(
             MessageHandler(
-                Filters.update.channel_post & channel_audio_filter,
+                Filters.update.channel_post,
                 handle_channel_post,
             )
         )
         dispatcher.add_handler(
             MessageHandler(
-                Filters.update.edited_channel_post & channel_audio_filter,
+                Filters.update.edited_channel_post,
                 handle_edited_channel_post,
             )
         )
