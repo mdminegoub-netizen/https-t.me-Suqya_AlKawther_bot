@@ -27,6 +27,8 @@ from firebase_admin import credentials, firestore
 from telegram.ext import (
     Updater,
     MessageHandler,
+    ChannelPostHandler,
+    EditedChannelPostHandler,
     Filters,
     CallbackContext,
     CommandHandler,
@@ -1792,6 +1794,9 @@ def _finalize_quiz_creation_from_callback(user_id: int, query: Update.callback_q
 
 
 def handle_audio_message(update: Update, context: CallbackContext):
+    if update.effective_user is None or update.effective_chat.type == "channel":
+        return
+
     user_id = update.effective_user.id
     if user_id not in WAITING_LESSON_AUDIO:
         return
@@ -9053,33 +9058,27 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
 
-        dispatcher.add_handler(
-            MessageHandler(
-                (Filters.audio | Filters.voice | Filters.document.audio),
-                handle_audio_message,
-            )
-        )
-
         channel_audio_filter = Filters.chat_type.channel & (
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
-        dispatcher.add_handler(
-            MessageHandler(
-                Filters.update.channel_post,
-                handle_channel_post,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                Filters.update.edited_channel_post,
-                handle_edited_channel_post,
-            )
-        )
+        dispatcher.add_handler(ChannelPostHandler(handle_channel_post, channel_audio_filter))
+        dispatcher.add_handler(EditedChannelPostHandler(handle_edited_channel_post, channel_audio_filter))
         dispatcher.add_handler(
             MessageHandler(
                 Filters.status_update & Filters.chat_type.channel,
                 handle_deleted_channel_post,
+            )
+        )
+
+        user_audio_filter = (
+            Filters.audio | Filters.voice | Filters.document.audio
+        ) & ~Filters.chat_type.channel
+
+        dispatcher.add_handler(
+            MessageHandler(
+                user_audio_filter,
+                handle_audio_message,
             )
         )
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
