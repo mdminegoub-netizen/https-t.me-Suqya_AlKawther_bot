@@ -8358,6 +8358,16 @@ def delete_audio_clip_by_message_id(message_id: int):
     LOCAL_AUDIO_LIBRARY = [clip for clip in LOCAL_AUDIO_LIBRARY if clip.get("message_id") != message_id]
 
 
+def _upsert_local_audio_clip(record: Dict):
+    """حفظ نسخة محلية محدثة من المقطع لضمان توفره حتى عند فشل Firestore."""
+
+    global LOCAL_AUDIO_LIBRARY
+
+    message_id = record.get("message_id")
+    LOCAL_AUDIO_LIBRARY = [c for c in LOCAL_AUDIO_LIBRARY if c.get("message_id") != message_id]
+    LOCAL_AUDIO_LIBRARY.append(record)
+
+
 def _cleanup_audio_duplicates(record: Dict):
     if not firestore_available():
         return
@@ -8402,17 +8412,17 @@ def save_audio_clip_record(record: Dict):
         try:
             doc_id = str(message_id)
             db.collection(AUDIO_LIBRARY_COLLECTION).document(doc_id).set(record, merge=True)
+            _upsert_local_audio_clip(record)
             return
         except Exception as e:
             logger.error(f"❌ خطأ في حفظ المقطع الصوتي: {e}")
 
     # fallback محلي
-    global LOCAL_AUDIO_LIBRARY
-    LOCAL_AUDIO_LIBRARY.append(record)
+    _upsert_local_audio_clip(record)
 
 
 def fetch_audio_clips(section_key: str) -> List[Dict]:
-    clips: List[Dict] = []
+    clips_by_message: Dict[str, Dict] = {}
 
     if firestore_available():
         try:
@@ -8424,11 +8434,18 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
             for doc in docs:
                 clip_data = doc.to_dict() or {}
                 clip_data.setdefault("message_id", int(doc.id) if str(doc.id).isdigit() else doc.id)
-                clips.append(clip_data)
+                key = str(clip_data.get("message_id") or doc.id)
+                clips_by_message[key] = clip_data
         except Exception as e:
             logger.error(f"❌ خطأ في قراءة مكتبة الصوتيات: {e}")
-    else:
-        clips.extend([c for c in LOCAL_AUDIO_LIBRARY if c.get("section") == section_key])
+
+    for clip in [c for c in LOCAL_AUDIO_LIBRARY if c.get("section") == section_key]:
+        key = str(clip.get("message_id"))
+        current = clips_by_message.get(key)
+        if not current or _is_newer_audio_record(clip, current):
+            clips_by_message[key] = clip
+
+    clips = list(clips_by_message.values())
 
     clips.sort(
         key=lambda c: (
