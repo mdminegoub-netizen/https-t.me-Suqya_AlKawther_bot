@@ -8706,7 +8706,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
     message_id = getattr(message, "message_id", "")
 
     normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message) if message else ([], [])
-    section_key = _match_audio_section(raw_hashtags)
+    section_key = _match_audio_section(normalized_hashtags)
     file_id, file_type, file_unique_id = _extract_audio_file(message) if message else (None, "", None)
     is_storage_channel = _is_audio_storage_channel(message) if message else False
 
@@ -8743,6 +8743,20 @@ def process_channel_audio_message(message, is_edit: bool = False):
         getattr(message, "is_automatic_forward", False),
     )
 
+    available_hashtags = {
+        key: _normalize_hashtag(cfg.get("hashtag", "")) for key, cfg in AUDIO_SECTIONS.items()
+    }
+    logger.info(
+        "🧭 AUDIO_UPLOAD_DIAG | chat.id=%s | chat.username=%s | storage_target=%s | raw_hashtags=%s | normalized_hashtags=%s | available_sections=%s | section_key=%s",
+        getattr(message.chat, "id", ""),
+        getattr(message.chat, "username", ""),
+        AUDIO_STORAGE_CHANNEL_ID,
+        raw_hashtags,
+        normalized_hashtags,
+        available_hashtags,
+        section_key,
+    )
+
     logger.info(
         "🏷️ بيانات الهاشتاقات | chat.id=%s | chat.username=%s | msg_id=%s | raw=%s | normalized=%s",
         getattr(message.chat, "id", ""),
@@ -8751,26 +8765,6 @@ def process_channel_audio_message(message, is_edit: bool = False):
         raw_hashtags,
         normalized_hashtags,
     )
-    available_hashtags = {
-        key: _normalize_hashtag(cfg.get("hashtag", "")) for key, cfg in AUDIO_SECTIONS.items()
-    }
-    logger.info(
-        "📚 نتيجة مطابقة القسم | msg_id=%s | section_key=%s | available=%s",
-        message.message_id,
-        section_key,
-        available_hashtags,
-    )
-
-    if not section_key or section_key not in AUDIO_SECTIONS:
-        logger.warning(
-            "UNMATCHED_HASHTAG | chat_id=%s | msg_id=%s | raw_hashtags=%s | normalized_hashtags=%s",
-            message.chat.id,
-            message.message_id,
-            raw_hashtags,
-            normalized_hashtags,
-        )
-        delete_audio_clip_by_message_id(message.message_id)
-        return
 
     if not file_id:
         delete_audio_clip_by_message_id(message.message_id)
@@ -8779,6 +8773,16 @@ def process_channel_audio_message(message, is_edit: bool = False):
             message.chat.id,
             message.message_id,
             raw_hashtags,
+        )
+        return
+
+    if not section_key or section_key not in AUDIO_SECTIONS:
+        logger.warning(
+            "UNMATCHED_HASHTAG | chat_id=%s | msg_id=%s | raw_hashtags=%s | normalized_hashtags=%s",
+            message.chat.id,
+            message.message_id,
+            raw_hashtags,
+            normalized_hashtags,
         )
         return
 
@@ -8966,6 +8970,33 @@ def handle_audio_callback(update: Update, context: CallbackContext):
 
     query.answer()
 
+
+def _ensure_storage_channel_admin(bot):
+    try:
+        target = AUDIO_STORAGE_CHANNEL_ID
+        if not target:
+            return
+
+        chat_ref = int(target) if str(target).lstrip("-").isdigit() else target
+        member = bot.get_chat_member(chat_ref, bot.id)
+        status = getattr(member, "status", "")
+        is_admin = status in ("administrator", "creator")
+
+        logger.info(
+            "🔒 تحقق صلاحيات البوت في قناة التخزين | target=%s | status=%s | is_admin=%s",
+            target,
+            status,
+            is_admin,
+        )
+
+        if not is_admin:
+            logger.warning(
+                "⚠️ البوت ليس مديرًا في قناة التخزين. قد تفشل معالجة المقاطع الصوتية."
+            )
+    except Exception as e:
+        logger.warning("⚠️ تعذر التحقق من صلاحيات قناة التخزين: %s", e)
+
+
 def start_bot():
     """بدء البوت"""
     global IS_RUNNING, job_queue, dispatcher
@@ -9003,6 +9034,11 @@ def start_bot():
             reconcile_audio_library_uniqueness()
         except Exception as e:
             logger.warning(f"⚠️ تعذر تنظيف مكتبة الصوتيات: {e}")
+
+        try:
+            _ensure_storage_channel_admin(dispatcher.bot)
+        except Exception as e:
+            logger.warning("⚠️ تعذر التأكد من صلاحيات قناة التخزين: %s", e)
 
         logger.info("جاري تسجيل المعالجات...")
         dispatcher.add_handler(CommandHandler("start", start_command))
