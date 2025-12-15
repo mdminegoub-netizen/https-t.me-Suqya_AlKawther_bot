@@ -8318,9 +8318,14 @@ def _normalize_hashtag(tag: str) -> str:
         return ""
 
     text = tag.strip().lstrip("#")
-    text = text.rstrip(".,،؛؛")
+    # إزالة العلامات الشائعة الملاصقة للهاشتاق
+    text = text.rstrip(".,،؛؛!！?？✨⭐️🌟🥇🥈🥉🎖️🏅")
+    # إزالة التشكيل والعلامات الزخرفية
+    text = re.sub(r"[\u064B-\u065F\u0617-\u061A\u06D6-\u06ED]", "", text)
     text = text.translate(ARABIC_LETTER_NORMALIZATION)
     text = text.replace("_", " ")
+    # إزالة أي رموز غير حروف/أرقام/مسافات (مثل الإيموجي أو الرموز الأخرى)
+    text = re.sub(r"[^\w\s\u0600-\u06FF]", "", text)
     text = re.sub(r"\s+", "", text)
     return text.lower()
 
@@ -8342,6 +8347,11 @@ def extract_hashtags_from_message(message) -> Tuple[List[str], List[str]]:
     hashtags.extend(text_based_hashtags)
 
     normalized = [_normalize_hashtag(tag) for tag in hashtags if _normalize_hashtag(tag)]
+    logger.debug(
+        "🏷️ تم استخراج هاشتاقات من الرسالة | raw=%s | normalized=%s",
+        hashtags,
+        normalized,
+    )
     return normalized, hashtags
 
 
@@ -8361,7 +8371,17 @@ def _match_audio_section(hashtags: List[str]) -> str:
 def _audio_title_from_message(message) -> str:
     caption = message.caption or message.text or ""
     caption = re.sub(r"#\S+", "", caption)
-    return caption.strip() or "مقطع صوتي"
+
+    audio_obj = getattr(message, "audio", None)
+    doc_obj = getattr(message, "document", None)
+
+    possible_title = None
+    if audio_obj and getattr(audio_obj, "title", None):
+        possible_title = audio_obj.title
+    elif doc_obj and getattr(doc_obj, "file_name", None):
+        possible_title = doc_obj.file_name
+
+    return (caption.strip() or possible_title or "مقطع صوتي").strip()
 
 
 def _extract_audio_file(message):
@@ -8381,7 +8401,8 @@ def _extract_audio_file(message):
         doc = message.document
         file_name = (doc.file_name or "").lower()
         mime_type = (doc.mime_type or "").lower()
-        if mime_type.startswith("audio/") or file_name.endswith((".mp3", ".wav", ".m4a", ".ogg")):
+        audio_exts = (".mp3", ".wav", ".m4a", ".ogg", ".oga", ".opus", ".mp4")
+        if mime_type.startswith("audio/") or mime_type.startswith("video/") or file_name.endswith(audio_exts):
             file_id = doc.file_id
             file_unique_id = getattr(doc, "file_unique_id", None)
             file_type = "document"
@@ -8488,12 +8509,22 @@ def save_audio_clip_record(record: Dict):
             doc_id = str(message_id)
             db.collection(AUDIO_LIBRARY_COLLECTION).document(doc_id).set(record, merge=True)
             _upsert_local_audio_clip(record)
+            logger.info(
+                "💾 تم حفظ/تحديث المقطع في Firestore والمحلي | message_id=%s | section=%s",
+                message_id,
+                record.get("section"),
+            )
             return
         except Exception as e:
             logger.error(f"❌ خطأ في حفظ المقطع الصوتي: {e}")
 
     # fallback محلي
     _upsert_local_audio_clip(record)
+    logger.info(
+        "💾 تم حفظ المقطع محليًا (Firestore غير متاح) | message_id=%s | section=%s",
+        message_id,
+        record.get("section"),
+    )
 
 
 def fetch_audio_clips(section_key: str) -> List[Dict]:
@@ -8702,6 +8733,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
         "normalized_hashtags": normalized_hashtags,
         "channel_id": message.chat.id,
         "message_id": message.message_id,
+        "caption": message.caption or message.text or "",
         "created_at": (message.date or datetime.now(timezone.utc)).isoformat(),
     }
     save_audio_clip_record(record)
