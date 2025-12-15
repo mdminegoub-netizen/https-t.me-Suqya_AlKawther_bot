@@ -8430,9 +8430,11 @@ def _is_audio_storage_channel(message) -> bool:
         is_match = chat_id_match or username_match
 
         logger.info(
-            "🛰️ فحص قناة التخزين | chat.id=%s | chat.username=%s | target=%s | match=%s",
+            "🛰️ فحص قناة التخزين | chat.id=%s (match=%s) | chat.username=%s (match=%s) | target=%s | final_match=%s",
             getattr(chat, "id", ""),
+            chat_id_match,
             getattr(chat, "username", ""),
+            username_match,
             target,
             is_match,
         )
@@ -8506,6 +8508,15 @@ def _cleanup_audio_duplicates(record: Dict):
 
 
 def save_audio_clip_record(record: Dict):
+    section_key = record.get("section")
+    if not section_key or section_key not in AUDIO_SECTIONS:
+        logger.warning(
+            "UNMATCHED_HASHTAG | رفض حفظ المقطع لعدم مطابقة قسم صحيح | section=%s | message_id=%s",
+            section_key,
+            record.get("message_id"),
+        )
+        return
+
     message_id = record.get("message_id")
     file_id = record.get("file_id")
     file_unique_id = record.get("file_unique_id")
@@ -8538,6 +8549,13 @@ def save_audio_clip_record(record: Dict):
 
 
 def fetch_audio_clips(section_key: str) -> List[Dict]:
+    if section_key not in AUDIO_SECTIONS:
+        logger.warning(
+            "UNMATCHED_HASHTAG | محاولة استعلام قسم غير معروف | section=%s",
+            section_key,
+        )
+        return []
+
     clips_by_message: Dict[str, Dict] = {}
     firestore_count = 0
 
@@ -8682,14 +8700,37 @@ def handle_deleted_channel_post(update: Update, context: CallbackContext):
 
 
 def process_channel_audio_message(message, is_edit: bool = False):
+    chat = getattr(message, "chat", None)
+    chat_id = getattr(chat, "id", "")
+    chat_username = getattr(chat, "username", "")
+    message_id = getattr(message, "message_id", "")
+
+    normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message) if message else ([], [])
+    section_key = _match_audio_section(normalized_hashtags)
+    file_id, file_type, file_unique_id = _extract_audio_file(message) if message else (None, "", None)
+    is_storage_channel = _is_audio_storage_channel(message) if message else False
+
+    logger.info(
+        "🛰️ CHANNEL_POST_LOG | chat.id=%s | chat.username=%s | msg_id=%s | storage_channel=%s | file_type=%s | file_id=%s | raw_hashtags=%s | normalized_hashtags=%s | section_key=%s",
+        chat_id,
+        chat_username,
+        message_id,
+        is_storage_channel,
+        file_type or "",
+        file_id or "",
+        raw_hashtags,
+        normalized_hashtags,
+        section_key,
+    )
+
     if not message:
         return
 
-    if not _is_audio_storage_channel(message):
+    if not is_storage_channel:
         logger.debug(
             "📭 تم تجاهل رسالة قناة خارج قناة التخزين | chat_id=%s | msg_id=%s",
-            getattr(getattr(message, "chat", None), "id", ""),
-            getattr(message, "message_id", ""),
+            chat_id,
+            message_id,
         )
         return
 
@@ -8702,7 +8743,6 @@ def process_channel_audio_message(message, is_edit: bool = False):
         getattr(message, "is_automatic_forward", False),
     )
 
-    normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message)
     logger.info(
         "🏷️ بيانات الهاشتاقات | chat.id=%s | chat.username=%s | msg_id=%s | raw=%s | normalized=%s",
         getattr(message.chat, "id", ""),
@@ -8711,7 +8751,6 @@ def process_channel_audio_message(message, is_edit: bool = False):
         raw_hashtags,
         normalized_hashtags,
     )
-    section_key = _match_audio_section(normalized_hashtags)
     available_hashtags = {
         key: _normalize_hashtag(cfg.get("hashtag", "")) for key, cfg in AUDIO_SECTIONS.items()
     }
@@ -8722,26 +8761,21 @@ def process_channel_audio_message(message, is_edit: bool = False):
         available_hashtags,
     )
 
-    file_id, file_type, file_unique_id = _extract_audio_file(message)
-
-    if not section_key:
+    if not section_key or section_key not in AUDIO_SECTIONS:
         logger.warning(
-            "⚠️ لم يتم مطابقة أي قسم للمقطع | chat_id=%s | msg_id=%s | raw_hashtags=%s | normalized_hashtags=%s",
+            "UNMATCHED_HASHTAG | chat_id=%s | msg_id=%s | raw_hashtags=%s | normalized_hashtags=%s",
             message.chat.id,
             message.message_id,
             raw_hashtags,
             normalized_hashtags,
         )
-        logger.info(
-            "ℹ️ لم يتم تحديد قسم للمقطع | msg_id=%s | available_hashtags=%s",
-            message.message_id,
-            available_hashtags,
-        )
+        delete_audio_clip_by_message_id(message.message_id)
+        return
 
-    if not section_key or not file_id:
+    if not file_id:
         delete_audio_clip_by_message_id(message.message_id)
         logger.info(
-            "📥 تم إزالة المقطع لعدم وجود هاشتاق مطابق أو ملف صوتي | chat_id=%s | msg_id=%s | hashtags=%s",
+            "📥 تم إزالة المقطع لعدم وجود ملف صوتي صالح | chat_id=%s | msg_id=%s | hashtags=%s",
             message.chat.id,
             message.message_id,
             raw_hashtags,
