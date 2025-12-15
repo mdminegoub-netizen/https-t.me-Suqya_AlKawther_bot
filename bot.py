@@ -1987,36 +1987,36 @@ MEDAL_RENAMES = {
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
-        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
 )
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
-        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -2025,18 +2025,18 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
-        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
-        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
-        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
-        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
-        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
-        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
-        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
+        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
+        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
+        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
+        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
