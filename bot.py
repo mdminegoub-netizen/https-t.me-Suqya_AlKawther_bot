@@ -8706,7 +8706,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
     message_id = getattr(message, "message_id", "")
 
     normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message) if message else ([], [])
-    section_key = _match_audio_section(normalized_hashtags)
+    section_key = _match_audio_section(raw_hashtags)
     file_id, file_type, file_unique_id = _extract_audio_file(message) if message else (None, "", None)
     is_storage_channel = _is_audio_storage_channel(message) if message else False
 
