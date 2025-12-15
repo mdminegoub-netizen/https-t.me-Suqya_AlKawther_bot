@@ -8427,7 +8427,17 @@ def _is_audio_storage_channel(message) -> bool:
             getattr(chat, "username", None)
             and chat.username.lstrip("@").lower() == target.lower()
         )
-        return chat_id_match or username_match
+        is_match = chat_id_match or username_match
+
+        logger.info(
+            "🛰️ فحص قناة التخزين | chat.id=%s | chat.username=%s | target=%s | match=%s",
+            getattr(chat, "id", ""),
+            getattr(chat, "username", ""),
+            target,
+            is_match,
+        )
+
+        return is_match
     except Exception:
         return False
 
@@ -8697,6 +8707,15 @@ def process_channel_audio_message(message, is_edit: bool = False):
 
     file_id, file_type, file_unique_id = _extract_audio_file(message)
 
+    if not section_key:
+        logger.warning(
+            "⚠️ لم يتم مطابقة أي قسم للمقطع | chat_id=%s | msg_id=%s | raw_hashtags=%s | normalized_hashtags=%s",
+            message.chat.id,
+            message.message_id,
+            raw_hashtags,
+            normalized_hashtags,
+        )
+
     if not section_key or not file_id:
         delete_audio_clip_by_message_id(message.message_id)
         logger.info(
@@ -8948,9 +8967,28 @@ def start_bot():
             )
         )
 
-        dispatcher.add_handler(MessageHandler(Filters.update.channel_post, handle_channel_post))
-        dispatcher.add_handler(MessageHandler(Filters.update.edited_channel_post, handle_edited_channel_post))
-        dispatcher.add_handler(MessageHandler(Filters.status_update & Filters.chat_type.channel, handle_deleted_channel_post))
+        channel_audio_filter = Filters.chat_type.channel & (
+            Filters.audio | Filters.voice | Filters.document.audio
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.update.channel_post & channel_audio_filter,
+                handle_channel_post,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.update.edited_channel_post & channel_audio_filter,
+                handle_edited_channel_post,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.status_update & Filters.chat_type.channel,
+                handle_deleted_channel_post,
+            )
+        )
         dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
         
         logger.info("✅ تم تسجيل جميع المعالجات")
