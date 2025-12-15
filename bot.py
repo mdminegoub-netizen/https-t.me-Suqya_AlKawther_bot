@@ -1987,38 +1987,36 @@ MEDAL_RENAMES = {
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
-        # السطر السابع: قسم الدورات
-        [KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
     ],
     resize_keyboard=True,
 )
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -2027,18 +2025,18 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني بجانب أذكاري
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: منبه الماء بجانب السبحة
-        [KeyboardButton(BTN_TASBIH_MAIN), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر الثالث: رسالة إلى نفسي بجانب مذكرات قلبي
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
-        # السطر الرابع: مكتبة الصوتيات بجانب احصائياتي
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الخامس: مجتمع الفوائد والنصائح بجانب المنافسات والمجتمع
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار، الاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الأول: وردي القرآني على اليمين وأذكاري على اليسار
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة صوتية على اليمين وقسم الدورات على اليسار
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: رسالة إلى نفسي على اليمين ومذكرات قلبي على اليسار
+        [KeyboardButton(BTN_LETTER_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح على اليمين والمنافسات والمجتمع على اليسار
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء على اليمين واحصائياتي على اليسار
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم على اليمين والاشعارات على اليسار
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -4885,7 +4883,6 @@ def send_stats_overview(update: Update, context: CallbackContext):
     q_goal = record.get("quran_pages_goal")
     q_today = record.get("quran_pages_today", 0)
 
-    tasbih_total = record.get("tasbih_total", 0)
     adhkar_count = record.get("adhkar_count", 0)
 
     memos_count = len(record.get("heart_memos", []))
@@ -4907,7 +4904,6 @@ def send_stats_overview(update: Update, context: CallbackContext):
         text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
 
     text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
-    text_lines.append(f"- مجموع التسبيحات المسجّلة عبر السبحة: {tasbih_total} تسبيحة.")
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
     text_lines.append(f"- عدد رسائلك إلى نفسك: {letters_count} رسالة.")
 
