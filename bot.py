@@ -8677,6 +8677,7 @@ def reconcile_audio_library_uniqueness():
 
 
 def handle_channel_post(update: Update, context: CallbackContext):
+    logger.error("🔥 CHANNEL POST RECEIVED 🔥")
     message = update.channel_post
     process_channel_audio_message(message)
 
