@@ -8468,6 +8468,27 @@ def delete_audio_clip_by_message_id(message_id: int):
     _persist_local_audio_library()
 
 
+def _attempt_delete_storage_message(bot, clip: Dict) -> bool:
+    channel_id = clip.get("channel_id") or AUDIO_STORAGE_CHANNEL_ID
+    message_id = clip.get("message_id")
+
+    if not channel_id or not message_id:
+        return False
+
+    try:
+        chat_ref = int(channel_id) if str(channel_id).lstrip("-").isdigit() else channel_id
+        bot.delete_message(chat_id=chat_ref, message_id=message_id)
+        logger.info(
+            "🗑️ تم حذف المنشور من قناة التخزين | chat_id=%s | msg_id=%s",
+            chat_ref,
+            message_id,
+        )
+        return True
+    except Exception as e:
+        logger.warning("⚠️ تعذر حذف منشور قناة التخزين: %s", e)
+        return False
+
+
 def _upsert_local_audio_clip(record: Dict):
     """حفظ نسخة محلية محدثة من المقطع لضمان توفره حتى عند فشل Firestore."""
 
@@ -8604,6 +8625,72 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
         len(clips),
     )
     return clips
+
+
+def clean_audio_library_records() -> Dict[str, int]:
+    invalid_message_ids = set()
+    firestore_scanned = 0
+    local_scanned = 0
+
+    if firestore_available():
+        try:
+            docs = db.collection(AUDIO_LIBRARY_COLLECTION).stream()
+            for doc in docs:
+                firestore_scanned += 1
+                clip = doc.to_dict() or {}
+                message_id = clip.get("message_id") or (
+                    int(doc.id) if str(doc.id).lstrip("-").isdigit() else doc.id
+                )
+                section = clip.get("section")
+                file_id = clip.get("file_id")
+                file_type = clip.get("file_type")
+
+                if not message_id:
+                    continue
+
+                is_section_valid = bool(section) and section in AUDIO_SECTIONS
+                has_file = bool(file_id)
+                has_basic_fields = bool(file_type)
+
+                if not (is_section_valid and has_file and has_basic_fields):
+                    invalid_message_ids.add(message_id)
+        except Exception as e:
+            logger.error("❌ خطأ أثناء فحص مكتبة الصوتيات في Firestore: %s", e)
+
+    for clip in LOCAL_AUDIO_LIBRARY:
+        local_scanned += 1
+        message_id = clip.get("message_id")
+        section = clip.get("section")
+        file_id = clip.get("file_id")
+        file_type = clip.get("file_type")
+
+        if not message_id:
+            continue
+
+        is_section_valid = bool(section) and section in AUDIO_SECTIONS
+        has_file = bool(file_id)
+        has_basic_fields = bool(file_type)
+
+        if not (is_section_valid and has_file and has_basic_fields):
+            invalid_message_ids.add(message_id)
+
+    deleted = 0
+    for message_id in invalid_message_ids:
+        delete_audio_clip_by_message_id(message_id)
+        deleted += 1
+
+    logger.info(
+        "🧹 تنظيف المكتبة الصوتية | scanned_firestore=%s | scanned_local=%s | deleted=%s",
+        firestore_scanned,
+        local_scanned,
+        deleted,
+    )
+
+    return {
+        "firestore_scanned": firestore_scanned,
+        "local_scanned": local_scanned,
+        "deleted": deleted,
+    }
 
 
 def _parse_audio_datetime(value):
@@ -8788,6 +8875,13 @@ def process_channel_audio_message(message, is_edit: bool = False):
             raw_hashtags,
             normalized_hashtags,
         )
+        if is_edit:
+            delete_audio_clip_by_message_id(message.message_id)
+            logger.info(
+                "🗑️ تمت إزالة المقطع بسبب تعديل بدون هاشتاق صالح | chat_id=%s | msg_id=%s",
+                message.chat.id,
+                message.message_id,
+            )
         return
 
     logger.info(
@@ -8822,7 +8916,9 @@ def process_channel_audio_message(message, is_edit: bool = False):
     save_audio_clip_record(record)
 
 
-def _audio_section_inline_keyboard(section_key: str, clips: List[Dict], page: int) -> InlineKeyboardMarkup:
+def _audio_section_inline_keyboard(
+    section_key: str, clips: List[Dict], page: int, show_delete: bool
+) -> InlineKeyboardMarkup:
     start = max(page, 0) * AUDIO_PAGE_SIZE
     end = start + AUDIO_PAGE_SIZE
     sliced = clips[start:end]
@@ -8830,14 +8926,22 @@ def _audio_section_inline_keyboard(section_key: str, clips: List[Dict], page: in
     rows: List[List[InlineKeyboardButton]] = []
     for clip in sliced:
         title = clip.get("title") or "مقطع صوتي"
-        rows.append(
-            [
+        row = [
+            InlineKeyboardButton(
+                f"🔹 {title}",
+                callback_data=f"audio_play:{section_key}:{clip.get('message_id')}",
+            )
+        ]
+
+        if show_delete:
+            row.append(
                 InlineKeyboardButton(
-                    f"🔹 {title}",
-                    callback_data=f"audio_play:{section_key}:{clip.get('message_id')}",
+                    "🗑️ حذف المقطع",
+                    callback_data=f"audio_delete:{section_key}:{clip.get('message_id')}",
                 )
-            ]
-        )
+            )
+
+        rows.append(row)
 
     nav_row: List[InlineKeyboardButton] = []
     if start > 0:
@@ -8877,6 +8981,7 @@ def _send_audio_section_page(
     from_callback: bool = False,
 ):
     user_id = update.effective_user.id
+    can_manage = is_admin(user_id) or is_supervisor(user_id)
     clips = fetch_audio_clips(section_key)
     total = len(clips)
     safe_page = max(min(page, (total - 1) // AUDIO_PAGE_SIZE if total else 0), 0)
@@ -8898,7 +9003,7 @@ def _send_audio_section_page(
     if total:
         header += "\n\n🎧 قائمة المقاطع المتاحة:"
 
-    keyboard = _audio_section_inline_keyboard(section_key, clips, safe_page)
+    keyboard = _audio_section_inline_keyboard(section_key, clips, safe_page, can_manage)
 
     if from_callback and update.callback_query:
         try:
@@ -8972,7 +9077,58 @@ def handle_audio_callback(update: Update, context: CallbackContext):
             query.message.reply_text("تعذر إرسال المقطع الآن. حاول مرة أخرى لاحقًا.")
         return
 
+    if data.startswith("audio_delete:"):
+        query.answer()
+        try:
+            _, section_key, clip_id = data.split(":", 2)
+        except ValueError:
+            return
+
+        if not (is_admin(user_id) or is_supervisor(user_id)):
+            query.answer("غير مصرح بحذف المقاطع.", show_alert=True)
+            return
+
+        state = AUDIO_USER_STATE.get(user_id, {})
+        clips = state.get("clips", []) if state.get("section") == section_key else []
+        if not clips:
+            clips = fetch_audio_clips(section_key)
+
+        clip = next((c for c in clips if str(c.get("message_id")) == clip_id), None)
+        if not clip:
+            query.answer("المقطع غير موجود.", show_alert=True)
+            return
+
+        message_id = clip.get("message_id")
+        delete_audio_clip_by_message_id(message_id)
+        _attempt_delete_storage_message(context.bot, clip)
+
+        AUDIO_USER_STATE[user_id] = {
+            "section": section_key,
+            "clips": [c for c in fetch_audio_clips(section_key)],
+            "page": 0,
+        }
+
+        _send_audio_section_page(update, context, section_key, 0, from_callback=True)
+        return
+
     query.answer()
+
+
+def handle_clean_audio_library_command(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not user or not is_admin(user.id):
+        update.message.reply_text("هذا الأمر مخصص للأدمن فقط.")
+        return
+
+    result = clean_audio_library_records()
+    update.message.reply_text(
+        (
+            "🧹 تم تنظيف المكتبة الصوتية.\n"
+            f"- السجلات المفحوصة (Firestore): {result['firestore_scanned']}\n"
+            f"- السجلات المفحوصة (محلي): {result['local_scanned']}\n"
+            f"- السجلات غير الصالحة المحذوفة: {result['deleted']}"
+        )
+    )
 
 
 def _ensure_storage_channel_admin(bot):
@@ -9047,7 +9203,8 @@ def start_bot():
         logger.info("جاري تسجيل المعالجات...")
         dispatcher.add_handler(CommandHandler("start", start_command))
         dispatcher.add_handler(CommandHandler("help", help_command))
-        
+        dispatcher.add_handler(CommandHandler("clean_audio_library", handle_clean_audio_library_command))
+
         dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
