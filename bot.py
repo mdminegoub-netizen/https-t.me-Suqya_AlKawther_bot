@@ -297,6 +297,7 @@ COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
 COMPETITION_POINTS_COLLECTION = "competition_points"
 COMMUNITY_MEDALS_COLLECTION = "community_medals"
 AUDIO_LIBRARY_COLLECTION = "audio_library"
+AUDIO_LIBRARY_FILE = "audio_library.json"
 
 
 # =================== نهاية Firebase ===================
@@ -1824,6 +1825,39 @@ WAITING_MOTIVATION_TIMES = set()
 # مكتبة الصوتيات
 LOCAL_AUDIO_LIBRARY: List[Dict] = []
 AUDIO_USER_STATE: Dict[int, Dict] = {}
+
+
+def _load_local_audio_library():
+    """تحميل المكتبة الصوتية من ملف محلي عند غياب Firestore."""
+
+    global LOCAL_AUDIO_LIBRARY
+
+    if not os.path.exists(AUDIO_LIBRARY_FILE):
+        LOCAL_AUDIO_LIBRARY = []
+        return
+
+    try:
+        with open(AUDIO_LIBRARY_FILE, "r", encoding="utf-8") as f:
+            LOCAL_AUDIO_LIBRARY = json.load(f) or []
+            if not isinstance(LOCAL_AUDIO_LIBRARY, list):
+                LOCAL_AUDIO_LIBRARY = []
+        logger.info(
+            "💾 تم تحميل %s مقطعًا من الملف المحلي للمكتبة الصوتية",
+            len(LOCAL_AUDIO_LIBRARY),
+        )
+    except Exception as e:
+        logger.error(f"❌ خطأ في قراءة المكتبة الصوتية المحلية: {e}")
+        LOCAL_AUDIO_LIBRARY = []
+
+
+def _persist_local_audio_library():
+    """حفظ نسخة محلية من المكتبة الصوتية لاستخدامها دون Firestore."""
+
+    try:
+        with open(AUDIO_LIBRARY_FILE, "w", encoding="utf-8") as f:
+            json.dump(LOCAL_AUDIO_LIBRARY, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المكتبة الصوتية محليًا: {e}")
 
 # نظام الحظر
 WAITING_BAN_USER = set()
@@ -8395,6 +8429,7 @@ def delete_audio_clip_by_message_id(message_id: int):
             logger.error(f"❌ خطأ في حذف المقطع الصوتي: {e}")
 
     LOCAL_AUDIO_LIBRARY = [clip for clip in LOCAL_AUDIO_LIBRARY if clip.get("message_id") != message_id]
+    _persist_local_audio_library()
 
 
 def _upsert_local_audio_clip(record: Dict):
@@ -8405,6 +8440,7 @@ def _upsert_local_audio_clip(record: Dict):
     message_id = record.get("message_id")
     LOCAL_AUDIO_LIBRARY = [c for c in LOCAL_AUDIO_LIBRARY if c.get("message_id") != message_id]
     LOCAL_AUDIO_LIBRARY.append(record)
+    _persist_local_audio_library()
 
 
 def _cleanup_audio_duplicates(record: Dict):
@@ -8837,6 +8873,9 @@ def start_bot():
         logger.info("🔄 جارٍ تحميل بيانات المستخدمين...")
         data = load_data()
         logger.info(f"✅ تم تحميل {len([k for k in data if k != GLOBAL_KEY])} مستخدم في الذاكرة")
+
+        # تحميل المكتبة الصوتية من التخزين المحلي عند الحاجة
+        _load_local_audio_library()
 
         # تمييز البيانات المحملة على أنها محدثة حديثًا لتجنب قراءات Firestore المكررة فور التشغيل
         preload_time = datetime.now(timezone.utc)
