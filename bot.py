@@ -27,8 +27,6 @@ from firebase_admin import credentials, firestore
 from telegram.ext import (
     Updater,
     MessageHandler,
-    ChannelPostHandler,
-    EditedChannelPostHandler,
     Filters,
     CallbackContext,
     CommandHandler,
@@ -9062,8 +9060,17 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
-        dispatcher.add_handler(ChannelPostHandler(handle_channel_post, channel_audio_filter))
-        dispatcher.add_handler(EditedChannelPostHandler(handle_edited_channel_post, channel_audio_filter))
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.update.channel_post & channel_audio_filter, handle_channel_post
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.update.edited_channel_post & channel_audio_filter,
+                handle_edited_channel_post,
+            )
+        )
         dispatcher.add_handler(
             MessageHandler(
                 Filters.status_update & Filters.chat_type.channel,
