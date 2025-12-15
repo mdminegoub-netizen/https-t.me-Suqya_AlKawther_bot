@@ -6,7 +6,7 @@ import re
 import random
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
-from typing import List, Dict
+from typing import Dict, List, Tuple
 
 import pytz
 from flask import Flask, request
@@ -8264,11 +8264,34 @@ def handle_confirm_reset_medals_input(update: Update, context: CallbackContext):
 
 # =================== مكتبة الصوتيات ===================
 
+ARABIC_LETTER_NORMALIZATION = str.maketrans({
+    "أ": "ا",
+    "إ": "ا",
+    "آ": "ا",
+    "ٱ": "ا",
+    "ى": "ي",
+    "ؤ": "و",
+    "ئ": "ي",
+    "ة": "ه",
+    "ـ": "",
+})
+
+
 def _normalize_hashtag(tag: str) -> str:
-    return (tag or "").strip().lower().rstrip(".,،؛؛")
+    """Normalize hashtags for robust matching across Arabic variants."""
+
+    if not tag:
+        return ""
+
+    text = tag.strip().lstrip("#")
+    text = text.rstrip(".,،؛؛")
+    text = text.translate(ARABIC_LETTER_NORMALIZATION)
+    text = text.replace("_", " ")
+    text = re.sub(r"\s+", "", text)
+    return text.lower()
 
 
-def extract_hashtags_from_message(message) -> List[str]:
+def extract_hashtags_from_message(message) -> Tuple[List[str], List[str]]:
     hashtags: List[str] = []
 
     caption_entities = getattr(message, "caption_entities", None) or []
@@ -8284,7 +8307,8 @@ def extract_hashtags_from_message(message) -> List[str]:
     text_based_hashtags = re.findall(r"#\S+", (message.caption or message.text or ""))
     hashtags.extend(text_based_hashtags)
 
-    return [_normalize_hashtag(tag) for tag in hashtags]
+    normalized = [_normalize_hashtag(tag) for tag in hashtags if _normalize_hashtag(tag)]
+    return normalized, hashtags
 
 
 def _match_audio_section(hashtags: List[str]) -> str:
@@ -8438,6 +8462,7 @@ def save_audio_clip_record(record: Dict):
 
 def fetch_audio_clips(section_key: str) -> List[Dict]:
     clips_by_message: Dict[str, Dict] = {}
+    firestore_count = 0
 
     if firestore_available():
         try:
@@ -8451,14 +8476,17 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
                 clip_data.setdefault("message_id", int(doc.id) if str(doc.id).isdigit() else doc.id)
                 key = str(clip_data.get("message_id") or doc.id)
                 clips_by_message[key] = clip_data
+                firestore_count += 1
         except Exception as e:
             logger.error(f"❌ خطأ في قراءة مكتبة الصوتيات: {e}")
 
+    local_count = 0
     for clip in [c for c in LOCAL_AUDIO_LIBRARY if c.get("section") == section_key]:
         key = str(clip.get("message_id"))
         current = clips_by_message.get(key)
         if not current or _is_newer_audio_record(clip, current):
             clips_by_message[key] = clip
+        local_count += 1
 
     clips = list(clips_by_message.values())
 
@@ -8468,6 +8496,14 @@ def fetch_audio_clips(section_key: str) -> List[Dict]:
             c.get("message_id") or 0,
         ),
         reverse=True,
+    )
+
+    logger.info(
+        "📊 جلب مكتبة الصوتيات | section=%s | firestore=%s | local=%s | total=%s",
+        section_key,
+        firestore_count,
+        local_count,
+        len(clips),
     )
     return clips
 
@@ -8569,11 +8605,28 @@ def handle_deleted_channel_post(update: Update, context: CallbackContext):
 
 
 def process_channel_audio_message(message, is_edit: bool = False):
-    if not message or not _is_audio_storage_channel(message):
+    if not message:
         return
 
-    hashtags = extract_hashtags_from_message(message)
-    section_key = _match_audio_section(hashtags)
+    if not _is_audio_storage_channel(message):
+        logger.debug(
+            "📭 تم تجاهل رسالة قناة خارج قناة التخزين | chat_id=%s | msg_id=%s",
+            getattr(getattr(message, "chat", None), "id", ""),
+            getattr(message, "message_id", ""),
+        )
+        return
+
+    logger.info(
+        "📥 رسالة قناة مستلمة | chat_id=%s | msg_id=%s | type=%s | has_caption=%s | is_auto_forward=%s",
+        message.chat.id,
+        message.message_id,
+        "audio" if message.audio else "voice" if message.voice else "document" if message.document else getattr(message, "content_type", "unknown"),
+        bool(message.caption),
+        getattr(message, "is_automatic_forward", False),
+    )
+
+    normalized_hashtags, raw_hashtags = extract_hashtags_from_message(message)
+    section_key = _match_audio_section(normalized_hashtags)
 
     file_id, file_type, file_unique_id = _extract_audio_file(message)
 
@@ -8583,7 +8636,7 @@ def process_channel_audio_message(message, is_edit: bool = False):
             "📥 تم إزالة المقطع لعدم وجود هاشتاق مطابق أو ملف صوتي | chat_id=%s | msg_id=%s | hashtags=%s",
             message.chat.id,
             message.message_id,
-            hashtags,
+            raw_hashtags,
         )
         return
 
@@ -8593,8 +8646,15 @@ def process_channel_audio_message(message, is_edit: bool = False):
         message.chat.id,
         message.message_id,
         file_type or "unknown",
-        hashtags,
+        raw_hashtags,
     )
+
+    if normalized_hashtags:
+        logger.debug(
+            "🏷️ تم اكتشاف الهاشتاقات بعد التطبيع | normalized=%s | raw=%s",
+            normalized_hashtags,
+            raw_hashtags,
+        )
 
     record = {
         "section": section_key,
@@ -8602,6 +8662,9 @@ def process_channel_audio_message(message, is_edit: bool = False):
         "file_id": file_id,
         "file_type": file_type,
         "file_unique_id": file_unique_id,
+        "hashtags": raw_hashtags,
+        "normalized_hashtags": normalized_hashtags,
+        "channel_id": message.chat.id,
         "message_id": message.message_id,
         "created_at": (message.date or datetime.now(timezone.utc)).isoformat(),
     }
@@ -8671,6 +8734,14 @@ def _send_audio_section_page(
         "clips": clips,
         "page": safe_page,
     }
+
+    logger.info(
+        "📂 عرض قسم الصوتيات | user_id=%s | section=%s | total=%s | page=%s",
+        user_id,
+        section_key,
+        total,
+        safe_page,
+    )
 
     header = f"{AUDIO_SECTIONS[section_key]['title']}\n\nعدد المقاطع المتوفرة: {total}"
     if total:
