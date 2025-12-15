@@ -8332,8 +8332,23 @@ def _extract_audio_file(message):
 
 
 def _is_audio_storage_channel(message) -> bool:
+    """تحقق مرن من قناة التخزين باستخدام المعرف الرقمي أو اسم المستخدم."""
+
     try:
-        return AUDIO_STORAGE_CHANNEL_ID and str(message.chat.id) == AUDIO_STORAGE_CHANNEL_ID
+        target = (AUDIO_STORAGE_CHANNEL_ID or "").lstrip("@")
+        if not target:
+            return False
+
+        chat = getattr(message, "chat", None)
+        if not chat:
+            return False
+
+        chat_id_match = str(chat.id) == target
+        username_match = (
+            getattr(chat, "username", None)
+            and chat.username.lstrip("@").lower() == target.lower()
+        )
+        return chat_id_match or username_match
     except Exception:
         return False
 
@@ -8555,9 +8570,6 @@ def handle_deleted_channel_post(update: Update, context: CallbackContext):
 
 def process_channel_audio_message(message, is_edit: bool = False):
     if not message or not _is_audio_storage_channel(message):
-        return
-
-    if getattr(message, "is_automatic_forward", False) or message.forward_from_chat:
         return
 
     hashtags = extract_hashtags_from_message(message)
