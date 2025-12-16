@@ -8926,22 +8926,26 @@ def _audio_section_inline_keyboard(
     rows: List[List[InlineKeyboardButton]] = []
     for clip in sliced:
         title = clip.get("title") or "مقطع صوتي"
-        row = [
-            InlineKeyboardButton(
-                f"🔹 {title}",
-                callback_data=f"audio_play:{section_key}:{clip.get('message_id')}",
-            )
-        ]
+        mid = clip.get("message_id")
+
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"🔹 {title}",
+                    callback_data=f"audio_play:{section_key}:{mid}",
+                )
+            ]
+        )
 
         if show_delete:
-            row.append(
-                InlineKeyboardButton(
-                    "🗑️",
-                    callback_data=f"audio_delete:{section_key}:{clip.get('message_id')}",
-                )
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "🗑️",
+                        callback_data=f"audio_delete:{section_key}:{mid}",
+                    )
+                ]
             )
-
-        rows.append(row)
 
     nav_row: List[InlineKeyboardButton] = []
     if start > 0:
