@@ -8936,7 +8936,7 @@ def _audio_section_inline_keyboard(
         if show_delete:
             row.append(
                 InlineKeyboardButton(
-                    "🗑️ حذف المقطع",
+                    "🗑️",
                     callback_data=f"audio_delete:{section_key}:{clip.get('message_id')}",
                 )
             )
