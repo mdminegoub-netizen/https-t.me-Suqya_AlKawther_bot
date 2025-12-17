@@ -7335,6 +7335,128 @@ def _support_header(user: User) -> str:
     )
 
 
+def _extract_target_id_from_support_message(msg) -> int | None:
+    src = ""
+    if msg.text:
+        src = msg.text
+    elif msg.caption:
+        src = msg.caption
+    else:
+        return None
+
+    m = re.search(r"ID:\s*`?(\d+)`?", src)
+    return int(m.group(1)) if m else None
+
+
+def handle_support_admin_reply_any(update: Update, context: CallbackContext):
+    user = update.effective_user
+    msg = update.message
+
+    if not user or not msg or not (is_admin(user.id) or is_supervisor(user.id)):
+        return
+
+    if not msg.reply_to_message:
+        return
+
+    target_id = _extract_target_id_from_support_message(msg.reply_to_message)
+    if not target_id:
+        return
+
+    reply_prefix = "💌 رد من الدعم"
+    if is_supervisor(user.id):
+        reply_prefix = "💌 رد من المشرفة"
+
+    try:
+        if msg.text:
+            context.bot.send_message(
+                chat_id=target_id,
+                text=f"{reply_prefix}:\n\n{msg.text}",
+            )
+        elif msg.photo:
+            context.bot.send_photo(
+                chat_id=target_id,
+                photo=msg.photo[-1].file_id,
+                caption=msg.caption or reply_prefix,
+            )
+        elif msg.video:
+            context.bot.send_video(
+                chat_id=target_id,
+                video=msg.video.file_id,
+                caption=msg.caption or reply_prefix,
+            )
+        elif msg.voice:
+            context.bot.send_voice(
+                chat_id=target_id,
+                voice=msg.voice.file_id,
+                caption=msg.caption or reply_prefix,
+            )
+        elif msg.audio:
+            context.bot.send_audio(
+                chat_id=target_id,
+                audio=msg.audio.file_id,
+                caption=msg.caption or reply_prefix,
+            )
+        else:
+            return
+    except Exception as e:
+        logger.error(f"Error sending support reply to {target_id}: {e}")
+        return
+
+    try:
+        ack_markup = (
+            admin_panel_keyboard_for(user.id)
+            if is_admin(user.id)
+            else user_main_keyboard(user.id)
+        )
+        msg.reply_text("تم إرسال ردّك للمستخدم.", reply_markup=ack_markup)
+    except Exception as e:
+        logger.error(f"Error sending ack for support reply: {e}")
+
+    if is_supervisor(user.id) and ADMIN_ID is not None:
+        target_record = get_user_record_by_id(target_id) or {}
+        if target_record.get("gender") == "female":
+            try:
+                if msg.text:
+                    context.bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=(
+                            "📨 نسخة من رد المشرفة:\n\n"
+                            f"إلى ID: {target_id}\n"
+                            f"نص الرد:\n{msg.text}"
+                        ),
+                    )
+                elif msg.photo:
+                    context.bot.send_photo(
+                        chat_id=ADMIN_ID,
+                        photo=msg.photo[-1].file_id,
+                        caption=msg.caption
+                        or f"نسخة من رد المشرفة إلى ID: {target_id}",
+                    )
+                elif msg.video:
+                    context.bot.send_video(
+                        chat_id=ADMIN_ID,
+                        video=msg.video.file_id,
+                        caption=msg.caption
+                        or f"نسخة من رد المشرفة إلى ID: {target_id}",
+                    )
+                elif msg.voice:
+                    context.bot.send_voice(
+                        chat_id=ADMIN_ID,
+                        voice=msg.voice.file_id,
+                        caption=msg.caption
+                        or f"نسخة من رد المشرفة إلى ID: {target_id}",
+                    )
+                elif msg.audio:
+                    context.bot.send_audio(
+                        chat_id=ADMIN_ID,
+                        audio=msg.audio.file_id,
+                        caption=msg.caption
+                        or f"نسخة من رد المشرفة إلى ID: {target_id}",
+                    )
+            except Exception as e:
+                logger.error(f"Error sending supervisor reply copy to admin: {e}")
+
+
 def handle_support_photo(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if user_id not in WAITING_SUPPORT:
@@ -7349,9 +7471,15 @@ def handle_support_photo(update: Update, context: CallbackContext):
     caption = update.message.caption or ""
     text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
 
-    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
-        if not admin_id:
-            continue
+    record = data.get(str(user_id), {})
+    gender = record.get("gender")
+
+    if gender == "female":
+        targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+    else:
+        targets = [ADMIN_ID] if ADMIN_ID else []
+
+    for admin_id in targets:
         try:
             context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
         except Exception as e:
@@ -7373,9 +7501,15 @@ def handle_support_audio(update: Update, context: CallbackContext):
     caption = update.message.caption or ""
     text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
 
-    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
-        if not admin_id:
-            continue
+    record = data.get(str(user_id), {})
+    gender = record.get("gender")
+
+    if gender == "female":
+        targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+    else:
+        targets = [ADMIN_ID] if ADMIN_ID else []
+
+    for admin_id in targets:
         try:
             if update.message.voice:
                 context.bot.send_voice(chat_id=admin_id, voice=audio.file_id, caption=text)
@@ -7400,7 +7534,15 @@ def handle_support_video(update: Update, context: CallbackContext):
     caption = update.message.caption or ""
     text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
 
-    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
+    record = data.get(str(user_id), {})
+    gender = record.get("gender")
+
+    if gender == "female":
+        targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+    else:
+        targets = [ADMIN_ID] if ADMIN_ID else []
+
+    for admin_id in targets:
         try:
             context.bot.send_video(
                 chat_id=admin_id,
@@ -7411,41 +7553,6 @@ def handle_support_video(update: Update, context: CallbackContext):
             logger.warning(f"Support video forward failed to {admin_id}: {e}")
 
     update.message.reply_text("✅ تم إرسال الفيديو للدعم بنجاح.")
-
-
-def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
-    user = update.effective_user
-    msg = update.message
-    text = (msg.text or "").strip()
-
-    if not is_admin(user.id):
-        return False
-
-    if not msg.reply_to_message:
-        return False
-
-    original = msg.reply_to_message.text or ""
-    m = re.search(r"ID:\s*`?(\d+)`?", original)
-    if not m:
-        return False
-
-    target_id = int(m.group(1))
-    try:
-        context.bot.send_message(
-            chat_id=target_id,
-            text=f"💌 رد من الدعم:\n\n{text}",
-        )
-        msg.reply_text(
-            "تم إرسال ردّك للمستخدم.",
-            reply_markup=admin_panel_keyboard_for(user.id),
-        )
-    except Exception as e:
-        logger.error(f"Error sending admin reply to {target_id}: {e}")
-        msg.reply_text(
-            "حدث خطأ أثناء إرسال الرد للمستخدم.",
-            reply_markup=admin_panel_keyboard_for(user.id),
-        )
-    return True
 
 # =================== دوال جديدة للميزات المطلوبة ===================
 
@@ -7791,46 +7898,6 @@ def handle_text(update: Update, context: CallbackContext):
                 reply_markup=GENDER_KB,
             )
             return
-
-    # رد المشرفة
-    if is_supervisor(user_id) and msg.reply_to_message:
-        original = msg.reply_to_message.text or ""
-        m = re.search(r"ID:\s*`?(\d+)`?", original)
-        if m:
-            target_id = int(m.group(1))
-            try:
-                context.bot.send_message(
-                    chat_id=target_id,
-                    text=f"💌 رد من المشرفة:\n\n{text}",
-                )
-                if ADMIN_ID is not None:
-                    try:
-                        context.bot.send_message(
-                            chat_id=ADMIN_ID,
-                            text=(
-                                "📨 نسخة من رد المشرفة:\n\n"
-                                f"إلى ID: {target_id}\n"
-                                f"نص الرد:\n{text}"
-                            ),
-                        )
-                    except Exception as e:
-                        logger.error(f"Error sending supervisor reply copy to admin: {e}")
-
-                msg.reply_text(
-                    "✅ تم إرسال ردّك للأخت.",
-                    reply_markup=main_kb,
-                )
-            except Exception as e:
-                logger.error(f"Error sending supervisor reply to user {target_id}: {e}")
-                msg.reply_text(
-                    "⚠️ حدث خطأ أثناء إرسال الرد.",
-                    reply_markup=main_kb,
-                )
-            return
-
-    # رد الأدمن
-    if try_handle_admin_reply(update, context):
-        return
 
     # رد المستخدم على ردود الدعم
     if (
@@ -9554,6 +9621,18 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
+        reply_support_filter = (
+            Filters.reply
+            & (
+                Filters.text
+                | Filters.photo
+                | Filters.video
+                | Filters.voice
+                | Filters.audio
+            )
+            & ~Filters.chat_type.channel
+        )
+
         support_photo_filter = Filters.photo & ~Filters.chat_type.channel
         support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
         support_video_filter = Filters.video & ~Filters.chat_type.channel
@@ -9573,6 +9652,13 @@ def start_bot():
             MessageHandler(
                 Filters.status_update & Filters.chat_type.channel,
                 handle_deleted_channel_post,
+            )
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                reply_support_filter,
+                handle_support_admin_reply_any,
             )
         )
 
