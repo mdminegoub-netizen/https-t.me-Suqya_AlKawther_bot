@@ -1983,6 +1983,7 @@ BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
 BTN_ADHKAR_NEXT = "➡️ التالي"
 BTN_ADHKAR_PREV = "⬅️ السابق"
+BTN_ADHKAR_DONE = "✅ إنهاء الأذكار"
 BTN_ADHKAR_BACK_MENU = "🔙 الرجوع إلى قائمة الأذكار"
 BTN_ADHKAR_BACK_MAIN = "🔝 الرجوع إلى القائمة الرئيسية"
 
@@ -2319,6 +2320,8 @@ def build_structured_adhkar_kb(has_prev: bool, has_next: bool) -> ReplyKeyboardM
         nav_row.append(KeyboardButton(BTN_ADHKAR_PREV))
     if has_next:
         nav_row.append(KeyboardButton(BTN_ADHKAR_NEXT))
+    else:
+        nav_row.append(KeyboardButton(BTN_ADHKAR_DONE))
 
     if nav_row:
         rows.append(nav_row)
@@ -4526,6 +4529,31 @@ def handle_structured_adhkar_next(update: Update, context: CallbackContext):
     send_structured_adhkar_step(update, user_id, category, index + 1)
 
 
+def handle_structured_adhkar_done(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    state = STRUCTURED_ADHKAR_STATE.get(user_id)
+    if not state:
+        open_adhkar_menu(update, context)
+        return
+
+    category = state["category"]
+    done_msg = STRUCTURED_ADHKAR_DONE_MESSAGES.get(
+        category, "✅ بارك الله فيك وتقبّل الله ذكرك. 🤍"
+    )
+
+    STRUCTURED_ADHKAR_STATE.pop(user_id, None)
+    update.message.reply_text(
+        done_msg,
+        reply_markup=adhkar_menu_keyboard(user_id),
+    )
+
+
 def handle_structured_adhkar_prev(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
@@ -4606,7 +4634,10 @@ def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
     if current_index >= len(SLEEP_ADHKAR_ITEMS) - 1:
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         update.message.reply_text(
-            "اكتملت أذكار النوم. تصبح على خير ✨",
+            "🌙 تمّت أذكارك قبل النوم،\n"
+            "نسأل الله أن يحفظك بعينه التي لا تنام،\n"
+            "ويجعل ليلك سكينة، ونومك راحة، وأحلامك طمأنينة،\n"
+            "ويكتب لك أجر الذاكرين الله كثيرًا والذاكرات.",
             reply_markup=adhkar_menu_keyboard(user_id),
         )
         return
@@ -8048,6 +8079,9 @@ def handle_text(update: Update, context: CallbackContext):
     # قوائم الأذكار
     if text == BTN_ADHKAR_NEXT:
         handle_structured_adhkar_next(update, context)
+        return
+    if text == BTN_ADHKAR_DONE:
+        handle_structured_adhkar_done(update, context)
         return
     if text == BTN_ADHKAR_PREV:
         handle_structured_adhkar_prev(update, context)
