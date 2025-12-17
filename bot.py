@@ -1589,6 +1589,8 @@ WAITING_GENDER = set()
 WAITING_AGE = set()
 WAITING_WEIGHT = set()
 
+WAITING_WATER_ADD_CUPS = set()
+
 WAITING_QURAN_GOAL = set()
 WAITING_QURAN_ADD_PAGES = set()
 
@@ -3052,6 +3054,7 @@ def start_command(update: Update, context: CallbackContext):
     WAITING_SUPPORT_GENDER.discard(user_id)
     WAITING_SUPPORT.discard(user_id)
     WAITING_BROADCAST.discard(user_id)
+    WAITING_WATER_ADD_CUPS.discard(user_id)
     WAITING_BENEFIT_TEXT.discard(user_id)
     WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
     WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
@@ -3930,6 +3933,7 @@ def handle_log_cup(update: Update, context: CallbackContext):
 
 def handle_add_cups(update: Update, context: CallbackContext):
     user = update.effective_user
+    user_id = user.id
     record = get_user_record(user)
     
     # التحقق إذا كان المستخدم محظورًا
@@ -3940,6 +3944,7 @@ def handle_add_cups(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
 
     if not record.get("cups_goal"):
+        WAITING_WATER_ADD_CUPS.discard(user_id)
         update.message.reply_text(
             "قبل استخدام هذه الميزة، احسب احتياجك من الماء أولًا من خلال:\n"
             "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
@@ -3948,6 +3953,7 @@ def handle_add_cups(update: Update, context: CallbackContext):
         return
 
     if text == BTN_WATER_ADD_CUPS:
+        WAITING_WATER_ADD_CUPS.add(user_id)
         update.message.reply_text(
             "أرسل الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
             "وسيتم إضافتها مباشرة إلى عدّاد اليوم.",
@@ -3981,6 +3987,8 @@ def handle_add_cups(update: Update, context: CallbackContext):
         add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
 
     check_daily_full_activity(user.id, record, context)
+
+    WAITING_WATER_ADD_CUPS.discard(user_id)
 
     status_text = format_water_status_text(record)
     update.message.reply_text(
@@ -7222,8 +7230,11 @@ def handle_text(update: Update, context: CallbackContext):
         
         # منع أي استخدام آخر للبوت
         return
-    
+
     main_kb = user_main_keyboard(user_id)
+
+    if user_id in WAITING_WATER_ADD_CUPS and not text.isdigit() and text != BTN_WATER_ADD_CUPS:
+        WAITING_WATER_ADD_CUPS.discard(user_id)
 
     # إجابات الاختبارات الخاصة بالدورات
     if user_id in WAITING_QUIZ_ANSWER:
@@ -7573,6 +7584,7 @@ def handle_text(update: Update, context: CallbackContext):
         BAN_TARGET_ID.pop(user_id, None)
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
+        WAITING_WATER_ADD_CUPS.discard(user_id)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
         if user_id in WAITING_BENEFIT_EDIT_TEXT:
@@ -7902,7 +7914,7 @@ def handle_text(update: Update, context: CallbackContext):
         open_water_menu(update, context)
         return
 
-    if text.isdigit():
+    if text.isdigit() and user_id in WAITING_WATER_ADD_CUPS:
         handle_add_cups(update, context)
         return
 
