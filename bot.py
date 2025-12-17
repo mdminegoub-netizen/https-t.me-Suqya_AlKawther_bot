@@ -9758,7 +9758,21 @@ def _clear_attendance_confirmation(context: CallbackContext, chat_id: int):
         context.user_data.pop("attendance_confirmation_msg_id", None)
 
 
+def _clear_lesson_audio(context: CallbackContext, chat_id: int):
+    msg_id = context.user_data.get("lesson_audio_msg_id")
+    if not msg_id:
+        return
+
+    try:
+        context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+    except Exception:
+        pass
+    finally:
+        context.user_data.pop("lesson_audio_msg_id", None)
+
+
 def user_lessons_list(query: Update.callback_query, context: CallbackContext, course_id: str):
+    _clear_lesson_audio(context, query.message.chat_id)
     _clear_attendance_confirmation(context, query.message.chat_id)
     try:
         lessons_ref = db.collection(COURSE_LESSONS_COLLECTION)
@@ -9843,11 +9857,12 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             return
 
         try:
-            context.bot.send_audio(
+            audio_message = context.bot.send_audio(
                 chat_id=query.message.chat_id,
                 audio=file_id,
                 caption=title,
             )
+            context.user_data["lesson_audio_msg_id"] = audio_message.message_id
             safe_edit_message_text(
                 query,
                 f"📖 {title}\nتم إرسال المقطع الصوتي أعلاه.",
@@ -9990,6 +10005,7 @@ def register_lesson_attendance(
 
 
 def user_quizzes_list(query: Update.callback_query, context: CallbackContext, course_id: str):
+    _clear_lesson_audio(context, query.message.chat_id)
     _clear_attendance_confirmation(context, query.message.chat_id)
     try:
         quizzes_ref = db.collection(COURSE_QUIZZES_COLLECTION)
@@ -10826,6 +10842,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
 
         elif data.startswith("COURSES:back_course_"):
             course_id = data.replace("COURSES:back_course_", "")
+            _clear_lesson_audio(context, query.message.chat_id)
             _clear_attendance_confirmation(context, query.message.chat_id)
             show_course_details(query, context, user_id, course_id)
         elif data.startswith("COURSES:subscribe_"):
