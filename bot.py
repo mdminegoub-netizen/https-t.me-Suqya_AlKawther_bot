@@ -7457,9 +7457,23 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
                 logger.error(f"Error sending supervisor reply copy to admin: {e}")
 
 
+def _is_reply_to_support_message(msg, bot_id: int) -> bool:
+    if not msg or not msg.reply_to_message:
+        return False
+    if msg.reply_to_message.from_user.id != bot_id:
+        return False
+    src = (msg.reply_to_message.text or msg.reply_to_message.caption or "").strip()
+    return (
+        src.startswith("💌 رد من الدعم")
+        or src.startswith("📢 رسالة من الدعم")
+        or src.startswith("💌 رد من المشرفة")
+        or "رسالتك وصلت للدعم" in src
+    )
+
+
 def handle_support_photo(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT:
+    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7490,7 +7504,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
 def handle_support_audio(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT:
+    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7523,7 +7537,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
 
 def handle_support_video(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT:
+    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7631,7 +7645,7 @@ def handle_text(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         # السماح فقط بالرد على رسائل الدعم إذا كان محظوراً
         if msg.reply_to_message and msg.reply_to_message.from_user.id == context.bot.id:
-            original = msg.reply_to_message.text or ""
+            original = (msg.reply_to_message.text or msg.reply_to_message.caption or "").strip()
             if "لقد تم حظرك" in original or "رد من الدعم" in original or "رد من المشرفة" in original:
                 forward_support_to_admin(user, text, context)
                 msg.reply_text(
@@ -7906,7 +7920,7 @@ def handle_text(update: Update, context: CallbackContext):
         and msg.reply_to_message
         and msg.reply_to_message.from_user.id == context.bot.id
     ):
-        original = msg.reply_to_message.text or ""
+        original = (msg.reply_to_message.text or msg.reply_to_message.caption or "").strip()
         if (
             original.startswith("💌 رد من الدعم")
             or original.startswith("📢 رسالة من الدعم")
