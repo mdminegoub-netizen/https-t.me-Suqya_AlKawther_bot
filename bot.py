@@ -7321,6 +7321,98 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
             logger.error(f"Error sending support message to supervisor: {e}")
 
 
+def _support_header(user: User) -> str:
+    record = data.get(str(user.id), {})
+    gender = record.get("gender")
+    gender_label = "ذكر" if gender == "male" else "أنثى" if gender == "female" else "غير محدد"
+
+    return (
+        "📩 رسالة جديدة للدعم:\n\n"
+        f"الاسم: {user.full_name}\n"
+        f"اسم المستخدم: @{user.username if user.username else 'لا يوجد'}\n"
+        f"ID: {user.id}\n"
+        f"الجنس: {gender_label}"
+    )
+
+
+def handle_support_photo(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_SUPPORT:
+        return  # لا تمس أي مسار آخر
+
+    user = update.effective_user
+    photos = update.message.photo or []
+    if not photos:
+        return
+
+    best_photo = photos[-1]
+    caption = update.message.caption or ""
+    text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
+
+    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
+        if not admin_id:
+            continue
+        try:
+            context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
+        except Exception as e:
+            logger.warning(f"Support photo forward failed to {admin_id}: {e}")
+
+    update.message.reply_text("✅ تم إرسال الصورة للدعم بنجاح.")
+
+
+def handle_support_audio(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_SUPPORT:
+        return  # لا تمس أي مسار آخر
+
+    user = update.effective_user
+    audio = update.message.audio or update.message.voice
+    if not audio:
+        return
+
+    caption = update.message.caption or ""
+    text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
+
+    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
+        if not admin_id:
+            continue
+        try:
+            if update.message.voice:
+                context.bot.send_voice(chat_id=admin_id, voice=audio.file_id, caption=text)
+            else:
+                context.bot.send_audio(chat_id=admin_id, audio=audio.file_id, caption=text)
+        except Exception as e:
+            logger.warning(f"Support audio forward failed to {admin_id}: {e}")
+
+    update.message.reply_text("✅ تم إرسال المقطع الصوتي للدعم بنجاح.")
+
+
+def handle_support_video(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_SUPPORT:
+        return  # لا تمس أي مسار آخر
+
+    user = update.effective_user
+    video = update.message.video
+    if not video:
+        return
+
+    caption = update.message.caption or ""
+    text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
+
+    for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
+        try:
+            context.bot.send_video(
+                chat_id=admin_id,
+                video=video.file_id,
+                caption=text
+            )
+        except Exception as e:
+            logger.warning(f"Support video forward failed to {admin_id}: {e}")
+
+    update.message.reply_text("✅ تم إرسال الفيديو للدعم بنجاح.")
+
+
 def try_handle_admin_reply(update: Update, context: CallbackContext) -> bool:
     user = update.effective_user
     msg = update.message
@@ -9462,6 +9554,10 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
+        support_photo_filter = Filters.photo & ~Filters.chat_type.channel
+        support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
+        support_video_filter = Filters.video & ~Filters.chat_type.channel
+
         dispatcher.add_handler(
             MessageHandler(
                 Filters.update.channel_post & channel_audio_filter, handle_channel_post
@@ -9477,6 +9573,25 @@ def start_bot():
             MessageHandler(
                 Filters.status_update & Filters.chat_type.channel,
                 handle_deleted_channel_post,
+            )
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                support_photo_filter,
+                handle_support_photo,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_audio_filter,
+                handle_support_audio,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_filter,
+                handle_support_video,
             )
         )
 
