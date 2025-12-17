@@ -9323,6 +9323,7 @@ COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
 
 COURSE_NAME_MIN_LENGTH = 3
 COURSE_NAME_MAX_LENGTH = 60
+COURSE_LEADERBOARD_PAGE_SIZE = 10
 
 # =================== لوحات المفاتيح للدورات ===================
 
@@ -10476,7 +10477,14 @@ def admin_statistics_course(query: Update.callback_query, course_id: str):
             )
             return
 
-        keyboard = []
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "🏆 ترتيب الدورة",
+                    callback_data=f"COURSES:leaderboard_{course_id}_1",
+                )
+            ]
+        ]
         for sub in subs:
             data = sub.to_dict()
             user_name = data.get("full_name") or data.get("username") or str(data.get("user_id"))
@@ -10530,6 +10538,94 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
     except Exception as e:
         logger.error(f"خطأ في إحصائيات المستخدم: {e}")
         safe_edit_message_text(query, "❌ حدث خطأ في جلب بيانات المستخدم.", reply_markup=COURSES_ADMIN_MENU_KB)
+
+
+def admin_course_leaderboard(query: Update.callback_query, course_id: str, page: int = 1):
+    """عرض ترتيب المشاركين في دورة معينة مع دعم الصفحات."""
+
+    try:
+        course = _course_document(course_id)
+        if not course:
+            safe_edit_message_text(query, "❌ الدورة غير موجودة.", reply_markup=COURSES_ADMIN_MENU_KB)
+            return
+
+        subs = [
+            doc.to_dict()
+            for doc in db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+            .where("course_id", "==", course_id)
+            .stream()
+        ]
+
+        if not subs:
+            safe_edit_message_text(
+                query,
+                "لا يوجد مشاركون في هذه الدورة.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:statistics")],
+                        [InlineKeyboardButton("⬅️ لوحة الإدارة", callback_data="COURSES:admin_back")],
+                    ]
+                ),
+            )
+            return
+
+        sorted_subs = sorted(
+            subs,
+            key=lambda item: (
+                -(item.get("points", 0) or 0),
+                item.get("user_id", 0),
+            ),
+        )
+
+        total_entries = len(sorted_subs)
+        total_pages = (total_entries + COURSE_LEADERBOARD_PAGE_SIZE - 1) // COURSE_LEADERBOARD_PAGE_SIZE
+        current_page = max(1, min(page, total_pages))
+        start_index = (current_page - 1) * COURSE_LEADERBOARD_PAGE_SIZE
+        end_index = start_index + COURSE_LEADERBOARD_PAGE_SIZE
+        page_items = sorted_subs[start_index:end_index]
+
+        lines = [f"🏆 ترتيب دورة {course.get('name', 'دورة')}", ""]
+        for rank, item in enumerate(page_items, start=start_index + 1):
+            name = item.get("full_name") or item.get("username") or str(item.get("user_id"))
+            points = item.get("points", 0)
+            lines.append(f"{rank}. {name} — {points} نقطة")
+
+        lines.append("")
+        lines.append(f"صفحة {current_page}/{total_pages}")
+
+        nav_buttons = []
+        if current_page > 1:
+            nav_buttons.append(
+                InlineKeyboardButton(
+                    "⬅️ السابق",
+                    callback_data=f"COURSES:leaderboard_{course_id}_{current_page - 1}",
+                )
+            )
+        if current_page < total_pages:
+            nav_buttons.append(
+                InlineKeyboardButton(
+                    "➡️ التالي",
+                    callback_data=f"COURSES:leaderboard_{course_id}_{current_page + 1}",
+                )
+            )
+
+        keyboard = []
+        if nav_buttons:
+            keyboard.append(nav_buttons)
+
+        keyboard.append(
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:stats_course_{course_id}")]
+        )
+        keyboard.append([InlineKeyboardButton("⬅️ لوحة الإدارة", callback_data="COURSES:admin_back")])
+
+        safe_edit_message_text(
+            query,
+            "\n".join(lines),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في ترتيب الدورة: {e}")
+        safe_edit_message_text(query, "❌ حدث خطأ في جلب الترتيب.", reply_markup=COURSES_ADMIN_MENU_KB)
 
 
 def admin_delete_course(query: Update.callback_query, context: CallbackContext):
@@ -10641,6 +10737,18 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             if "_" in payload:
                 course_id, target_user = payload.rsplit("_", 1)
                 admin_statistics_user(query, course_id, target_user)
+        elif data.startswith("COURSES:leaderboard_"):
+            payload = data.replace("COURSES:leaderboard_", "")
+            if "_" in payload:
+                course_id, page_str = payload.rsplit("_", 1)
+                try:
+                    page = int(page_str)
+                except ValueError:
+                    page = 1
+            else:
+                course_id = payload
+                page = 1
+            admin_course_leaderboard(query, course_id, page)
         elif data == "COURSES:archive_manage":
             admin_archive_manage(query, context)
         elif data == "COURSES:delete":
@@ -10761,6 +10869,23 @@ def handle_courses_callback(update: Update, context: CallbackContext):
 
         elif data.startswith("COURSES:confirm_delete_"):
             course_id = data.replace("COURSES:confirm_delete_", "")
+            try:
+                subs = (
+                    db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+                    .where("course_id", "==", course_id)
+                    .stream()
+                )
+                batch = db.batch()
+                count = 0
+                for sub in subs:
+                    batch.delete(sub.reference)
+                    count += 1
+                    if count % 400 == 0:
+                        batch.commit()
+                        batch = db.batch()
+                batch.commit()
+            except Exception as e:
+                logger.error(f"خطأ في حذف اشتراكات الدورة: {e}")
             db.collection(COURSES_COLLECTION).document(course_id).delete()
             safe_edit_message_text(query, "✅ تم حذف الدورة بنجاح", reply_markup=COURSES_ADMIN_MENU_KB)
 
