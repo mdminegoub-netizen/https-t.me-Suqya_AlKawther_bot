@@ -2312,16 +2312,14 @@ ADHKAR_MENU_KB_ADMIN = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-def build_structured_adhkar_kb(has_prev: bool, has_next: bool) -> ReplyKeyboardMarkup:
+def build_structured_adhkar_kb(has_prev: bool, show_next: bool) -> ReplyKeyboardMarkup:
     rows = []
     nav_row = []
 
     if has_prev:
         nav_row.append(KeyboardButton(BTN_ADHKAR_PREV))
-    if has_next:
+    if show_next:
         nav_row.append(KeyboardButton(BTN_ADHKAR_NEXT))
-    else:
-        nav_row.append(KeyboardButton(BTN_ADHKAR_DONE))
 
     if nav_row:
         rows.append(nav_row)
@@ -4466,7 +4464,7 @@ def send_structured_adhkar_step(update: Update, user_id: int, category_key: str,
 
     index = max(0, min(index, len(items) - 1))
     STRUCTURED_ADHKAR_STATE[user_id] = {"category": category_key, "index": index}
-    kb = build_structured_adhkar_kb(index > 0, index < len(items) - 1)
+    kb = build_structured_adhkar_kb(index > 0, bool(items))
     update.message.reply_text(
         format_structured_adhkar_text(category_key, index),
         reply_markup=kb,
@@ -4634,10 +4632,10 @@ def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
     if current_index >= len(SLEEP_ADHKAR_ITEMS) - 1:
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         update.message.reply_text(
-            "🌙 تمّت أذكارك قبل النوم،\n"
+            "🤍 تمّت أذكارك قبل النوم،\n"
             "نسأل الله أن يحفظك بعينه التي لا تنام،\n"
-            "ويجعل ليلك سكينة، ونومك راحة، وأحلامك طمأنينة،\n"
-            "ويكتب لك أجر الذاكرين الله كثيرًا والذاكرات.",
+            "وأن يجعل ليلك سكينة، ونومك راحة، وأحلامك طمأنينة،\n"
+            "ويكتب لك أجر الذاكرين، ويغمر قلبك بالطمأنينة والبركة. 🌙",
             reply_markup=adhkar_menu_keyboard(user_id),
         )
         return
