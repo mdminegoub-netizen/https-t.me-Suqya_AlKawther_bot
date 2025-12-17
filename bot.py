@@ -9947,6 +9947,10 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
         )
         confirmation_text = "✅ تم تسجيل حضورك بنجاح."
         query.answer(confirmation_text, show_alert=True)
+        try:
+            query.message.reply_text("✅ تم تسجيل حضورك بنجاح.")
+        except Exception:
+            pass
     except Exception as e:
         logger.error("❌ ATTEND_UPDATE_FAIL", exc_info=True)
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
