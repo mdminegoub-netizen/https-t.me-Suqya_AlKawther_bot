@@ -9875,6 +9875,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
 
 
 def register_lesson_attendance(query: Update.callback_query, user_id: int, lesson_id: str):
+    lesson_id = str(lesson_id)
     if not firestore_available():
         safe_edit_message_text(
             query,
@@ -9890,9 +9891,19 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
 
     lesson = lesson_doc.to_dict()
     course_id = lesson.get("course_id")
+    logger.info(
+        "🟢 ATTEND_START | user_id=%s | course_id=%s | lesson_id=%s",
+        user_id,
+        course_id,
+        lesson_id,
+    )
     sub_id = _subscription_document_id(user_id, course_id)
     sub_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).document(sub_id)
+    logger.info("📄 SUB_DOC_REF | path=%s", sub_ref.path)
     sub_doc = sub_ref.get()
+    logger.info("📄 SUB_DOC_EXISTS=%s", sub_doc.exists)
+    if sub_doc.exists:
+        logger.info("📄 SUB_DATA_KEYS=%s", list((sub_doc.to_dict() or {}).keys()))
 
     if not sub_doc.exists:
         safe_edit_message_text(
@@ -9912,6 +9923,7 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
         current_points = int(subscription.get("points", 0))
         new_points = current_points + 1
 
+        logger.info("✏️ ATTEND_UPDATE_TRY | lesson_id=%s", lesson_id)
         sub_ref.update(
             {
                 "lessons_attended": firestore.ArrayUnion([lesson_id]),
@@ -9919,10 +9931,16 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
+        fresh = sub_ref.get().to_dict() or {}
+        logger.info(
+            "✅ ATTEND_UPDATE_OK | points=%s | lessons_attended_len=%s",
+            fresh.get("points"),
+            len(fresh.get("lessons_attended") or []),
+        )
         confirmation_text = "✅ تم تسجيل حضورك بنجاح."
         query.answer(confirmation_text, show_alert=True)
     except Exception as e:
-        logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
+        logger.error("❌ ATTEND_UPDATE_FAIL", exc_info=True)
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
 
 
@@ -10779,6 +10797,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             user_view_lesson(query, context, lesson_id, user_id)
         elif data.startswith("COURSES:attend_"):
             lesson_id = data.replace("COURSES:attend_", "")
+            logger.info("✅ ATTEND_CALLBACK_HIT | data=%s | user_id=%s", data, user_id)
             register_lesson_attendance(query, user_id, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
