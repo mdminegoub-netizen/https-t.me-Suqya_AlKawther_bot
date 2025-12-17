@@ -9919,7 +9919,7 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
-        confirmation_text = "تم تسجيل حضورك\nتم إضافة 1 نقطة الى رصيد نقاطك"
+        confirmation_text = "✅ تم تسجيل حضورك بنجاح."
         query.answer(confirmation_text, show_alert=True)
     except Exception as e:
         logger.error(f"خطأ في تسجيل حضور الدرس: {e}")
