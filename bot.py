@@ -9925,6 +9925,10 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
     if lesson_id in attended_lessons:
         logger.info("🟡 ATTEND_ALREADY | user_id=%s | lesson_id=%s", user_id, lesson_id)
         query.answer("✅ تم تسجيل حضورك مسبقًا.", show_alert=True)
+        try:
+            query.message.reply_text("✅ تم تسجيل حضورك من قبل.")
+        except Exception:
+            pass
         return
 
     try:
