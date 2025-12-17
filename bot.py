@@ -9739,7 +9739,21 @@ def subscribe_to_course(query: Update.callback_query, context: CallbackContext, 
         )
 
 
-def user_lessons_list(query: Update.callback_query, course_id: str):
+def _clear_attendance_confirmation(context: CallbackContext, chat_id: int):
+    msg_id = context.user_data.get("attendance_confirmation_msg_id")
+    if not msg_id:
+        return
+
+    try:
+        context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+    except Exception as e:
+        logger.debug(f"تعذر حذف رسالة تأكيد الحضور: {e}")
+    finally:
+        context.user_data.pop("attendance_confirmation_msg_id", None)
+
+
+def user_lessons_list(query: Update.callback_query, context: CallbackContext, course_id: str):
+    _clear_attendance_confirmation(context, query.message.chat_id)
     try:
         lessons_ref = db.collection(COURSE_LESSONS_COLLECTION)
         lessons = list(lessons_ref.where("course_id", "==", course_id).stream())
@@ -9874,7 +9888,9 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
     )
 
 
-def register_lesson_attendance(query: Update.callback_query, user_id: int, lesson_id: str):
+def register_lesson_attendance(
+    query: Update.callback_query, context: CallbackContext, user_id: int, lesson_id: str
+):
     lesson_id = str(lesson_id)
     if not firestore_available():
         safe_edit_message_text(
@@ -9952,7 +9968,10 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
         confirmation_text = "✅ تم تسجيل حضورك بنجاح."
         query.answer(confirmation_text, show_alert=True)
         try:
-            query.message.reply_text("✅ تم تسجيل حضورك بنجاح.")
+            confirmation_message = query.message.reply_text("✅ تم تسجيل حضورك بنجاح.")
+            context.user_data["attendance_confirmation_msg_id"] = (
+                confirmation_message.message_id
+            )
         except Exception:
             pass
     except Exception as e:
@@ -9960,7 +9979,8 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
 
 
-def user_quizzes_list(query: Update.callback_query, course_id: str):
+def user_quizzes_list(query: Update.callback_query, context: CallbackContext, course_id: str):
+    _clear_attendance_confirmation(context, query.message.chat_id)
     try:
         quizzes_ref = db.collection(COURSE_QUIZZES_COLLECTION)
         quizzes = list(quizzes_ref.where("course_id", "==", course_id).stream())
@@ -10801,10 +10821,10 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             subscribe_to_course(query, context, course_id)
         elif data.startswith("COURSES:user_lessons_"):
             course_id = data.replace("COURSES:user_lessons_", "")
-            user_lessons_list(query, course_id)
+            user_lessons_list(query, context, course_id)
         elif data.startswith("COURSES:user_quizzes_"):
             course_id = data.replace("COURSES:user_quizzes_", "")
-            user_quizzes_list(query, course_id)
+            user_quizzes_list(query, context, course_id)
         elif data.startswith("COURSES:user_points_"):
             course_id = data.replace("COURSES:user_points_", "")
             user_points(query, user_id, course_id)
@@ -10814,7 +10834,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:attend_"):
             lesson_id = data.replace("COURSES:attend_", "")
             logger.info("✅ ATTEND_CALLBACK_HIT | data=%s | user_id=%s", data, user_id)
-            register_lesson_attendance(query, user_id, lesson_id)
+            register_lesson_attendance(query, context, user_id, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
             show_course_details(query, user_id, course_id)
