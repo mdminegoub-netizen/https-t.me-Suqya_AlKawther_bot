@@ -1359,6 +1359,12 @@ STRUCTURED_ADHKAR_SECTIONS = {
     "general": {"title": "أذكار عامة 💭", "items": GENERAL_ADHKAR_ITEMS},
 }
 
+STRUCTURED_ADHKAR_DONE_MESSAGES = {
+    "morning": "🌿 بارك الله فيك… جعل الله صباحك نورًا وطمأنينة، وكتب لك حفظًا ورزقًا وتوفيقًا. 🤍",
+    "evening": "🌙 أحسن الله مساءك… جعل الله ليلك سكينة، وغفر ذنبك، وحفظك من كل سوء. 🤲",
+    "general": "✨ طيب الله قلبك… وشرح صدرك، وملأ حياتك ذكرًا وبركة، ورزقك الثبات. 🌿",
+}
+
 SLEEP_ADHKAR_ITEMS = [
     {
         "title": "آية الكرسي",
@@ -4509,9 +4515,10 @@ def handle_structured_adhkar_next(update: Update, context: CallbackContext):
     items = STRUCTURED_ADHKAR_SECTIONS.get(category, {}).get("items", [])
 
     if index >= len(items) - 1:
+        done_msg = STRUCTURED_ADHKAR_DONE_MESSAGES.get(category, "✅ بارك الله فيك وتقبّل الله ذكرك. 🤍")
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         update.message.reply_text(
-            "اكتملت الأذكار. عدنا إلى قائمة الأذكار.",
+            done_msg,
             reply_markup=adhkar_menu_keyboard(user_id),
         )
         return
@@ -4574,6 +4581,7 @@ def start_sleep_adhkar(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
 
+    increment_adhkar_count(user.id, 1)
     SLEEP_ADHKAR_STATE[user.id] = 0
     update.message.reply_text(
         format_sleep_adhkar_text(0),
@@ -4594,7 +4602,6 @@ def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
         return
 
     current_index = SLEEP_ADHKAR_STATE[user_id]
-    increment_adhkar_count(user_id, 1)
 
     if current_index >= len(SLEEP_ADHKAR_ITEMS) - 1:
         SLEEP_ADHKAR_STATE.pop(user_id, None)
