@@ -1249,43 +1249,115 @@ MOTIVATION_MESSAGES = _global_cfg["motivation_messages"]
 
 # =================== نصوص الأذكار ===================
 
-ADHKAR_MORNING_TEXT = (
-    "أذكار الصباح (من بعد الفجر حتى ارتفاع الشمس) 🌅:\n\n"
-    "1⃣ آية الكرسي: «اللّه لا إله إلا هو الحيّ القيّوم...» مرة واحدة.\n"
-    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أصبحت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم» سبع مرات.\n"
-    "7⃣ «اللهم صل وسلم على سيدنا محمد» عددًا كثيرًا.\n\n"
-    "للتسبيح بعدد معيّن (مثل 33 أو 100) يمكنك استخدام زر «السبحة 📿»."
-)
+MORNING_ADHKAR_ITEMS = [
+    {
+        "title": "آية الكرسي",
+        "text": "«اللّه لا إله إلا هو الحيّ القيّوم...»",
+        "repeat": "مرة واحدة بعد الفجر حتى ارتفاع الشمس.",
+    },
+    {
+        "title": "المعوّذات",
+        "text": "قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس.",
+        "repeat": "تُقرأ ثلاث مرات.",
+    },
+    {
+        "title": "دعاء الصباح",
+        "text": "«أصبحنا وأصبح الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».",
+        "repeat": "مرة واحدة.",
+    },
+    {
+        "title": "شكر النعمة",
+        "text": "«اللهم ما أصبح بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».",
+        "repeat": "مرة واحدة.",
+    },
+    {
+        "title": "شهادة التوحيد",
+        "text": "«اللهم إني أصبحت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك».",
+        "repeat": "أربع مرات.",
+    },
+    {
+        "title": "حسبي الله",
+        "text": "«حسبي الله لا إله إلا هو عليه توكلت وهو رب العرش العظيم».",
+        "repeat": "سبع مرات.",
+    },
+    {
+        "title": "الصلاة على النبي ﷺ",
+        "text": "«اللهم صل وسلم على سيدنا محمد».",
+        "repeat": "عددًا كثيرًا طوال الصباح.",
+    },
+]
 
-ADHKAR_EVENING_TEXT = (
-    "أذكار المساء (من بعد العصر حتى الليل) 🌙:\n\n"
-    "1⃣ آية الكرسي مرة واحدة.\n"
-    "2⃣ قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس: ثلاث مرات.\n"
-    "3⃣ «أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، "
-    "له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "4⃣ «اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».\n"
-    "5⃣ «اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، "
-    "أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك» أربع مرات.\n"
-    "6⃣ «باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم» ثلاث مرات.\n"
-    "7⃣ الإكثار من الصلاة على النبي ﷺ: «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "للتسبيح بعدد معيّن يمكنك استخدام زر «السبحة 📿»."
-)
+EVENING_ADHKAR_ITEMS = [
+    {
+        "title": "آية الكرسي",
+        "text": "«اللّه لا إله إلا هو الحيّ القيّوم...»",
+        "repeat": "مرة واحدة بعد العصر حتى الليل.",
+    },
+    {
+        "title": "المعوّذات",
+        "text": "قل هو الله أحد، قل أعوذ برب الفلق، قل أعوذ برب الناس.",
+        "repeat": "تُقرأ ثلاث مرات.",
+    },
+    {
+        "title": "دعاء المساء",
+        "text": "«أمسينا وأمسى الملك لله، والحمد لله، لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».",
+        "repeat": "مرة واحدة.",
+    },
+    {
+        "title": "شكر النعمة",
+        "text": "«اللهم ما أمسى بي من نعمة أو بأحد من خلقك فمنك وحدك لا شريك لك، لك الحمد ولك الشكر».",
+        "repeat": "مرة واحدة.",
+    },
+    {
+        "title": "شهادة التوحيد",
+        "text": "«اللهم إني أمسيت أشهدك وأشهد حملة عرشك وملائكتك وجميع خلقك، أنك أنت الله لا إله إلا أنت وحدك لا شريك لك، وأن محمدًا عبدك ورسولك».",
+        "repeat": "أربع مرات.",
+    },
+    {
+        "title": "ذكر الحفظ",
+        "text": "«باسم الله الذي لا يضر مع اسمه شيء في الأرض ولا في السماء وهو السميع العليم».",
+        "repeat": "ثلاث مرات.",
+    },
+    {
+        "title": "الصلاة على النبي ﷺ",
+        "text": "«اللهم صل وسلم على سيدنا محمد».",
+        "repeat": "عددًا كثيرًا طوال المساء.",
+    },
+]
 
-ADHKAR_GENERAL_TEXT = (
-    "أذكار عامة تثبّت القلب وتريح الصدر 💚:\n\n"
-    "• «أستغفر الله العظيم وأتوب إليه».\n"
-    "• «لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».\n"
-    "• «سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر».\n"
-    "• «لا حول ولا قوة إلا بالله».\n"
-    "• «اللهم صل وسلم على سيدنا محمد».\n\n"
-    "يمكنك استعمال «السبحة 📿» لاختيار ذكر وعدد تسبيحات معيّن والعدّ عليه."
-)
+GENERAL_ADHKAR_ITEMS = [
+    {
+        "title": "الاستغفار",
+        "text": "«أستغفر الله العظيم وأتوب إليه».",
+        "repeat": "كررها ما استطعت.",
+    },
+    {
+        "title": "توحيد الله",
+        "text": "«لا إله إلا الله وحده لا شريك له، له الملك وله الحمد وهو على كل شيء قدير».",
+        "repeat": "قلها مرارًا ليثبت قلبك.",
+    },
+    {
+        "title": "تسبيح الأربعة",
+        "text": "«سبحان الله، والحمد لله، ولا إله إلا الله، والله أكبر».",
+        "repeat": "اختر العدد الذي يشرح صدرك.",
+    },
+    {
+        "title": "لا حول ولا قوة إلا بالله",
+        "text": "«لا حول ولا قوة إلا بالله».",
+        "repeat": "رددها كلما شعرت بالحاجة إلى العون.",
+    },
+    {
+        "title": "الصلاة على النبي ﷺ",
+        "text": "«اللهم صل وسلم على سيدنا محمد».",
+        "repeat": "أكثر منها في كل وقت.",
+    },
+]
+
+STRUCTURED_ADHKAR_SECTIONS = {
+    "morning": {"title": "🌅 أذكار الصباح", "items": MORNING_ADHKAR_ITEMS},
+    "evening": {"title": "🌙 أذكار المساء", "items": EVENING_ADHKAR_ITEMS},
+    "general": {"title": "أذكار عامة 💭", "items": GENERAL_ADHKAR_ITEMS},
+}
 
 SLEEP_ADHKAR_ITEMS = [
     {
@@ -1821,6 +1893,7 @@ def handle_audio_message(update: Update, context: CallbackContext):
 
 # أذكار النوم
 SLEEP_ADHKAR_STATE = {}  # user_id -> current_index
+STRUCTURED_ADHKAR_STATE = {}  # user_id -> {"category": str, "index": int}
 
 # إدارة الجرعة التحفيزية (من لوحة التحكم)
 WAITING_MOTIVATION_ADD = set()
@@ -1902,6 +1975,10 @@ BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
+BTN_ADHKAR_NEXT = "➡️ التالي"
+BTN_ADHKAR_PREV = "⬅️ السابق"
+BTN_ADHKAR_BACK_MENU = "🔙 الرجوع إلى قائمة الأذكار"
+BTN_ADHKAR_BACK_MAIN = "🔝 الرجوع إلى القائمة الرئيسية"
 
 BTN_AUDIO_BACK = "↩️ رجوع"
 BTN_AUDIO_NEXT = "التالي ▶️"
@@ -2227,6 +2304,23 @@ ADHKAR_MENU_KB_ADMIN = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+
+def build_structured_adhkar_kb(has_prev: bool, has_next: bool) -> ReplyKeyboardMarkup:
+    rows = []
+    nav_row = []
+
+    if has_prev:
+        nav_row.append(KeyboardButton(BTN_ADHKAR_PREV))
+    if has_next:
+        nav_row.append(KeyboardButton(BTN_ADHKAR_NEXT))
+
+    if nav_row:
+        rows.append(nav_row)
+
+    rows.append([KeyboardButton(BTN_ADHKAR_BACK_MENU)])
+    rows.append([KeyboardButton(BTN_ADHKAR_BACK_MAIN)])
+
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 SLEEP_ADHKAR_KB = ReplyKeyboardMarkup(
     [
@@ -4316,11 +4410,12 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 def open_adhkar_menu(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
-    
+
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
-    
+
+    STRUCTURED_ADHKAR_STATE.pop(user.id, None)
     get_user_record(user)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
@@ -4333,51 +4428,132 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
     )
 
 
-def send_morning_adhkar(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
+def format_structured_adhkar_text(category_key: str, index: int) -> str:
+    section = STRUCTURED_ADHKAR_SECTIONS.get(category_key, {})
+    items = section.get("items", [])
+
+    if index < 0 or index >= len(items):
+        return ""
+
+    item = items[index]
+    total = len(items)
+    return (
+        f"{section.get('title', 'الأذكار')} ({index + 1}/{total}):\n\n"
+        f"{item['title']}:\n{item['text']}\n\n"
+        f"التكرار: {item['repeat']}"
+    )
+
+
+def send_structured_adhkar_step(update: Update, user_id: int, category_key: str, index: int):
+    section = STRUCTURED_ADHKAR_SECTIONS.get(category_key, {})
+    items = section.get("items", [])
+
+    if not items:
+        update.message.reply_text(
+            "تعذّر تحميل الأذكار حاليًا، حاول لاحقًا.",
+            reply_markup=adhkar_menu_keyboard(user_id),
+        )
         return
-    
-    increment_adhkar_count(user.id, 1)
-    kb = adhkar_menu_keyboard(user.id)
+
+    index = max(0, min(index, len(items) - 1))
+    STRUCTURED_ADHKAR_STATE[user_id] = {"category": category_key, "index": index}
+    kb = build_structured_adhkar_kb(index > 0, index < len(items) - 1)
     update.message.reply_text(
-        ADHKAR_MORNING_TEXT,
+        format_structured_adhkar_text(category_key, index),
         reply_markup=kb,
     )
+
+
+def start_structured_adhkar(update: Update, context: CallbackContext, category_key: str):
+    user = update.effective_user
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    if category_key not in STRUCTURED_ADHKAR_SECTIONS:
+        open_adhkar_menu(update, context)
+        return
+
+    increment_adhkar_count(user.id, 1)
+    send_structured_adhkar_step(update, user.id, category_key, 0)
+
+
+def send_morning_adhkar(update: Update, context: CallbackContext):
+    start_structured_adhkar(update, context, "morning")
 
 
 def send_evening_adhkar(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    increment_adhkar_count(user.id, 1)
-    kb = adhkar_menu_keyboard(user.id)
-    update.message.reply_text(
-        ADHKAR_EVENING_TEXT,
-        reply_markup=kb,
-    )
+    start_structured_adhkar(update, context, "evening")
 
 
 def send_general_adhkar(update: Update, context: CallbackContext):
+    start_structured_adhkar(update, context, "general")
+
+
+def handle_structured_adhkar_next(update: Update, context: CallbackContext):
     user = update.effective_user
+    user_id = user.id
     record = get_user_record(user)
-    
-    # التحقق إذا كان المستخدم محظورًا
+
     if record.get("is_banned", False):
         return
-    
-    increment_adhkar_count(user.id, 1)
-    kb = adhkar_menu_keyboard(user.id)
+
+    state = STRUCTURED_ADHKAR_STATE.get(user_id)
+    if not state:
+        open_adhkar_menu(update, context)
+        return
+
+    category = state["category"]
+    index = state["index"]
+    items = STRUCTURED_ADHKAR_SECTIONS.get(category, {}).get("items", [])
+
+    if index >= len(items) - 1:
+        STRUCTURED_ADHKAR_STATE.pop(user_id, None)
+        update.message.reply_text(
+            "اكتملت الأذكار. عدنا إلى قائمة الأذكار.",
+            reply_markup=adhkar_menu_keyboard(user_id),
+        )
+        return
+
+    send_structured_adhkar_step(update, user_id, category, index + 1)
+
+
+def handle_structured_adhkar_prev(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id
+    record = get_user_record(user)
+
+    if record.get("is_banned", False):
+        return
+
+    state = STRUCTURED_ADHKAR_STATE.get(user_id)
+    if not state:
+        open_adhkar_menu(update, context)
+        return
+
+    category = state["category"]
+    index = state["index"]
+
+    if index <= 0:
+        send_structured_adhkar_step(update, user_id, category, 0)
+        return
+
+    send_structured_adhkar_step(update, user_id, category, index - 1)
+
+
+def handle_structured_adhkar_back_to_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    STRUCTURED_ADHKAR_STATE.pop(user.id, None)
+    open_adhkar_menu(update, context)
+
+
+def handle_structured_adhkar_back_main(update: Update, context: CallbackContext):
+    user = update.effective_user
+    STRUCTURED_ADHKAR_STATE.pop(user.id, None)
     update.message.reply_text(
-        ADHKAR_GENERAL_TEXT,
-        reply_markup=kb,
+        "عدنا إلى القائمة الرئيسية.",
+        reply_markup=user_main_keyboard(user.id),
     )
 
 
@@ -7583,6 +7759,7 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_BAN_REASON.discard(user_id)
         BAN_TARGET_ID.pop(user_id, None)
         SLEEP_ADHKAR_STATE.pop(user_id, None)
+        STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
         WAITING_WATER_ADD_CUPS.discard(user_id)
         
@@ -7854,6 +8031,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_BACK_MAIN:
+        STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=main_kb,
@@ -7861,6 +8039,18 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # قوائم الأذكار
+    if text == BTN_ADHKAR_NEXT:
+        handle_structured_adhkar_next(update, context)
+        return
+    if text == BTN_ADHKAR_PREV:
+        handle_structured_adhkar_prev(update, context)
+        return
+    if text == BTN_ADHKAR_BACK_MENU:
+        handle_structured_adhkar_back_to_menu(update, context)
+        return
+    if text == BTN_ADHKAR_BACK_MAIN:
+        handle_structured_adhkar_back_main(update, context)
+        return
     if text == BTN_ADHKAR_MORNING:
         send_morning_adhkar(update, context)
         return
