@@ -9646,7 +9646,12 @@ def _course_details_text(course_id: str, course: Dict, subscribed: bool, subscri
     return "\n\n".join(lines)
 
 
-def show_course_details(query: Update.callback_query, user_id: int, course_id: str):
+def show_course_details(
+    query: Update.callback_query,
+    context: CallbackContext,
+    user_id: int,
+    course_id: str,
+):
     course = _course_document(course_id)
     if not course:
         safe_edit_message_text(query, "❌ الدورة غير موجودة.", reply_markup=COURSES_USER_MENU_KB)
@@ -9674,7 +9679,8 @@ def show_course_details(query: Update.callback_query, user_id: int, course_id: s
             ]
         )
 
-    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")])
+    back_target = context.user_data.get("courses_back_target", "COURSES:back_user")
+    keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_target)])
 
     safe_edit_message_text(
         query,
@@ -10764,6 +10770,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         if data == "COURSES:available":
             show_available_courses(query, context)
         elif data == "COURSES:my_courses":
+            context.user_data["courses_back_target"] = "COURSES:my_courses"
             show_my_courses(query, context)
         elif data == "COURSES:archive":
             show_archived_courses(query, context)
@@ -10820,7 +10827,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:back_course_"):
             course_id = data.replace("COURSES:back_course_", "")
             _clear_attendance_confirmation(context, query.message.chat_id)
-            show_course_details(query, user_id, course_id)
+            show_course_details(query, context, user_id, course_id)
         elif data.startswith("COURSES:subscribe_"):
             course_id = data.replace("COURSES:subscribe_", "")
             subscribe_to_course(query, context, course_id)
@@ -10842,7 +10849,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             register_lesson_attendance(query, context, user_id, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
-            show_course_details(query, user_id, course_id)
+            show_course_details(query, context, user_id, course_id)
         elif data.startswith("COURSES:start_quiz_"):
             quiz_id = data.replace("COURSES:start_quiz_", "")
             start_quiz_flow(query, user_id, quiz_id)
