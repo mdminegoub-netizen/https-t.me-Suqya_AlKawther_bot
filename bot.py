@@ -9938,11 +9938,15 @@ def register_lesson_attendance(
         len(attended_lessons),
         attended_lessons[:5] if isinstance(attended_lessons, list) else str(attended_lessons)[:200],
     )
+    _clear_attendance_confirmation(context, query.message.chat_id)
     if lesson_id in attended_lessons:
         logger.info("🟡 ATTEND_ALREADY | user_id=%s | lesson_id=%s", user_id, lesson_id)
         query.answer("✅ تم تسجيل حضورك مسبقًا.", show_alert=True)
         try:
-            query.message.reply_text("✅ تم تسجيل حضورك من قبل.")
+            confirmation_message = query.message.reply_text("✅ تم تسجيل حضورك مسبقًا.")
+            context.user_data["attendance_confirmation_msg_id"] = (
+                confirmation_message.message_id
+            )
         except Exception:
             pass
         return
@@ -10815,6 +10819,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
 
         elif data.startswith("COURSES:back_course_"):
             course_id = data.replace("COURSES:back_course_", "")
+            _clear_attendance_confirmation(context, query.message.chat_id)
             show_course_details(query, user_id, course_id)
         elif data.startswith("COURSES:subscribe_"):
             course_id = data.replace("COURSES:subscribe_", "")
