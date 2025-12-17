@@ -9915,8 +9915,16 @@ def register_lesson_attendance(query: Update.callback_query, user_id: int, lesso
 
     subscription = sub_doc.to_dict() or {}
     attended_lessons = subscription.get("lessons_attended") or []
+    logger.info(
+        "🧾 ATTEND_STATE | lesson_id=%s | attended_type=%s | attended_len=%s | attended_sample=%s",
+        lesson_id,
+        type(attended_lessons).__name__,
+        len(attended_lessons),
+        attended_lessons[:5] if isinstance(attended_lessons, list) else str(attended_lessons)[:200],
+    )
     if lesson_id in attended_lessons:
-        query.answer("لقد تم تسجيل حضورك من قبل", show_alert=True)
+        logger.info("🟡 ATTEND_ALREADY | user_id=%s | lesson_id=%s", user_id, lesson_id)
+        query.answer("✅ تم تسجيل حضورك مسبقًا.", show_alert=True)
         return
 
     try:
