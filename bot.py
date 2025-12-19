@@ -1696,6 +1696,7 @@ LETTER_CURRENT_DATA = {}  # user_id -> { "content": str, "reminder_date": str }
 WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
+SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_id
 
 # فوائد ونصائح
 WAITING_BENEFIT_TEXT = set()
@@ -2176,6 +2177,9 @@ CANCEL_KB = ReplyKeyboardMarkup(
 SUPPORT_SESSION_KB = ReplyKeyboardMarkup(
     [[KeyboardButton(BTN_SUPPORT_END)]],
     resize_keyboard=True,
+)
+SUPPORT_REPLY_INLINE_KB = InlineKeyboardMarkup(
+    [[InlineKeyboardButton("✉️ اضغط هنا للرد", callback_data="support_open")]]
 )
 
 AUDIO_LIBRARY_KB = ReplyKeyboardMarkup(
@@ -7034,15 +7038,18 @@ def handle_ban_reason_input(update: Update, context: CallbackContext):
 
 # =================== نظام الدعم ولوحة التحكم ===================
 
-
-def _open_support_session(update: Update, user_id: int):
-    WAITING_SUPPORT.add(user_id)
-    update.message.reply_text(
+def _send_support_session_opened_message(reply_func):
+    reply_func(
         "✅ تم فتح المحادثة مع الدعم الآن.\n"
         "يمكنك إرسال (نص/صورة/صوت/فيديو).\n"
         "ستبقى المحادثة مفتوحة حتى تضغط زر (إنهاء التواصل).",
         reply_markup=SUPPORT_SESSION_KB,
     )
+
+
+def _open_support_session(update: Update, user_id: int):
+    WAITING_SUPPORT.add(user_id)
+    _send_support_session_opened_message(update.message.reply_text)
 
 
 def handle_contact_support(update: Update, context: CallbackContext):
@@ -7072,6 +7079,51 @@ def handle_contact_support(update: Update, context: CallbackContext):
 
     WAITING_SUPPORT_GENDER.add(user_id)
     update.message.reply_text(
+        "قبل إرسال رسالتك للدعم، اختر الجنس:\n\n"
+        "🧔‍♂️ لو كنت رجلًا → تصل رسالتك للمشرف.\n"
+        "👩 لو كنت امرأة → تصل رسالتك للمشرفة.\n\n"
+        "اختر من الأزرار بالأسفل 👇",
+        reply_markup=GENDER_KB,
+    )
+
+
+def handle_support_open_callback(update: Update, context: CallbackContext):
+    q = update.callback_query
+    if not q:
+        return
+
+    message = q.message
+    if not message:
+        q.answer()
+        return
+
+    user = q.from_user
+    record = get_user_record(user)
+    user_id = user.id
+
+    if record.get("is_banned", False):
+        q.answer()
+        return
+
+    if user_id in WAITING_SUPPORT:
+        q.answer()
+        message.reply_text(
+            "المحادثة مع الدعم مفتوحة بالفعل.\n"
+            "أرسل رسالتك مباشرة أو اضغط «🔚 إنهاء التواصل» عند الانتهاء.",
+            reply_markup=SUPPORT_SESSION_KB,
+        )
+        return
+
+    gender = record.get("gender")
+    q.answer()
+
+    if gender in ["male", "female"]:
+        WAITING_SUPPORT.add(user_id)
+        _send_support_session_opened_message(message.reply_text)
+        return
+
+    WAITING_SUPPORT_GENDER.add(user_id)
+    message.reply_text(
         "قبل إرسال رسالتك للدعم، اختر الجنس:\n\n"
         "🧔‍♂️ لو كنت رجلًا → تصل رسالتك للمشرف.\n"
         "👩 لو كنت امرأة → تصل رسالتك للمشرفة.\n\n"
@@ -7313,11 +7365,12 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
 
     if ADMIN_ID is not None:
         try:
-            context.bot.send_message(
+            sent = context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=admin_msg,
                 parse_mode="Markdown",
             )
+            _remember_support_message(ADMIN_ID, sent, user.id)
         except Exception as e:
             logger.error(f"Error sending support message to admin: {e}")
 
@@ -7331,10 +7384,11 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
             f"محتوى الرسالة:\n{text}"
         )
         try:
-            context.bot.send_message(
+            sent = context.bot.send_message(
                 chat_id=SUPERVISOR_ID,
                 text=supervisor_msg,
             )
+            _remember_support_message(SUPERVISOR_ID, sent, user.id)
         except Exception as e:
             logger.error(f"Error sending support message to supervisor: {e}")
 
@@ -7351,6 +7405,16 @@ def _support_header(user: User) -> str:
         f"ID: {user.id}\n"
         f"الجنس: {gender_label}"
     )
+
+
+def _remember_support_message(admin_id: int | None, sent_message, target_user_id: int):
+    if admin_id is None or sent_message is None:
+        return
+
+    try:
+        SUPPORT_MSG_MAP[(admin_id, sent_message.message_id)] = target_user_id
+    except Exception as e:
+        logger.debug("تعذر حفظ ربط رسالة الدعم: %s", e)
 
 
 def _extract_target_id_from_support_message(msg) -> int | None:
@@ -7378,6 +7442,8 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
 
     target_id = _extract_target_id_from_support_message(msg.reply_to_message)
     if not target_id:
+        target_id = SUPPORT_MSG_MAP.get((user.id, msg.reply_to_message.message_id))
+    if not target_id:
         return
 
     reply_prefix = "💌 رد من الدعم"
@@ -7389,30 +7455,41 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
             context.bot.send_message(
                 chat_id=target_id,
                 text=f"{reply_prefix}:\n\n{msg.text}",
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
             )
         elif msg.photo:
             context.bot.send_photo(
                 chat_id=target_id,
                 photo=msg.photo[-1].file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
             )
         elif msg.video:
             context.bot.send_video(
                 chat_id=target_id,
                 video=msg.video.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
             )
         elif msg.voice:
             context.bot.send_voice(
                 chat_id=target_id,
                 voice=msg.voice.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
             )
         elif msg.audio:
             context.bot.send_audio(
                 chat_id=target_id,
                 audio=msg.audio.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
+            )
+        elif msg.video_note:
+            context.bot.send_video_note(
+                chat_id=target_id,
+                video_note=msg.video_note.file_id,
+                reply_markup=SUPPORT_REPLY_INLINE_KB,
             )
         else:
             return
@@ -7471,6 +7548,11 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
                         caption=msg.caption
                         or f"نسخة من رد المشرفة إلى ID: {target_id}",
                     )
+                elif msg.video_note:
+                    context.bot.send_video_note(
+                        chat_id=ADMIN_ID,
+                        video_note=msg.video_note.file_id,
+                    )
             except Exception as e:
                 logger.error(f"Error sending supervisor reply copy to admin: {e}")
 
@@ -7513,7 +7595,8 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
     for admin_id in targets:
         try:
-            context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
+            sent = context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
+            _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
             logger.warning(f"Support photo forward failed to {admin_id}: {e}")
 
@@ -7547,9 +7630,10 @@ def handle_support_audio(update: Update, context: CallbackContext):
     for admin_id in targets:
         try:
             if update.message.voice:
-                context.bot.send_voice(chat_id=admin_id, voice=audio.file_id, caption=text)
+                sent = context.bot.send_voice(chat_id=admin_id, voice=audio.file_id, caption=text)
             else:
-                context.bot.send_audio(chat_id=admin_id, audio=audio.file_id, caption=text)
+                sent = context.bot.send_audio(chat_id=admin_id, audio=audio.file_id, caption=text)
+            _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
             logger.warning(f"Support audio forward failed to {admin_id}: {e}")
 
@@ -7582,16 +7666,55 @@ def handle_support_video(update: Update, context: CallbackContext):
 
     for admin_id in targets:
         try:
-            context.bot.send_video(
+            sent = context.bot.send_video(
                 chat_id=admin_id,
                 video=video.file_id,
                 caption=text
             )
+            _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
             logger.warning(f"Support video forward failed to {admin_id}: {e}")
 
     update.message.reply_text(
         "✅ تم إرسال الفيديو للدعم بنجاح.",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+
+
+def handle_support_video_note(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
+        return  # لا تمس أي مسار آخر
+
+    user = update.effective_user
+    video_note = update.message.video_note
+    if not video_note:
+        return
+
+    record = data.get(str(user_id), {})
+    gender = record.get("gender")
+    text = _support_header(user)
+
+    if gender == "female":
+        targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+    else:
+        targets = [ADMIN_ID] if ADMIN_ID else []
+
+    for admin_id in targets:
+        try:
+            header_msg = context.bot.send_message(chat_id=admin_id, text=text)
+            _remember_support_message(admin_id, header_msg, user_id)
+        except Exception as e:
+            logger.warning(f"Support video note header failed to {admin_id}: {e}")
+
+        try:
+            note_msg = context.bot.send_video_note(chat_id=admin_id, video_note=video_note.file_id)
+            _remember_support_message(admin_id, note_msg, user_id)
+        except Exception as e:
+            logger.warning(f"Support video note forward failed to {admin_id}: {e}")
+
+    update.message.reply_text(
+        "✅ تم إرسال الرسالة الدائرية للدعم بنجاح.",
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -9666,6 +9789,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^support_open$"))
 
         channel_audio_filter = Filters.chat_type.channel & (
             Filters.audio | Filters.voice | Filters.document.audio
@@ -9679,6 +9803,7 @@ def start_bot():
                 | Filters.video
                 | Filters.voice
                 | Filters.audio
+                | Filters.video_note
             )
             & ~Filters.chat_type.channel
         )
@@ -9686,6 +9811,7 @@ def start_bot():
         support_photo_filter = Filters.photo & ~Filters.chat_type.channel
         support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
         support_video_filter = Filters.video & ~Filters.chat_type.channel
+        support_video_note_filter = Filters.video_note & ~Filters.chat_type.channel
 
         dispatcher.add_handler(
             MessageHandler(
@@ -9728,6 +9854,12 @@ def start_bot():
             MessageHandler(
                 support_video_filter,
                 handle_support_video,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_note_filter,
+                handle_support_video_note,
             )
         )
 
