@@ -7410,7 +7410,6 @@ def _support_confirmation_text(gender: str | None, session_open: bool) -> str:
                 "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
                 "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
             )
-
         return (
             "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
             "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
@@ -8249,7 +8248,7 @@ def handle_text(update: Update, context: CallbackContext):
         forward_support_to_admin(user, text, context)
 
         msg.reply_text(
-            _support_confirmation_text(record.get("gender"), support_session_active),
+            _support_confirmation_text(record.get("gender"), True),
             reply_markup=SUPPORT_SESSION_KB,
         )
         return
