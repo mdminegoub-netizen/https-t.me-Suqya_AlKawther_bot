@@ -2178,6 +2178,14 @@ SUPPORT_SESSION_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+SUPPORT_PROMPT_KB = ReplyKeyboardMarkup(
+    [
+        [KeyboardButton(BTN_SUPPORT)],
+        [KeyboardButton(BTN_CANCEL)],
+    ],
+    resize_keyboard=True,
+)
+
 AUDIO_LIBRARY_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton(AUDIO_SECTIONS["fatawa"]["button"]), KeyboardButton(AUDIO_SECTIONS["mawaedh"]["button"])],
@@ -7339,6 +7347,12 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
             logger.error(f"Error sending support message to supervisor: {e}")
 
 
+def support_reopen_inline_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("✉️ اضغط هنا للرد", callback_data="SUPPORT:OPEN")]]
+    )
+
+
 def _support_header(user: User) -> str:
     record = data.get(str(user.id), {})
     gender = record.get("gender")
@@ -7366,6 +7380,25 @@ def _extract_target_id_from_support_message(msg) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def handle_support_open_callback(update: Update, context: CallbackContext):
+    q = update.callback_query
+    if not q:
+        return
+    q.answer()
+
+    user_id = q.from_user.id
+
+    WAITING_SUPPORT.add(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
+
+    q.message.reply_text(
+        "✅ تم فتح المحادثة مع الدعم الآن.\n"
+        "يمكنك إرسال (نص/صورة/صوت/فيديو).\n"
+        "ستبقى المحادثة مفتوحة حتى تضغط زر (🔚 إنهاء التواصل).",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+
+
 def handle_support_admin_reply_any(update: Update, context: CallbackContext):
     user = update.effective_user
     msg = update.message
@@ -7389,30 +7422,41 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
             context.bot.send_message(
                 chat_id=target_id,
                 text=f"{reply_prefix}:\n\n{msg.text}",
+                reply_markup=support_reopen_inline_kb(),
             )
         elif msg.photo:
             context.bot.send_photo(
                 chat_id=target_id,
                 photo=msg.photo[-1].file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=support_reopen_inline_kb(),
             )
         elif msg.video:
             context.bot.send_video(
                 chat_id=target_id,
                 video=msg.video.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=support_reopen_inline_kb(),
             )
         elif msg.voice:
             context.bot.send_voice(
                 chat_id=target_id,
                 voice=msg.voice.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=support_reopen_inline_kb(),
             )
         elif msg.audio:
             context.bot.send_audio(
                 chat_id=target_id,
                 audio=msg.audio.file_id,
                 caption=msg.caption or reply_prefix,
+                reply_markup=support_reopen_inline_kb(),
+            )
+        elif msg.video_note:
+            context.bot.send_video_note(
+                chat_id=target_id,
+                video_note=msg.video_note.file_id,
+                reply_markup=support_reopen_inline_kb(),
             )
         else:
             return
@@ -7471,6 +7515,11 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
                         caption=msg.caption
                         or f"نسخة من رد المشرفة إلى ID: {target_id}",
                     )
+                elif msg.video_note:
+                    context.bot.send_video_note(
+                        chat_id=ADMIN_ID,
+                        video_note=msg.video_note.file_id,
+                    )
             except Exception as e:
                 logger.error(f"Error sending supervisor reply copy to admin: {e}")
 
@@ -7491,7 +7540,13 @@ def _is_reply_to_support_message(msg, bot_id: int) -> bool:
 
 def handle_support_photo(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+    if user_id not in WAITING_SUPPORT:
+        if is_reply:
+            update.message.reply_text(
+                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
+                reply_markup=user_main_keyboard(user_id),
+            )
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7525,7 +7580,13 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
 def handle_support_audio(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+    if user_id not in WAITING_SUPPORT:
+        if is_reply:
+            update.message.reply_text(
+                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
+                reply_markup=user_main_keyboard(user_id),
+            )
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7561,7 +7622,13 @@ def handle_support_audio(update: Update, context: CallbackContext):
 
 def handle_support_video(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    if user_id not in WAITING_SUPPORT and not _is_reply_to_support_message(update.message, context.bot.id):
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+    if user_id not in WAITING_SUPPORT:
+        if is_reply:
+            update.message.reply_text(
+                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
+                reply_markup=user_main_keyboard(user_id),
+            )
         return  # لا تمس أي مسار آخر
 
     user = update.effective_user
@@ -7592,6 +7659,45 @@ def handle_support_video(update: Update, context: CallbackContext):
 
     update.message.reply_text(
         "✅ تم إرسال الفيديو للدعم بنجاح.",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+
+
+def handle_support_video_note(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+    if user_id not in WAITING_SUPPORT:
+        if is_reply:
+            update.message.reply_text(
+                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
+                reply_markup=user_main_keyboard(user_id),
+            )
+        return
+
+    user = update.effective_user
+    video_note = update.message.video_note
+    if not video_note:
+        return
+
+    text = _support_header(user)
+
+    record = data.get(str(user_id), {})
+    gender = record.get("gender")
+
+    if gender == "female":
+        targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+    else:
+        targets = [ADMIN_ID] if ADMIN_ID else []
+
+    for admin_id in targets:
+        try:
+            context.bot.send_message(chat_id=admin_id, text=text)
+            context.bot.send_video_note(chat_id=admin_id, video_note=video_note.file_id)
+        except Exception as e:
+            logger.warning(f"Support video note forward failed to {admin_id}: {e}")
+
+    update.message.reply_text(
+        "✅ تم إرسال فيديو الدائرة للدعم بنجاح.",
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -7945,11 +8051,17 @@ def handle_text(update: Update, context: CallbackContext):
             or original.startswith("💌 رد من المشرفة")
             or "رسالتك وصلت للدعم" in original
         ):
-            forward_support_to_admin(user, text, context)
-            msg.reply_text(
-                "📨 ردّك وصل للدعم 🤍",
-                reply_markup=SUPPORT_SESSION_KB if support_session_active else main_kb,
-            )
+            if user_id in WAITING_SUPPORT:
+                forward_support_to_admin(user, text, context)
+                msg.reply_text(
+                    "📨 ردّك وصل للدعم 🤍",
+                    reply_markup=SUPPORT_SESSION_KB,
+                )
+            else:
+                msg.reply_text(
+                    "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
+                    reply_markup=main_kb,
+                )
             return
 
     if text == BTN_SUPPORT_END:
@@ -8553,13 +8665,11 @@ def handle_text(update: Update, context: CallbackContext):
 
 
     # أي نص آخر
-    msg.reply_text(
-        "تنبيه: رسالتك الآن لا تصل للدعم بشكل مباشر.\n"
-        "لو حاب ترسل رسالة للدعم:\n"
-        "1️⃣ اضغط على زر «تواصل مع الدعم ✉️»\n"
-        "2️⃣ أو اضغط على الرسالة التي وصلتك من البوت، ثم اختر Reply / الرد، واكتب رسالتك.",
-        reply_markup=main_kb,
-    )
+    if not support_session_active and not is_admin(user_id) and not is_supervisor(user_id):
+        msg.reply_text(
+            "رسالتك لم تُرسل للدعم. إذا أردت التواصل مع الدعم اضغط زر (تواصل مع الدعم ✉️).",
+            reply_markup=SUPPORT_PROMPT_KB,
+        )
 
 # =================== دوال إدارة المنافسات والمجتمع ===================
 
@@ -9659,6 +9769,7 @@ def start_bot():
         dispatcher.add_handler(CommandHandler("help", help_command))
         dispatcher.add_handler(CommandHandler("clean_audio_library", handle_clean_audio_library_command))
 
+        dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^SUPPORT:OPEN$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
@@ -9679,6 +9790,7 @@ def start_bot():
                 | Filters.video
                 | Filters.voice
                 | Filters.audio
+                | Filters.video_note
             )
             & ~Filters.chat_type.channel
         )
@@ -9686,6 +9798,7 @@ def start_bot():
         support_photo_filter = Filters.photo & ~Filters.chat_type.channel
         support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
         support_video_filter = Filters.video & ~Filters.chat_type.channel
+        support_video_note_filter = Filters.video_note & ~Filters.chat_type.channel
 
         dispatcher.add_handler(
             MessageHandler(
@@ -9728,6 +9841,12 @@ def start_bot():
             MessageHandler(
                 support_video_filter,
                 handle_support_video,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_note_filter,
+                handle_support_video_note,
             )
         )
 
