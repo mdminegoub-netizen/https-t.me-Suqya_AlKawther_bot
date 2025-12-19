@@ -7046,18 +7046,21 @@ def handle_ban_reason_input(update: Update, context: CallbackContext):
 
 # =================== نظام الدعم ولوحة التحكم ===================
 
-def _send_support_session_opened_message(reply_func):
-    reply_func(
-        "✅ تم فتح المحادثة مع الدعم الآن.\n"
-        "يمكنك إرسال (نص/صورة/صوت/فيديو).\n"
-        "ستبقى المحادثة مفتوحة حتى تضغط زر (إنهاء التواصل).",
-        reply_markup=SUPPORT_SESSION_KB,
+def _send_support_session_opened_message(reply_func, gender: str | None = None):
+    is_female = gender == "female"
+    text = (
+        "حياكِ الله يا طيبة، تم فتح المحادثة مع الدعم.\n\n"
+        "🤍 تفضلي بالكتابة، رسالتك تصل للدعم مباشرة"
+        if is_female
+        else "حياك الله، تم فتح المحادثة مع الدعم.\n\n"
+             "📥يمكنك الآن الكتابة بكل راحة وخصوصية،"
     )
+    reply_func(text, reply_markup=SUPPORT_SESSION_KB)
 
 
-def _open_support_session(update: Update, user_id: int):
+def _open_support_session(update: Update, user_id: int, gender: str | None):
     WAITING_SUPPORT.add(user_id)
-    _send_support_session_opened_message(update.message.reply_text)
+    _send_support_session_opened_message(update.message.reply_text, gender)
 
 
 def handle_contact_support(update: Update, context: CallbackContext):
@@ -7082,7 +7085,7 @@ def handle_contact_support(update: Update, context: CallbackContext):
         return
 
     if gender in ["male", "female"]:
-        _open_support_session(update, user_id)
+        _open_support_session(update, user_id, gender)
         return
 
     WAITING_SUPPORT_GENDER.add(user_id)
@@ -7127,7 +7130,7 @@ def handle_support_open_callback(update: Update, context: CallbackContext):
 
     if gender in ["male", "female"]:
         WAITING_SUPPORT.add(user_id)
-        _send_support_session_opened_message(message.reply_text)
+        _send_support_session_opened_message(message.reply_text, gender)
         return
 
     WAITING_SUPPORT_GENDER.add(user_id)
@@ -7407,12 +7410,14 @@ def _support_confirmation_text(gender: str | None, session_open: bool) -> str:
     if session_open:
         if is_female:
             return (
-                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
-                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+                "🤍 📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة).\n\n"
+                "يمكنكِ متابعة الكتابة وإرسال رسائل أخرى،\n"
+                "أو الضغط على «🔚 إنهاء التواصل» عند الانتهاء."
             )
         return (
-            "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
-            "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+            "🤍 📨 تم إرسال رسالتك إلى الدعم.\n\n"
+            "يمكنك متابعة الكتابة وإرسال رسائل أخرى،\n"
+            "أو الضغط على «🔚 إنهاء التواصل» عند الانتهاء."
         )
 
     if is_female:
