@@ -7401,10 +7401,25 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
             logger.error(f"Error sending support message to supervisor: {e}")
 
 
-def support_reopen_inline_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("✉️ اضغط هنا للرد", callback_data="SUPPORT:OPEN")]]
-    )
+def _support_confirmation_text(gender: str | None, session_open: bool) -> str:
+    is_female = gender == "female"
+
+    if session_open:
+        if is_female:
+            return (
+                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
+                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+            )
+
+        return (
+            "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
+            "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+        )
+
+    if is_female:
+        return "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍"
+
+    return "📨 تم إرسال رسالتك إلى الدعم 🤍"
 
 
 def _support_header(user: User) -> str:
@@ -7483,46 +7498,48 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
     if is_supervisor(user.id):
         reply_prefix = "💌 رد من المشرفة"
 
+    reply_markup = None if (target_id in WAITING_SUPPORT) else SUPPORT_REPLY_INLINE_KB
+
     try:
         if msg.text:
             context.bot.send_message(
                 chat_id=target_id,
                 text=f"{reply_prefix}:\n\n{msg.text}",
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         elif msg.photo:
             context.bot.send_photo(
                 chat_id=target_id,
                 photo=msg.photo[-1].file_id,
                 caption=msg.caption or reply_prefix,
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         elif msg.video:
             context.bot.send_video(
                 chat_id=target_id,
                 video=msg.video.file_id,
                 caption=msg.caption or reply_prefix,
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         elif msg.voice:
             context.bot.send_voice(
                 chat_id=target_id,
                 voice=msg.voice.file_id,
                 caption=msg.caption or reply_prefix,
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         elif msg.audio:
             context.bot.send_audio(
                 chat_id=target_id,
                 audio=msg.audio.file_id,
                 caption=msg.caption or reply_prefix,
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         elif msg.video_note:
             context.bot.send_video_note(
                 chat_id=target_id,
                 video_note=msg.video_note.file_id,
-                reply_markup=support_reopen_inline_kb(),
+                reply_markup=reply_markup,
             )
         else:
             return
@@ -7640,7 +7657,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
             logger.warning(f"Support photo forward failed to {admin_id}: {e}")
 
     update.message.reply_text(
-        "✅ تم إرسال الصورة للدعم بنجاح.",
+        _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -7683,7 +7700,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
             logger.warning(f"Support audio forward failed to {admin_id}: {e}")
 
     update.message.reply_text(
-        "✅ تم إرسال المقطع الصوتي للدعم بنجاح.",
+        _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -7727,7 +7744,7 @@ def handle_support_video(update: Update, context: CallbackContext):
             logger.warning(f"Support video forward failed to {admin_id}: {e}")
 
     update.message.reply_text(
-        "✅ تم إرسال الفيديو للدعم بنجاح.",
+        _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -7766,7 +7783,7 @@ def handle_support_video_note(update: Update, context: CallbackContext):
             logger.warning(f"Support video note forward failed to {admin_id}: {e}")
 
     update.message.reply_text(
-        "✅ تم إرسال فيديو الدائرة للدعم بنجاح.",
+        _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
 
@@ -7851,7 +7868,7 @@ def handle_text(update: Update, context: CallbackContext):
             if "لقد تم حظرك" in original or "رد من الدعم" in original or "رد من المشرفة" in original:
                 forward_support_to_admin(user, text, context)
                 msg.reply_text(
-                    "📨 رسالتك وصلت للدعم. سيتم الرد عليك قريبًا.",
+                    _support_confirmation_text(record.get("gender"), False),
                 )
                 return
         
@@ -8123,7 +8140,7 @@ def handle_text(update: Update, context: CallbackContext):
             if user_id in WAITING_SUPPORT:
                 forward_support_to_admin(user, text, context)
                 msg.reply_text(
-                    "📨 ردّك وصل للدعم 🤍",
+                    _support_confirmation_text(record.get("gender"), True),
                     reply_markup=SUPPORT_SESSION_KB,
                 )
             else:
@@ -8231,20 +8248,8 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in WAITING_SUPPORT:
         forward_support_to_admin(user, text, context)
 
-        gender = record.get("gender")
-        if gender == "female":
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
-                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
-            )
-        else:
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
-                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
-            )
-
         msg.reply_text(
-            reply_txt,
+            _support_confirmation_text(record.get("gender"), support_session_active),
             reply_markup=SUPPORT_SESSION_KB,
         )
         return
