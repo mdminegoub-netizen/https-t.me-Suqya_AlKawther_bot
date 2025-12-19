@@ -2166,8 +2166,15 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+BTN_SUPPORT_END = "🔚 إنهاء التواصل"
+
 CANCEL_KB = ReplyKeyboardMarkup(
     [[KeyboardButton(BTN_CANCEL)]],
+    resize_keyboard=True,
+)
+
+SUPPORT_SESSION_KB = ReplyKeyboardMarkup(
+    [[KeyboardButton(BTN_SUPPORT_END)]],
     resize_keyboard=True,
 )
 
@@ -3153,7 +3160,6 @@ def start_command(update: Update, context: CallbackContext):
     WAITING_LETTER_CUSTOM_DATE.discard(user_id)
     WAITING_LETTER_DELETE_SELECT.discard(user_id)
     WAITING_SUPPORT_GENDER.discard(user_id)
-    WAITING_SUPPORT.discard(user_id)
     WAITING_BROADCAST.discard(user_id)
     WAITING_WATER_ADD_CUPS.discard(user_id)
     WAITING_BENEFIT_TEXT.discard(user_id)
@@ -7029,6 +7035,16 @@ def handle_ban_reason_input(update: Update, context: CallbackContext):
 # =================== نظام الدعم ولوحة التحكم ===================
 
 
+def _open_support_session(update: Update, user_id: int):
+    WAITING_SUPPORT.add(user_id)
+    update.message.reply_text(
+        "✅ تم فتح المحادثة مع الدعم الآن.\n"
+        "يمكنك إرسال (نص/صورة/صوت/فيديو).\n"
+        "ستبقى المحادثة مفتوحة حتى تضغط زر (إنهاء التواصل).",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+
+
 def handle_contact_support(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
@@ -7042,14 +7058,16 @@ def handle_contact_support(update: Update, context: CallbackContext):
 
     gender = record.get("gender")
 
-    if gender in ["male", "female"]:
-        WAITING_SUPPORT.add(user_id)
+    if user_id in WAITING_SUPPORT:
         update.message.reply_text(
-            "✉️ اكتب الآن رسالتك التي تريد إرسالها للدعم.\n"
-            "اشرح ما تحتاجه بهدوء، وسيتم الاطلاع عليها بإذن الله.\n\n"
-            "للإلغاء اضغط «إلغاء ❌».",
-            reply_markup=CANCEL_KB,
+            "المحادثة مع الدعم مفتوحة بالفعل.\n"
+            "أرسل رسالتك مباشرة أو اضغط «🔚 إنهاء التواصل» عند الانتهاء.",
+            reply_markup=SUPPORT_SESSION_KB,
         )
+        return
+
+    if gender in ["male", "female"]:
+        _open_support_session(update, user_id)
         return
 
     WAITING_SUPPORT_GENDER.add(user_id)
@@ -7499,7 +7517,10 @@ def handle_support_photo(update: Update, context: CallbackContext):
         except Exception as e:
             logger.warning(f"Support photo forward failed to {admin_id}: {e}")
 
-    update.message.reply_text("✅ تم إرسال الصورة للدعم بنجاح.")
+    update.message.reply_text(
+        "✅ تم إرسال الصورة للدعم بنجاح.",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
 
 
 def handle_support_audio(update: Update, context: CallbackContext):
@@ -7532,7 +7553,10 @@ def handle_support_audio(update: Update, context: CallbackContext):
         except Exception as e:
             logger.warning(f"Support audio forward failed to {admin_id}: {e}")
 
-    update.message.reply_text("✅ تم إرسال المقطع الصوتي للدعم بنجاح.")
+    update.message.reply_text(
+        "✅ تم إرسال المقطع الصوتي للدعم بنجاح.",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
 
 
 def handle_support_video(update: Update, context: CallbackContext):
@@ -7566,7 +7590,10 @@ def handle_support_video(update: Update, context: CallbackContext):
         except Exception as e:
             logger.warning(f"Support video forward failed to {admin_id}: {e}")
 
-    update.message.reply_text("✅ تم إرسال الفيديو للدعم بنجاح.")
+    update.message.reply_text(
+        "✅ تم إرسال الفيديو للدعم بنجاح.",
+        reply_markup=SUPPORT_SESSION_KB,
+    )
 
 # =================== دوال جديدة للميزات المطلوبة ===================
 
@@ -7657,6 +7684,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     main_kb = user_main_keyboard(user_id)
+    support_session_active = user_id in WAITING_SUPPORT
 
     if user_id in WAITING_WATER_ADD_CUPS and not text.isdigit() and text != BTN_WATER_ADD_CUPS:
         WAITING_WATER_ADD_CUPS.discard(user_id)
@@ -7880,24 +7908,14 @@ def handle_text(update: Update, context: CallbackContext):
             update_user_record(user.id, gender="male")
             save_data()
             WAITING_SUPPORT_GENDER.discard(user_id)
-            WAITING_SUPPORT.add(user_id)
-            msg.reply_text(
-                "جميل 🤍\n"
-                "الآن اكتب رسالتك التي تريد إرسالها للدعم:",
-                reply_markup=CANCEL_KB,
-            )
+            _open_support_session(update, user_id)
             return
         elif text == BTN_GENDER_FEMALE:
             record["gender"] = "female"
             update_user_record(user.id, gender="female")
             save_data()
             WAITING_SUPPORT_GENDER.discard(user_id)
-            WAITING_SUPPORT.add(user_id)
-            msg.reply_text(
-                "جميل 🤍\n"
-                "الآن اكتب رسالتك التي تريد إرسالها للدعم النسائي:",
-                reply_markup=CANCEL_KB,
-            )
+            _open_support_session(update, user_id)
             return
         elif text == BTN_CANCEL:
             WAITING_SUPPORT_GENDER.discard(user_id)
@@ -7930,12 +7948,33 @@ def handle_text(update: Update, context: CallbackContext):
             forward_support_to_admin(user, text, context)
             msg.reply_text(
                 "📨 ردّك وصل للدعم 🤍",
-                reply_markup=main_kb,
+                reply_markup=SUPPORT_SESSION_KB if support_session_active else main_kb,
             )
             return
 
+    if text == BTN_SUPPORT_END:
+        if user_id in WAITING_SUPPORT:
+            WAITING_SUPPORT.discard(user_id)
+            WAITING_SUPPORT_GENDER.discard(user_id)
+            msg.reply_text(
+                "تم إنهاء التواصل مع الدعم ✅",
+                reply_markup=main_kb,
+            )
+        else:
+            msg.reply_text(
+                "لا توجد محادثة دعم مفتوحة حالياً.",
+                reply_markup=main_kb,
+            )
+        return
+
     # زر إلغاء عام
     if text == BTN_CANCEL:
+        if support_session_active:
+            update.message.reply_text(
+                "جلسة الدعم ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» لإغلاقها.",
+                reply_markup=SUPPORT_SESSION_KB,
+            )
+            return
         # إزالة المستخدم من جميع حالات الانتظار
         WAITING_GENDER.discard(user_id)
         WAITING_AGE.discard(user_id)
@@ -7958,7 +7997,6 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_LETTER_DELETE_SELECT.discard(user_id)
         LETTER_CURRENT_DATA.pop(user_id, None)
         WAITING_SUPPORT_GENDER.discard(user_id)
-        WAITING_SUPPORT.discard(user_id)
         WAITING_BROADCAST.discard(user_id)
         WAITING_MOTIVATION_ADD.discard(user_id)
         WAITING_MOTIVATION_DELETE.discard(user_id)
@@ -8006,6 +8044,27 @@ def handle_text(update: Update, context: CallbackContext):
         update.message.reply_text(
             "تم الإلغاء. عدنا للقائمة الرئيسية.",
             reply_markup=main_kb,
+        )
+        return
+
+    if user_id in WAITING_SUPPORT:
+        forward_support_to_admin(user, text, context)
+
+        gender = record.get("gender")
+        if gender == "female":
+            reply_txt = (
+                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
+                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+            )
+        else:
+            reply_txt = (
+                "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
+                "الجلسة ما زالت مفتوحة. اضغط «🔚 إنهاء التواصل» عند الانتهاء."
+            )
+
+        msg.reply_text(
+            reply_txt,
+            reply_markup=SUPPORT_SESSION_KB,
         )
         return
 
@@ -8110,29 +8169,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if user_id in WAITING_BAN_REASON:
         handle_ban_reason_input(update, context)
-        return
-
-    # الدعم
-    if user_id in WAITING_SUPPORT:
-        WAITING_SUPPORT.discard(user_id)
-        forward_support_to_admin(user, text, context)
-
-        gender = record.get("gender")
-        if gender == "female":
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم النسائي (المشرفة) 🤍\n"
-                "سيتم الاطلاع عليها والرد عليك في أقرب وقت بإذن الله."
-            )
-        else:
-            reply_txt = (
-                "📨 تم إرسال رسالتك إلى الدعم 🤍\n"
-                "سيتم الاطلاع عليها والرد عليك في أقرب وقت بإذن الله."
-            )
-
-        msg.reply_text(
-            reply_txt,
-            reply_markup=main_kb,
-        )
         return
 
     # رسالة جماعية
@@ -11506,4 +11542,3 @@ if __name__ == "__main__":
             updater.stop()
     except Exception as e:
         logger.error(f"❌ خطأ نهائي: {e}", exc_info=True)
-
