@@ -2881,7 +2881,17 @@ def show_books_by_category(update: Update, context: CallbackContext, category_id
         if msg:
             msg.reply_text("هذا التصنيف غير متاح حالياً.", reply_markup=books_home_keyboard())
         return
-    books = fetch_books_list(category_id=category_id, include_inactive=False, include_deleted=False)
+    books_list = fetch_books_list(include_inactive=False, include_deleted=False)
+    category_samples = [
+        {"value": book.get("category_id"), "type": type(book.get("category_id")).__name__} for book in books_list[:5]
+    ]
+    logger.info(
+        "[BOOKS][LIST][CATEGORY_DEBUG] requested_category_id=%s type=%s sample_category_ids=%s",
+        category_id,
+        type(category_id).__name__,
+        category_samples,
+    )
+    books = [book for book in books_list if str(book.get("category_id")) == str(category_id)]
     logger.info(
         "[BOOKS][LIST][DISPLAY] category=%s page=%s total=%s",
         category_id,
