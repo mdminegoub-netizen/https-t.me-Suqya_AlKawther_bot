@@ -8563,6 +8563,12 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
+    # BOOKS user search input must be handled first
+    if user_id in WAITING_BOOK_SEARCH:
+        logger.info("[BOOKS][SEARCH] input user_id=%s text=%s", user_id, text)
+        handle_book_search_input(update, context)
+        return
+
     record = get_user_record(user)
     
     # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
