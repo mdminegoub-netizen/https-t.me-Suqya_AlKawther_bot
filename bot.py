@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import random
+from collections import defaultdict
 from uuid import uuid4
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
@@ -1447,6 +1448,7 @@ BTN_BOOKS_ADMIN = "📚 إدارة مكتبة الكتب"
 BTN_BOOKS_MANAGE_CATEGORIES = "🗂 إدارة التصنيفات"
 BTN_BOOKS_ADD_BOOK = "➕ إضافة كتاب"
 BTN_BOOKS_MANAGE_BOOKS = "📋 إدارة الكتب"
+BTN_BOOKS_BACKFILL = "♻️ تهيئة بيانات الكتب"
 BTN_BOOKS_BACK_MENU = "🔙 رجوع إلى مكتبة الكتب"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
@@ -1882,6 +1884,7 @@ BOOKS_ADMIN_MENU_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_BOOKS_MANAGE_CATEGORIES)],
         [KeyboardButton(BTN_BOOKS_ADD_BOOK)],
         [KeyboardButton(BTN_BOOKS_MANAGE_BOOKS)],
+        [KeyboardButton(BTN_BOOKS_BACKFILL)],
         [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
     ],
     resize_keyboard=True,
@@ -2015,6 +2018,7 @@ BOOKS_CATEGORY_SELECT_PREFIX = "BOOKS:cat"
 BOOKS_SEARCH_RESULTS_PREFIX = "BOOKS:search_results"
 BOOKS_ADMIN_EDIT_CATEGORY_PREFIX = "BOOKS:edit_category"
 BOOKS_ADMIN_EDIT_BOOK_PREFIX = "BOOKS:edit_book"
+BOOKS_BACKFILL_BATCH_SIZE = 200
 
 
 def _book_timestamp_value():
@@ -2097,6 +2101,122 @@ def _sort_books_by_created_at(books: List[Dict]) -> List[Dict]:
 
 def _log_book_skip(book_id: str, reason: str):
     logger.info("[BOOKS][SKIP] book_id=%s reason=%s", book_id, reason)
+
+
+def _prepare_book_backfill_updates(book: Dict) -> Tuple[Dict, List[str]]:
+    updates: Dict = {}
+    reasons: List[str] = []
+
+    if not isinstance(book.get("is_active"), bool):
+        updates["is_active"] = True
+        reasons.append("is_active_defaulted")
+
+    if not isinstance(book.get("is_deleted"), bool):
+        updates["is_deleted"] = False
+        reasons.append("is_deleted_defaulted")
+
+    created_missing = "created_at" not in book or book.get("created_at") is None
+    if created_missing:
+        updated_value = _book_created_at_value(book.get("updated_at"))
+        updates["created_at"] = updated_value or firestore.SERVER_TIMESTAMP
+        reasons.append("created_at_added")
+
+    if "downloads_count" not in book:
+        updates["downloads_count"] = 0
+        reasons.append("downloads_defaulted")
+
+    if updates:
+        updates["updated_at"] = firestore.SERVER_TIMESTAMP
+
+    return updates, reasons
+
+
+def _flush_books_backfill_batch(batch_items: List[Tuple[str, Dict]], errors: List[str]) -> int:
+    if not batch_items:
+        return 0
+    batch = db.batch()
+    doc_ids = []
+    for doc_id, payload in batch_items:
+        doc_ids.append(doc_id)
+        ref = db.collection(BOOKS_COLLECTION).document(doc_id)
+        batch.update(ref, payload)
+    try:
+        batch.commit()
+        return len(batch_items)
+    except Exception as e:
+        errors.append(f"{','.join(doc_ids)} | {e}")
+        return 0
+
+
+def run_books_backfill() -> Dict:
+    stats = {"total": 0, "updated": 0, "skipped": 0}
+    skipped_reasons = defaultdict(int)
+    errors: List[str] = []
+
+    if not firestore_available():
+        return {
+            "total": 0,
+            "updated": 0,
+            "skipped": 0,
+            "errors": ["firestore_unavailable"],
+            "skipped_reasons": {},
+        }
+
+    docs = db.collection(BOOKS_COLLECTION).stream()
+    batch_items: List[Tuple[str, Dict]] = []
+
+    for doc in docs:
+        stats["total"] += 1
+        book = doc.to_dict() or {}
+        book_id = doc.id or book.get("id") or "unknown"
+
+        try:
+            updates, reasons = _prepare_book_backfill_updates(book)
+        except Exception as prep_err:
+            errors.append(f"{book_id} | prep_error | {prep_err}")
+            continue
+
+        if not updates:
+            stats["skipped"] += 1
+            skipped_reasons["no_changes"] += 1
+            continue
+
+        batch_items.append((book_id, updates))
+
+        if len(batch_items) >= BOOKS_BACKFILL_BATCH_SIZE:
+            stats["updated"] += _flush_books_backfill_batch(batch_items, errors)
+            batch_items = []
+
+    stats["updated"] += _flush_books_backfill_batch(batch_items, errors)
+
+    stats["skipped_reasons"] = dict(skipped_reasons)
+    stats["errors"] = errors
+    return stats
+
+
+def _format_books_backfill_report(result: Dict) -> str:
+    lines = [
+        "♻️ تقرير تهيئة بيانات الكتب",
+        f"- إجمالي السجلات: {result.get('total', 0)}",
+        f"- تم التحديث: {result.get('updated', 0)}",
+        f"- تم التخطي: {result.get('skipped', 0)}",
+    ]
+
+    skipped = result.get("skipped_reasons") or {}
+    if skipped:
+        lines.append("أسباب التخطي:")
+        for reason, count in skipped.items():
+            lines.append(f"  • {reason}: {count}")
+
+    errors = result.get("errors") or []
+    if errors:
+        lines.append(f"الأخطاء ({len(errors)}):")
+        for err in errors[:10]:
+            lines.append(f"  • {err}")
+        if len(errors) > 10:
+            lines.append(f"  • ... (+{len(errors) - 10} أخطاء إضافية)")
+
+    return "\n".join(lines)
 
 
 def fetch_book_categories(include_inactive: bool = False) -> List[Dict]:
@@ -2898,6 +3018,27 @@ def handle_toggle_saved(update: Update, context: CallbackContext, book_id: str, 
 
 def _ensure_is_admin_or_supervisor(user_id: int) -> bool:
     return is_admin(user_id) or is_supervisor(user_id)
+
+
+def _run_books_backfill_for_admin(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not user or not _ensure_is_admin_or_supervisor(user.id):
+        if update.message:
+            update.message.reply_text("هذا الأمر مخصص للأدمن فقط.")
+        return
+
+    if not firestore_available():
+        update.message.reply_text("Firestore غير متاح حالياً. تعذر تشغيل التهيئة.")
+        return
+
+    progress_msg = update.message.reply_text("🔄 جارٍ تهيئة بيانات الكتب...")
+    result = run_books_backfill()
+    report = _format_books_backfill_report(result)
+
+    try:
+        progress_msg.edit_text(report)
+    except Exception:
+        update.message.reply_text(report)
 
 
 def open_books_admin_menu(update: Update, context: CallbackContext):
@@ -9075,6 +9216,10 @@ def handle_text(update: Update, context: CallbackContext):
         open_books_admin_list(update, context)
         return
 
+    if text == BTN_BOOKS_BACKFILL:
+        _run_books_backfill_for_admin(update, context)
+        return
+
     if text == BTN_BACK_MAIN:
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         msg.reply_text(
@@ -10431,6 +10576,7 @@ def start_bot():
         dispatcher.add_handler(CommandHandler("start", start_command))
         dispatcher.add_handler(CommandHandler("help", help_command))
         dispatcher.add_handler(CommandHandler("clean_audio_library", handle_clean_audio_library_command))
+        dispatcher.add_handler(CommandHandler("books_backfill", _run_books_backfill_for_admin))
 
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^SUPPORT:OPEN$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
