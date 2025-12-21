@@ -2014,11 +2014,13 @@ BOOKS_EXIT_CALLBACK = "BOOKS:exit"
 BOOKS_ADMIN_MANAGE_CATEGORIES = "BOOKS:admin_categories"
 BOOKS_ADMIN_MANAGE_BOOKS = "BOOKS:admin_books"
 BOOKS_ADMIN_ADD_BOOK = "BOOKS:admin_add_book"
+BOOKS_BACK_CALLBACK = "BOOKS:back"
 BOOKS_CATEGORY_SELECT_PREFIX = "BOOKS:cat"
 BOOKS_SEARCH_RESULTS_PREFIX = "BOOKS:search_results"
 BOOKS_ADMIN_EDIT_CATEGORY_PREFIX = "BOOKS:edit_category"
 BOOKS_ADMIN_EDIT_BOOK_PREFIX = "BOOKS:edit_book"
 BOOKS_BACKFILL_BATCH_SIZE = 200
+BOOKS_DEFAULT_ROUTE = "home:none:0"
 
 
 def _book_timestamp_value():
@@ -2676,26 +2678,21 @@ def _book_caption(book: Dict, category_name: str = None) -> str:
     return "\n\n".join(lines)
 
 
-def _book_detail_keyboard(book_id: str, back_payload: str, is_saved: bool) -> InlineKeyboardMarkup:
-    back_target = (
-        f"{BOOKS_CALLBACK_PREFIX}:list:{back_payload}"
-        if back_payload
-        else BOOKS_HOME_BACK
-    )
+def _book_detail_keyboard(book_id: str, is_saved: bool) -> InlineKeyboardMarkup:
     save_button = InlineKeyboardButton(
         "❌ إزالة من المحفوظات" if is_saved else "⭐ احفظ للقراءة لاحقًا",
-        callback_data=f"{BOOKS_CALLBACK_PREFIX}:toggle_save:{book_id}:{back_payload or 'home:none:0'}",
+        callback_data=f"{BOOKS_CALLBACK_PREFIX}:toggle_save:{book_id}",
     )
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
                     "⬇️ تحميل PDF",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:download:{book_id}:{back_payload or 'home:none:0'}",
+                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:download:{book_id}",
                 )
             ],
             [save_button],
-            [InlineKeyboardButton("🔙 رجوع", callback_data=back_target)],
+            [InlineKeyboardButton("🔙 رجوع", callback_data=BOOKS_HOME_BACK)],
         ]
     )
 
@@ -2765,6 +2762,24 @@ def _parse_route(route: str) -> Dict:
         "page": page,
         "search_token": search_token,
     }
+
+
+def _render_books_route(update: Update, context: CallbackContext, route: str, from_callback: bool = False):
+    route_info = _parse_route(route or BOOKS_DEFAULT_ROUTE)
+    source = route_info.get("source")
+    page = route_info.get("page", 0)
+    if source == "cat":
+        show_books_by_category(update, context, route_info.get("category_id"), page=page, from_callback=from_callback)
+    elif source == "latest":
+        show_latest_books(update, context, page=page, from_callback=from_callback)
+    elif source == "saved":
+        show_saved_books(update, context, page=page, from_callback=from_callback)
+    elif source == "search":
+        token = route_info.get("search_token")
+        if token:
+            _render_search_results(update, context, token, page=page, from_callback=from_callback)
+    else:
+        open_books_home(update, context, from_callback=from_callback)
 
 
 def _ensure_saved_books_defaults(record: Dict):
@@ -3012,24 +3027,30 @@ def _send_book_detail(update: Update, context: CallbackContext, book_id: str, ro
     record = get_user_record_by_id(update.effective_user.id) or {}
     _ensure_saved_books_defaults(record)
     is_saved = book_id in record.get("saved_books", [])
+    context.user_data["books_last_route"] = route_str or BOOKS_DEFAULT_ROUTE
     caption = _book_caption(book, category_name=category_name)
-    keyboard = _book_detail_keyboard(book_id, route_str, is_saved)
+    keyboard = _book_detail_keyboard(book_id, is_saved)
 
     if from_callback and update.callback_query:
         update.callback_query.answer()
     chat_id = update.effective_chat.id if update.effective_chat else update.callback_query.message.chat_id
     cover_id = book.get("cover_file_id")
-    try:
-        if cover_id:
-            context.bot.send_photo(chat_id=chat_id, photo=cover_id)
-    except Exception as e:
-        logger.warning(
-            "[BOOKS] send_photo failed book=%s err=%s",
-            book_id,
-            e,
-            exc_info=True,
-        )
-
+    if cover_id:
+        try:
+            context.bot.send_photo(
+                chat_id=chat_id,
+                photo=cover_id,
+                caption=caption[:MAX_CAPTION],
+                reply_markup=keyboard,
+            )
+            return
+        except Exception as e:
+            logger.warning(
+                "[BOOKS] send_photo failed book=%s err=%s",
+                book_id,
+                e,
+                exc_info=True,
+            )
     try:
         context.bot.send_message(
             chat_id=chat_id,
@@ -3037,18 +3058,12 @@ def _send_book_detail(update: Update, context: CallbackContext, book_id: str, ro
             reply_markup=keyboard,
         )
     except Exception as e:
-        logger.error(
-            "[BOOKS] send_message failed book=%s err=%r caption_len=%s",
-            book_id,
-            e,
-            len(caption),
-            exc_info=True,
-        )
+        logger.error("[BOOKS] send_message failed err=%r", e, exc_info=True)
         if update.callback_query:
             update.callback_query.message.reply_text("تعذر عرض الكتاب حالياً.", reply_markup=books_home_keyboard())
 
 
-def handle_book_download(update: Update, context: CallbackContext, book_id: str, route_str: str):
+def handle_book_download(update: Update, context: CallbackContext, book_id: str):
     query = update.callback_query
     book = get_book_by_id(book_id)
     if not book or book.get("is_deleted") or not book.get("is_active", True):
@@ -3075,7 +3090,6 @@ def handle_book_download(update: Update, context: CallbackContext, book_id: str,
                 query.edit_message_reply_markup(
                     reply_markup=_book_detail_keyboard(
                         book_id,
-                        route_str,
                         book_id in (get_user_record_by_id(query.from_user.id) or {}).get("saved_books", []),
                     )
                 )
@@ -3087,7 +3101,7 @@ def handle_book_download(update: Update, context: CallbackContext, book_id: str,
             query.answer("تعذر إرسال الكتاب الآن.", show_alert=True)
 
 
-def handle_toggle_saved(update: Update, context: CallbackContext, book_id: str, route_str: str):
+def handle_toggle_saved(update: Update, context: CallbackContext, book_id: str):
     query = update.callback_query
     user_id = query.from_user.id
     record = get_user_record_by_id(user_id) or {}
@@ -3101,7 +3115,7 @@ def handle_toggle_saved(update: Update, context: CallbackContext, book_id: str, 
         query.answer("تم حفظ الكتاب للقراءة لاحقًا.", show_alert=False)
     try:
         updated_saved = not is_saved
-        query.edit_message_reply_markup(reply_markup=_book_detail_keyboard(book_id, route_str, updated_saved))
+        query.edit_message_reply_markup(reply_markup=_book_detail_keyboard(book_id, updated_saved))
     except Exception:
         pass
 
@@ -3803,8 +3817,9 @@ def handle_books_callback(update: Update, context: CallbackContext):
         )
         return
 
-    if data == BOOKS_HOME_BACK:
-        open_books_home(update, context, from_callback=True)
+    if data in {BOOKS_HOME_BACK, BOOKS_BACK_CALLBACK}:
+        last_route = context.user_data.get("books_last_route", BOOKS_DEFAULT_ROUTE)
+        _render_books_route(update, context, last_route, from_callback=True)
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:cat:"):
@@ -3840,21 +3855,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:list:"):
         route = data.split(":", 2)[2]
-        route_info = _parse_route(route)
-        source = route_info.get("source")
-        page = route_info.get("page", 0)
-        if source == "cat":
-            show_books_by_category(update, context, route_info.get("category_id"), page=page, from_callback=True)
-        elif source == "latest":
-            show_latest_books(update, context, page=page, from_callback=True)
-        elif source == "saved":
-            show_saved_books(update, context, page=page, from_callback=True)
-        elif source == "search":
-            token = route_info.get("search_token")
-            if token:
-                _render_search_results(update, context, token, page=page, from_callback=True)
-        else:
-            open_books_home(update, context, from_callback=True)
+        _render_books_route(update, context, route, from_callback=True)
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:book:"):
@@ -3867,21 +3868,19 @@ def handle_books_callback(update: Update, context: CallbackContext):
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:download:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
+        parts = data.split(":")
+        if len(parts) < 3:
             return
         book_id = parts[2]
-        route = parts[3]
-        handle_book_download(update, context, book_id, route)
+        handle_book_download(update, context, book_id)
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:toggle_save:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
+        parts = data.split(":")
+        if len(parts) < 3:
             return
         book_id = parts[2]
-        route = parts[3]
-        handle_toggle_saved(update, context, book_id, route)
+        handle_toggle_saved(update, context, book_id)
         return
 
     query.answer()
