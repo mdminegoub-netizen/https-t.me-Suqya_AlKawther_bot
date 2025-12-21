@@ -2984,6 +2984,7 @@ def _render_search_results(update: Update, context: CallbackContext, token: str,
 
 
 def handle_book_search_input(update: Update, context: CallbackContext):
+    logger.info("[BOOKS][SEARCH_INPUT] user=%s text=%r", update.effective_user.id, (update.message.text or "").strip())
     user_id = update.effective_user.id
     text = (update.message.text or "").strip()
     WAITING_BOOK_SEARCH.discard(user_id)
@@ -8577,14 +8578,14 @@ def handle_supervisor_new_users(update: Update, context: CallbackContext):
 def handle_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    msg = update.message
-    text = (msg.text or "").strip()
 
-    # BOOKS user search input must be handled first
+    # ✅ Student library search input must be handled FIRST
     if user_id in WAITING_BOOK_SEARCH:
-        logger.info("[BOOKS][SEARCH] input user_id=%s text=%s", user_id, text)
         handle_book_search_input(update, context)
         return
+
+    msg = update.message
+    text = (msg.text or "").strip()
 
     record = get_user_record(user)
     
@@ -9044,10 +9045,6 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     # مكتبة الكتب - حالات الإدخال النصي
-    if user_id in WAITING_BOOK_SEARCH:
-        handle_book_search_input(update, context)
-        return
-
     if user_id in WAITING_BOOK_ADMIN_SEARCH:
         handle_admin_book_search_input(update, context)
         return
