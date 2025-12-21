@@ -2046,6 +2046,45 @@ def _book_category_sort_key(cat: Dict) -> Tuple:
     )
 
 
+def _book_created_at_value(raw_value) -> datetime:
+    if isinstance(raw_value, datetime):
+        return raw_value
+    if hasattr(raw_value, "to_datetime"):
+        try:
+            return raw_value.to_datetime()
+        except Exception:
+            pass
+    if hasattr(raw_value, "timestamp") and not isinstance(raw_value, (int, float)):
+        try:
+            return datetime.fromtimestamp(raw_value.timestamp(), tz=timezone.utc)
+        except Exception:
+            pass
+    if isinstance(raw_value, (int, float)):
+        try:
+            return datetime.fromtimestamp(raw_value, tz=timezone.utc)
+        except Exception:
+            pass
+    if isinstance(raw_value, str):
+        try:
+            return datetime.fromisoformat(raw_value)
+        except Exception:
+            pass
+    return None
+
+
+def _sort_books_by_created_at(books: List[Dict]) -> List[Dict]:
+    fallback = datetime.fromtimestamp(0, tz=timezone.utc)
+    return sorted(
+        books,
+        key=lambda b: _book_created_at_value(b.get("created_at")) or fallback,
+        reverse=True,
+    )
+
+
+def _log_book_skip(book_id: str, reason: str):
+    logger.info("[BOOKS][SKIP] book_id=%s reason=%s", book_id, reason)
+
+
 def fetch_book_categories(include_inactive: bool = False) -> List[Dict]:
     if not firestore_available():
         logger.warning("[BOOKS] Firestore غير متاح - لا يمكن جلب التصنيفات")
@@ -2179,8 +2218,22 @@ def fetch_books_list(
         for doc in docs:
             book = doc.to_dict()
             book["id"] = doc.id
+            missing_required = [field for field in ("title", "category_id", "pdf_file_id", "created_at") if not book.get(field)]
+            if missing_required:
+                logger.warning(
+                    "[BOOKS][LIST][MISSING] book_id=%s missing=%s",
+                    doc.id,
+                    ",".join(missing_required),
+                )
             books.append(book)
-        books.sort(key=lambda b: b.get("created_at") or "", reverse=True)
+        books = _sort_books_by_created_at(books)
+        logger.info(
+            "[BOOKS][LIST] fetched=%s filters=category:%s include_inactive=%s include_deleted=%s",
+            len(books),
+            category_id or "all",
+            include_inactive,
+            include_deleted,
+        )
         return books
     except Exception as e:
         logger.error(f"[BOOKS] خطأ في جلب الكتب: {e}", exc_info=True)
@@ -2202,6 +2255,8 @@ def fetch_latest_books(limit: int = BOOK_LATEST_LIMIT) -> List[Dict]:
             book = doc.to_dict()
             book["id"] = doc.id
             books.append(book)
+        books = _sort_books_by_created_at(books)
+        logger.info("[BOOKS][LATEST] fetched=%s limit=%s order=created_at_desc", len(books), limit)
         return books
     except Exception as e:
         logger.error(f"[BOOKS] خطأ في جلب آخر الإضافات: {e}", exc_info=True)
@@ -2234,8 +2289,19 @@ def create_book_record(payload: Dict) -> str:
     payload.setdefault("updated_at", _book_timestamp_value())
     try:
         doc_ref = db.collection(BOOKS_COLLECTION).add(payload)[1]
-        logger.info("[BOOKS] تم إنشاء كتاب جديد %s", doc_ref.id)
-        return doc_ref.id
+        book_id = doc_ref.id
+        logger.info("[BOOKS] تم إنشاء كتاب جديد %s", book_id)
+        try:
+            stored_doc = doc_ref.get()
+            stored_data = stored_doc.to_dict() or {}
+            stored_data["id"] = book_id
+            logger.info(
+                "[BOOKS][NEW_RECORD] %s",
+                json.dumps(stored_data, ensure_ascii=False, default=str),
+            )
+        except Exception as log_err:
+            logger.warning("[BOOKS] تعذر قراءة السجل بعد الإنشاء: %s", log_err, exc_info=True)
+        return book_id
     except Exception as e:
         logger.error(f"[BOOKS] خطأ في إنشاء الكتاب: {e}", exc_info=True)
         return ""
@@ -2307,8 +2373,16 @@ def _fetch_books_by_ids(book_ids: List[str]) -> List[Dict]:
     books: List[Dict] = []
     for bid in book_ids:
         book = get_book_by_id(bid)
-        if book and not book.get("is_deleted") and book.get("is_active", True):
-            books.append(book)
+        if not book:
+            _log_book_skip(bid, "not_found")
+            continue
+        if book.get("is_deleted"):
+            _log_book_skip(bid, "is_deleted")
+            continue
+        if not book.get("is_active", True):
+            _log_book_skip(bid, "is_active_false")
+            continue
+        books.append(book)
     return books
 
 
@@ -2548,6 +2622,12 @@ def show_books_by_category(update: Update, context: CallbackContext, category_id
             msg.reply_text("هذا التصنيف غير متاح حالياً.", reply_markup=books_home_keyboard())
         return
     books = fetch_books_list(category_id=category_id, include_inactive=False, include_deleted=False)
+    logger.info(
+        "[BOOKS][LIST][DISPLAY] category=%s page=%s total=%s",
+        category_id,
+        page,
+        len(books),
+    )
     title = f"🗂 كتب تصنيف «{category.get('name', 'غير مسمى')}»"
     _send_books_list_message(
         update,
@@ -2564,6 +2644,7 @@ def show_books_by_category(update: Update, context: CallbackContext, category_id
 
 def show_latest_books(update: Update, context: CallbackContext, page: int = 0, from_callback: bool = False):
     books = fetch_latest_books(limit=BOOK_LATEST_LIMIT)
+    logger.info("[BOOKS][LATEST][DISPLAY] page=%s total=%s", page, len(books))
     _send_books_list_message(
         update,
         context,
@@ -2637,6 +2718,7 @@ def prompt_book_search(update: Update, context: CallbackContext):
 def _send_book_detail(update: Update, context: CallbackContext, book_id: str, route_str: str, from_callback: bool = False):
     book = get_book_by_id(book_id)
     if not book or book.get("is_deleted") or not book.get("is_active", True):
+        _log_book_skip(book_id, "detail_not_available")
         target = update.callback_query if from_callback else update.message
         target.reply_text("هذا الكتاب غير متاح حالياً.", reply_markup=books_home_keyboard())
         return
@@ -2690,6 +2772,7 @@ def handle_book_download(update: Update, context: CallbackContext, book_id: str,
     query = update.callback_query
     book = get_book_by_id(book_id)
     if not book or book.get("is_deleted") or not book.get("is_active", True):
+        _log_book_skip(book_id, "download_not_available")
         if query:
             query.answer("الكتاب غير متاح.", show_alert=True)
         return
