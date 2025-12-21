@@ -2664,15 +2664,24 @@ def _send_book_detail(update: Update, context: CallbackContext, book_id: str, ro
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
-        else:
-            context.bot.send_message(
-                chat_id=chat_id,
-                text=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-            )
+            return
     except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إرسال تفاصيل الكتاب: {e}")
+        logger.warning(
+            "[BOOKS] تعذر إرسال غلاف الكتاب %s: %s — سيتم إرسال التفاصيل دون غلاف",
+            book_id,
+            e,
+            exc_info=True,
+        )
+
+    try:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text=caption,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"[BOOKS] خطأ في إرسال تفاصيل الكتاب: {e}", exc_info=True)
         if update.callback_query:
             update.callback_query.message.reply_text("تعذر عرض الكتاب حالياً.", reply_markup=books_home_keyboard())
 
