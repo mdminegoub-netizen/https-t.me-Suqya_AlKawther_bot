@@ -2364,16 +2364,8 @@ def category_has_books(category_id: str) -> bool:
     if not firestore_available():
         return False
     try:
-        docs = (
-            db.collection(BOOKS_COLLECTION)
-            .where("category_id", "==", category_id)
-            .where("is_deleted", "==", False)
-            .limit(1)
-            .stream()
-        )
-        for _ in docs:
-            return True
-        return False
+        books = fetch_books_list(include_inactive=True, include_deleted=False)
+        return any(str(book.get("category_id")) == str(category_id) for book in books)
     except Exception as e:
         logger.error(f"[BOOKS] خطأ في فحص كتب التصنيف {category_id}: {e}")
         return False
