@@ -9,6 +9,7 @@ import json
 import logging
 import firebase_admin
 from firebase_admin import credentials, firestore
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 # إعدادات
@@ -182,6 +183,35 @@ def _normalize_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _normalize_timestamp(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if hasattr(value, "to_datetime"):
+        try:
+            dt = value.to_datetime()
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            pass
+    if hasattr(value, "timestamp") and not isinstance(value, (int, float)):
+        try:
+            ts_val = value.timestamp()
+            return datetime.fromtimestamp(ts_val, tz=timezone.utc)
+        except Exception:
+            pass
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except Exception:
+            return None
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+    return None
+
+
 def backfill_books_defaults(db) -> Optional[int]:
     """ملء الحقول الناقصة أو الخاطئة للكتب القديمة."""
     try:
@@ -200,17 +230,23 @@ def backfill_books_defaults(db) -> Optional[int]:
 
         current_is_deleted = data.get("is_deleted")
         normalized_deleted = _normalize_bool(current_is_deleted, False)
-        if current_is_deleted != normalized_deleted:
+        if current_is_deleted != normalized_deleted or not isinstance(current_is_deleted, bool):
             updates["is_deleted"] = normalized_deleted
 
         current_is_active = data.get("is_active")
         normalized_active = _normalize_bool(current_is_active, True)
-        if current_is_active != normalized_active:
+        if current_is_active != normalized_active or not isinstance(current_is_active, bool):
             updates["is_active"] = normalized_active
 
-        if data.get("created_at") in (None, ""):
-            fallback_created = data.get("updated_at") or firestore.SERVER_TIMESTAMP
-            updates["created_at"] = fallback_created
+        current_created = data.get("created_at")
+        normalized_created = _normalize_timestamp(current_created)
+        fallback_created = _normalize_timestamp(data.get("updated_at")) or firestore.SERVER_TIMESTAMP
+        needs_created = current_created in (None, "") or normalized_created is None
+        needs_created = needs_created or not isinstance(current_created, datetime) or (
+            isinstance(current_created, datetime) and current_created.tzinfo is None
+        )
+        if needs_created:
+            updates["created_at"] = fallback_created if normalized_created is None else normalized_created
 
         if updates:
             updates["updated_at"] = firestore.SERVER_TIMESTAMP
