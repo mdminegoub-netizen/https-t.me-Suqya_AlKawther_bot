@@ -2816,8 +2816,9 @@ def books_home_keyboard() -> InlineKeyboardMarkup:
                 )
             ]
         )
+    search_button = InlineKeyboardButton("🔎 بحث داخل المكتبة", callback_data=BOOKS_SEARCH_PROMPT_CALLBACK)
     rows.append([InlineKeyboardButton("🆕 آخر الإضافات", callback_data=BOOKS_LATEST_CALLBACK)])
-    rows.append([InlineKeyboardButton("🔎 بحث داخل المكتبة", callback_data=BOOKS_SEARCH_PROMPT_CALLBACK)])
+    rows.append([search_button])
     rows.append([InlineKeyboardButton("📌 محفوظاتي", callback_data=BOOKS_SAVED_CALLBACK)])
     rows.append([InlineKeyboardButton("🔙 رجوع", callback_data=BOOKS_EXIT_CALLBACK)])
     return InlineKeyboardMarkup(rows)
@@ -2992,7 +2993,7 @@ def handle_book_search_input(update: Update, context: CallbackContext):
             reply_markup=books_home_keyboard(),
         )
         return
-    results = search_books(text)
+    results = search_books(text) or []
     token = uuid4().hex
     BOOK_SEARCH_CACHE[token] = {"query": text, "book_ids": [b.get("id") for b in results if b.get("id")]}
     _render_search_results(update, context, token, page=0, from_callback=False)
@@ -3821,6 +3822,10 @@ def handle_books_callback(update: Update, context: CallbackContext):
         open_books_home(update, context, from_callback=True)
         return
 
+    if data == BOOKS_SEARCH_PROMPT_CALLBACK:
+        prompt_book_search(update, context)
+        return
+
     if data == BOOKS_BACK_CALLBACK:
         last_route = context.user_data.get("books_last_route", BOOKS_DEFAULT_ROUTE)
         _render_books_route(update, context, last_route, from_callback=True)
@@ -3851,10 +3856,6 @@ def handle_books_callback(update: Update, context: CallbackContext):
         except Exception:
             page = 0
         show_saved_books(update, context, page=page, from_callback=True)
-        return
-
-    if data == BOOKS_SEARCH_PROMPT_CALLBACK:
-        prompt_book_search(update, context)
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:list:"):
