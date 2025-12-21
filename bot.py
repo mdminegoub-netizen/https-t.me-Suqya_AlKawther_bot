@@ -2103,9 +2103,55 @@ def _log_book_skip(book_id: str, reason: str):
     logger.info("[BOOKS][SKIP] book_id=%s reason=%s", book_id, reason)
 
 
-def _prepare_book_backfill_updates(book: Dict) -> Tuple[Dict, List[str]]:
+def _normalize_category_key(value: str) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower()
+
+
+def _build_category_lookup(include_inactive: bool = True) -> Dict[str, Dict[str, str]]:
+    if not firestore_available():
+        return {"id_map": {}, "name_map": {}, "slug_map": {}, "id_to_name": {}}
+    categories = fetch_book_categories(include_inactive=include_inactive)
+    lookup = {"id_map": {}, "name_map": {}, "slug_map": {}, "id_to_name": {}}
+    for cat in categories:
+        cat_id = (cat.get("id") or "").strip()
+        if not cat_id:
+            continue
+        normalized_id = _normalize_category_key(cat_id)
+        lookup["id_map"][normalized_id] = cat_id
+        lookup["id_to_name"][cat_id] = cat.get("name")
+        name_norm = _normalize_category_key(cat.get("name"))
+        if name_norm and name_norm not in lookup["name_map"]:
+            lookup["name_map"][name_norm] = cat_id
+        slug_norm = _normalize_category_key(cat.get("slug"))
+        if slug_norm and slug_norm not in lookup["slug_map"]:
+            lookup["slug_map"][slug_norm] = cat_id
+    return lookup
+
+
+def _resolve_category_id(category_lookup: Dict[str, Dict[str, str]], category_id: str = None, category_name: str = None) -> str:
+    if not category_lookup:
+        return (category_id or "").strip()
+    has_lookup_data = any(category_lookup.get(key) for key in ("id_map", "name_map", "slug_map"))
+    if not has_lookup_data:
+        return (category_id or "").strip()
+    normalized_id = _normalize_category_key(category_id)
+    if normalized_id and normalized_id in category_lookup.get("id_map", {}):
+        return category_lookup["id_map"][normalized_id]
+    for candidate in (category_name, category_id):
+        norm = _normalize_category_key(candidate)
+        if norm and norm in category_lookup.get("name_map", {}):
+            return category_lookup["name_map"][norm]
+        if norm and norm in category_lookup.get("slug_map", {}):
+            return category_lookup["slug_map"][norm]
+    return ""
+
+
+def _prepare_book_backfill_updates(book: Dict, category_lookup: Dict[str, Dict[str, str]] = None) -> Tuple[Dict, List[str]]:
     updates: Dict = {}
     reasons: List[str] = []
+    category_lookup = category_lookup or {}
 
     if not isinstance(book.get("is_active"), bool):
         updates["is_active"] = True
@@ -2124,6 +2170,23 @@ def _prepare_book_backfill_updates(book: Dict) -> Tuple[Dict, List[str]]:
     if "downloads_count" not in book:
         updates["downloads_count"] = 0
         reasons.append("downloads_defaulted")
+
+    if category_lookup:
+        current_category_raw = (book.get("category_id") or "").strip()
+        resolved_category_id = _resolve_category_id(
+            category_lookup,
+            category_id=current_category_raw,
+            category_name=book.get("category_name_snapshot"),
+        )
+        if resolved_category_id and resolved_category_id != current_category_raw:
+            updates["category_id"] = resolved_category_id
+            reasons.append("category_id_corrected")
+        elif not resolved_category_id and current_category_raw and _normalize_category_key(current_category_raw) not in category_lookup.get("id_map", {}):
+            reasons.append("category_id_unmapped")
+        desired_snapshot = category_lookup.get("id_to_name", {}).get(resolved_category_id or current_category_raw)
+        if desired_snapshot and desired_snapshot != book.get("category_name_snapshot"):
+            updates["category_name_snapshot"] = desired_snapshot
+            reasons.append("category_snapshot_synced")
 
     if updates:
         updates["updated_at"] = firestore.SERVER_TIMESTAMP
@@ -2162,6 +2225,7 @@ def run_books_backfill() -> Dict:
             "skipped_reasons": {},
         }
 
+    category_lookup = _build_category_lookup(include_inactive=True)
     docs = db.collection(BOOKS_COLLECTION).stream()
     batch_items: List[Tuple[str, Dict]] = []
 
@@ -2171,14 +2235,17 @@ def run_books_backfill() -> Dict:
         book_id = doc.id or book.get("id") or "unknown"
 
         try:
-            updates, reasons = _prepare_book_backfill_updates(book)
+            updates, reasons = _prepare_book_backfill_updates(book, category_lookup)
         except Exception as prep_err:
             errors.append(f"{book_id} | prep_error | {prep_err}")
             continue
 
         if not updates:
             stats["skipped"] += 1
-            skipped_reasons["no_changes"] += 1
+            reason_key = "no_changes"
+            if "category_id_unmapped" in reasons:
+                reason_key = "category_id_unmapped"
+            skipped_reasons[reason_key] += 1
             continue
 
         batch_items.append((book_id, updates))
@@ -2400,13 +2467,15 @@ def fetch_books_list(
         logger.warning("[BOOKS] Firestore غير متاح - تعذر جلب الكتب")
         return []
     try:
+        category_filter = (category_id or "").strip()
         all_books = _fetch_books_raw()
-        if category_id is not None:
-            all_books = [
-                b
-                for b in all_books
-                if str(b.get("category_id")) == str(category_id)
-            ]
+        if category_filter:
+            logger.info("[BOOKS][CAT_FILTER] wanted=%s total_before=%s", category_filter, len(all_books))
+            sample = [b.get("category_id") for b in all_books[:10]]
+            logger.info("[BOOKS][CAT_FILTER] sample_category_ids=%s", sample)
+            filtered = [b for b in all_books if (b.get("category_id") or "").strip() == category_filter]
+            logger.info("[BOOKS][CAT_FILTER] total_after=%s", len(filtered))
+            all_books = filtered
         books = _filter_books_pythonically(all_books, include_inactive, include_deleted)
         for book in books:
             missing_required = [field for field in ("title", "category_id", "pdf_file_id", "created_at") if not book.get(field)]
@@ -2420,7 +2489,7 @@ def fetch_books_list(
         logger.info(
             "[BOOKS][LIST] fetched=%s filters=category:%s include_inactive=%s include_deleted=%s",
             len(books),
-            category_id or "all",
+            category_filter or "all",
             include_inactive,
             include_deleted,
         )
@@ -2804,7 +2873,17 @@ def show_books_by_category(update: Update, context: CallbackContext, category_id
         if msg:
             msg.reply_text("هذا التصنيف غير متاح حالياً.", reply_markup=books_home_keyboard())
         return
-    books = fetch_books_list(category_id=category_id, include_inactive=False, include_deleted=False)
+    books_list = fetch_books_list(include_inactive=False, include_deleted=False)
+    category_samples = [
+        {"value": book.get("category_id"), "type": type(book.get("category_id")).__name__} for book in books_list[:5]
+    ]
+    logger.info(
+        "[BOOKS][LIST][CATEGORY_DEBUG] requested_category_id=%s type=%s sample_category_ids=%s",
+        category_id,
+        type(category_id).__name__,
+        category_samples,
+    )
+    books = [book for book in books_list if str(book.get("category_id")) == str(category_id)]
     logger.info(
         "[BOOKS][LIST][DISPLAY] category=%s page=%s total=%s",
         category_id,
@@ -3219,6 +3298,19 @@ def start_add_book_flow(update: Update, context: CallbackContext):
 
 def _finalize_book_creation(update: Update, context: CallbackContext, ctx: Dict):
     user_id = update.effective_user.id
+    category_lookup = _build_category_lookup(include_inactive=True)
+    resolved_category_id = _resolve_category_id(
+        category_lookup,
+        category_id=ctx.get("category_id"),
+        category_name=ctx.get("category_name_snapshot"),
+    )
+    if not resolved_category_id:
+        update.message.reply_text("تعذر تحديد التصنيف المختار. يرجى إعادة المحاولة.", reply_markup=BOOKS_ADMIN_MENU_KB)
+        _reset_book_creation(user_id)
+        return
+    if resolved_category_id != (ctx.get("category_id") or "").strip():
+        logger.info("[BOOKS][CREATE] normalized_category_id old=%s new=%s", ctx.get("category_id"), resolved_category_id)
+    ctx["category_id"] = resolved_category_id
     required_fields = ["category_id", "title", "author", "pdf_file_id"]
     if any(not ctx.get(f) for f in required_fields):
         update.message.reply_text("البيانات غير مكتملة. يرجى إعادة المحاولة.", reply_markup=BOOKS_ADMIN_MENU_KB)
@@ -3227,7 +3319,10 @@ def _finalize_book_creation(update: Update, context: CallbackContext, ctx: Dict)
     category_snapshot = None
     if ctx.get("category_id"):
         cat = get_book_category(ctx.get("category_id"))
-        category_snapshot = cat.get("name") if cat else None
+        if cat:
+            category_snapshot = cat.get("name")
+        else:
+            category_snapshot = category_lookup.get("id_to_name", {}).get(ctx.get("category_id")) or ctx.get("category_name_snapshot")
     payload = {
         "title": ctx.get("title"),
         "author": ctx.get("author"),
