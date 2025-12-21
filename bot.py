@@ -2987,6 +2987,8 @@ def handle_book_search_input(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     text = (update.message.text or "").strip()
 
+    WAITING_BOOK_SEARCH.discard(user_id)
+
     update_user_record(
         user_id,
         book_search_waiting=False,
@@ -3026,6 +3028,7 @@ def handle_book_search_input(update: Update, context: CallbackContext):
 def prompt_book_search(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
 
+    WAITING_BOOK_SEARCH.add(user_id)
     update_user_record(
         user_id,
         book_search_waiting=True,
@@ -8598,7 +8601,8 @@ def handle_text(update: Update, context: CallbackContext):
     record = get_user_record(user)
 
     # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
-    if record.get("book_search_waiting", False):
+    if user_id in WAITING_BOOK_SEARCH or record.get("book_search_waiting", False):
+        WAITING_BOOK_SEARCH.discard(user_id)
         logger.info("[BOOKS][SEARCH_ROUTE] user=%s text=%r", user_id, text)
         handle_book_search_input(update, context)
         return
