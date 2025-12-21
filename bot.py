@@ -2993,7 +2993,23 @@ def handle_book_search_input(update: Update, context: CallbackContext):
             reply_markup=books_home_keyboard(),
         )
         return
-    results = search_books(text) or []
+    normalized_query = _normalize_book_text(text)
+    books = fetch_books_list(include_inactive=False, include_deleted=False)
+    results = []
+    for book in books:
+        keywords = book.get("keywords", [])
+        if isinstance(keywords, str):
+            keywords = [keywords]
+        elif not isinstance(keywords, list):
+            keywords = []
+        search_fields = [
+            _normalize_book_text(book.get("title", "")),
+            _normalize_book_text(book.get("author", "")),
+            _normalize_book_text(book.get("description", "")),
+        ]
+        search_fields.extend([_normalize_book_text(str(k)) for k in keywords])
+        if any(normalized_query in field for field in search_fields):
+            results.append(book)
     token = uuid4().hex
     BOOK_SEARCH_CACHE[token] = {"query": text, "book_ids": [b.get("id") for b in results if b.get("id")]}
     _render_search_results(update, context, token, page=0, from_callback=False)
