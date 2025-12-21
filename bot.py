@@ -2984,10 +2984,16 @@ def _render_search_results(update: Update, context: CallbackContext, token: str,
 
 
 def handle_book_search_input(update: Update, context: CallbackContext):
-    logger.info("[BOOKS][SEARCH_INPUT] user=%s text=%r", update.effective_user.id, (update.message.text or "").strip())
     user_id = update.effective_user.id
     text = (update.message.text or "").strip()
-    WAITING_BOOK_SEARCH.discard(user_id)
+
+    update_user_record(
+        user_id,
+        book_search_waiting=False,
+        book_search_waiting_at=None,
+    )
+
+    logger.info("[BOOKS][SEARCH_INPUT] user=%s text=%r", user_id, text)
     if not text:
         update.message.reply_text(
             "الرجاء كتابة كلمة بحث صالحة.",
@@ -3019,12 +3025,19 @@ def handle_book_search_input(update: Update, context: CallbackContext):
 
 def prompt_book_search(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    WAITING_BOOK_SEARCH.add(user_id)
+
+    update_user_record(
+        user_id,
+        book_search_waiting=True,
+        book_search_waiting_at=datetime.now(timezone.utc).isoformat(),
+    )
+
     update.callback_query.answer()
     update.callback_query.message.reply_text(
         "أرسل الآن كلمة البحث.\nسأبحث في العنوان، المؤلف، الوصف والكلمات المفتاحية.",
         reply_markup=CANCEL_KB,
     )
+    logger.info("[BOOKS][SEARCH_PROMPT] user=%s firestore_waiting=True", user_id)
 
 
 MAX_CAPTION = 1000
@@ -8579,15 +8592,16 @@ def handle_text(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
 
-    # ✅ Student library search input must be handled FIRST
-    if user_id in WAITING_BOOK_SEARCH:
-        handle_book_search_input(update, context)
-        return
-
     msg = update.message
     text = (msg.text or "").strip()
 
     record = get_user_record(user)
+
+    # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
+    if record.get("book_search_waiting", False):
+        logger.info("[BOOKS][SEARCH_ROUTE] user=%s text=%r", user_id, text)
+        handle_book_search_input(update, context)
+        return
     
     # التحقق إذا كان المستخدم محظورًا في بداية كل رسالة
     if record.get("is_banned", False):
@@ -8946,6 +8960,7 @@ def handle_text(update: Update, context: CallbackContext):
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
         WAITING_WATER_ADD_CUPS.discard(user_id)
+        update_user_record(user_id, book_search_waiting=False, book_search_waiting_at=None)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
         if user_id in WAITING_BENEFIT_EDIT_TEXT:
