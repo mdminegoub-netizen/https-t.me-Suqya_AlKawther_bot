@@ -9,6 +9,7 @@ import json
 import logging
 import firebase_admin
 from firebase_admin import credentials, firestore
+from typing import Any, Optional
 
 # إعدادات
 DATA_FILE = "suqya_users.json"
@@ -162,6 +163,67 @@ def migrate_global_config(db, data):
     except Exception as e:
         logger.error(f"خطأ في ترحيل الإعدادات العامة: {e}")
 
+
+# ================================================
+#  ترحيل / استكمال حقول الكتب الناقصة
+# ================================================
+
+def _normalize_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def backfill_books_defaults(db) -> Optional[int]:
+    """ملء الحقول الناقصة أو الخاطئة للكتب القديمة."""
+    try:
+        books_ref = db.collection("books")
+        docs = books_ref.stream()
+    except Exception as e:
+        logger.error(f"❌ تعذر قراءة كتب Firestore: {e}")
+        return None
+
+    updated = 0
+    total = 0
+    for doc in docs:
+        total += 1
+        data = doc.to_dict() or {}
+        updates = {}
+
+        current_is_deleted = data.get("is_deleted")
+        normalized_deleted = _normalize_bool(current_is_deleted, False)
+        if current_is_deleted != normalized_deleted:
+            updates["is_deleted"] = normalized_deleted
+
+        current_is_active = data.get("is_active")
+        normalized_active = _normalize_bool(current_is_active, True)
+        if current_is_active != normalized_active:
+            updates["is_active"] = normalized_active
+
+        if data.get("created_at") in (None, ""):
+            fallback_created = data.get("updated_at") or firestore.SERVER_TIMESTAMP
+            updates["created_at"] = fallback_created
+
+        if updates:
+            updates["updated_at"] = firestore.SERVER_TIMESTAMP
+            try:
+                books_ref.document(doc.id).update(updates)
+                updated += 1
+                logger.info("✅ تم تحديث كتاب %s بالحقول الافتراضية", doc.id)
+            except Exception as e:
+                logger.error("❌ خطأ في تحديث كتاب %s: %s", doc.id, e)
+
+    logger.info("📚 فحص %s كتاب، تم تحديث %s منها", total, updated)
+    return updated
+
 def create_backup(data):
     """إنشاء نسخة احتياطية من البيانات"""
     try:
@@ -175,10 +237,16 @@ def create_backup(data):
 def main():
     """الدالة الرئيسية للترحيل"""
     logger.info("🚀 بدء عملية ترحيل البيانات إلى Firebase Firestore...")
-    
+
     # تهيئة Firebase
     db = initialize_firebase()
     if not db:
+        return
+
+    backfill_only = os.getenv("BACKFILL_BOOKS", "").strip().lower() in {"1", "true", "yes"}
+    if backfill_only:
+        logger.info("🛠 تشغيل مهمة استكمال حقول الكتب الناقصة فقط (BACKFILL_BOOKS=1)")
+        backfill_books_defaults(db)
         return
     
     # تحميل البيانات المحلية

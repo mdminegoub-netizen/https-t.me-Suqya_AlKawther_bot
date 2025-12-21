@@ -2201,6 +2201,62 @@ def _book_query(include_inactive=False, include_deleted=False):
     return query
 
 
+def _ensure_admin_book_defaults(payload: Dict, *, existing: Dict = None, is_creation: bool = False) -> Dict:
+    data = payload.copy()
+    if is_creation:
+        data["is_active"] = True
+        data["is_deleted"] = False
+        data["created_at"] = _book_timestamp_value()
+    else:
+        existing = existing or {}
+        if "is_active" not in data and ("is_active" not in existing or existing.get("is_active") is None):
+            data["is_active"] = True
+        if "is_deleted" not in data and ("is_deleted" not in existing or existing.get("is_deleted") is None):
+            data["is_deleted"] = False
+        if "created_at" not in data and ("created_at" not in existing or existing.get("created_at") is None):
+            data["created_at"] = _book_timestamp_value()
+    data["updated_at"] = _book_timestamp_value()
+    return data
+
+
+def _fetch_books_raw() -> List[Dict]:
+    docs = db.collection(BOOKS_COLLECTION).stream()
+    books = []
+    for doc in docs:
+        book = doc.to_dict() or {}
+        book["id"] = doc.id
+        books.append(book)
+    logger.info("[BOOKS][RAW] total=%s", len(books))
+    return books
+
+
+def _filter_books_pythonically(books: List[Dict], include_inactive: bool, include_deleted: bool) -> List[Dict]:
+    visible = []
+    for book in books:
+        book_id = book.get("id") or "unknown"
+        if not include_deleted and book.get("is_deleted") is True:
+            logger.info("[BOOKS][RAW_SKIP] %s is_deleted_true", book_id)
+            continue
+        if not include_inactive and book.get("is_active") is False:
+            logger.info("[BOOKS][RAW_SKIP] %s is_active_false", book_id)
+            continue
+        if not include_deleted and "is_deleted" not in book:
+            logger.info("[BOOKS][RAW_SKIP] %s missing_is_deleted", book_id)
+            continue
+        if not include_deleted and "is_deleted" in book and not isinstance(book.get("is_deleted"), bool):
+            logger.info("[BOOKS][RAW_SKIP] %s is_deleted_not_bool", book_id)
+            continue
+        if not include_inactive and "is_active" not in book:
+            logger.info("[BOOKS][RAW_SKIP] %s missing_is_active", book_id)
+            continue
+        if not include_inactive and "is_active" in book and not isinstance(book.get("is_active"), bool):
+            logger.info("[BOOKS][RAW_SKIP] %s is_active_not_bool", book_id)
+            continue
+        visible.append(book)
+    logger.info("[BOOKS][VISIBLE] total=%s", len(visible))
+    return visible
+
+
 def fetch_books_list(
     category_id: str = None,
     include_inactive: bool = False,
@@ -2210,22 +2266,18 @@ def fetch_books_list(
         logger.warning("[BOOKS] Firestore غير متاح - تعذر جلب الكتب")
         return []
     try:
-        query = _book_query(include_inactive, include_deleted)
+        all_books = _fetch_books_raw()
         if category_id:
-            query = query.where("category_id", "==", category_id)
-        docs = query.stream()
-        books = []
-        for doc in docs:
-            book = doc.to_dict()
-            book["id"] = doc.id
+            all_books = [b for b in all_books if b.get("category_id") == category_id]
+        books = _filter_books_pythonically(all_books, include_inactive, include_deleted)
+        for book in books:
             missing_required = [field for field in ("title", "category_id", "pdf_file_id", "created_at") if not book.get(field)]
             if missing_required:
                 logger.warning(
                     "[BOOKS][LIST][MISSING] book_id=%s missing=%s",
-                    doc.id,
+                    book.get("id"),
                     ",".join(missing_required),
                 )
-            books.append(book)
         books = _sort_books_by_created_at(books)
         logger.info(
             "[BOOKS][LIST] fetched=%s filters=category:%s include_inactive=%s include_deleted=%s",
@@ -2281,12 +2333,8 @@ def create_book_record(payload: Dict) -> str:
     if not firestore_available():
         logger.warning("[BOOKS] Firestore غير متاح - لن يتم حفظ الكتاب")
         return ""
-    payload = payload.copy()
+    payload = _ensure_admin_book_defaults(payload, is_creation=True)
     payload.setdefault("downloads_count", 0)
-    payload.setdefault("is_active", True)
-    payload.setdefault("is_deleted", False)
-    payload.setdefault("created_at", _book_timestamp_value())
-    payload.setdefault("updated_at", _book_timestamp_value())
     try:
         doc_ref = db.collection(BOOKS_COLLECTION).add(payload)[1]
         book_id = doc_ref.id
@@ -2311,8 +2359,15 @@ def update_book_record(book_id: str, **fields) -> bool:
     if not firestore_available():
         return False
     try:
-        fields["updated_at"] = _book_timestamp_value()
-        db.collection(BOOKS_COLLECTION).document(book_id).update(fields)
+        existing = {}
+        try:
+            existing_doc = db.collection(BOOKS_COLLECTION).document(book_id).get()
+            if existing_doc.exists:
+                existing = existing_doc.to_dict() or {}
+        except Exception as fetch_err:
+            logger.warning("[BOOKS] تعذر قراءة الكتاب قبل التحديث %s: %s", book_id, fetch_err)
+        data = _ensure_admin_book_defaults(fields, existing=existing, is_creation=False)
+        db.collection(BOOKS_COLLECTION).document(book_id).update(data)
         logger.info("[BOOKS] تم تحديث الكتاب %s", book_id)
         return True
     except Exception as e:
