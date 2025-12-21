@@ -8598,10 +8598,11 @@ def handle_text(update: Update, context: CallbackContext):
     msg = update.message
     text = (msg.text or "").strip()
 
-    record = get_user_record(user)
+    record = get_user_record(user) or {}
+    fresh_record = get_user_record_by_id(user_id) or record
 
     # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
-    if user_id in WAITING_BOOK_SEARCH or record.get("book_search_waiting", False):
+    if user_id in WAITING_BOOK_SEARCH or fresh_record.get("book_search_waiting", False):
         WAITING_BOOK_SEARCH.discard(user_id)
         logger.info("[BOOKS][SEARCH_ROUTE] user=%s text=%r", user_id, text)
         handle_book_search_input(update, context)
