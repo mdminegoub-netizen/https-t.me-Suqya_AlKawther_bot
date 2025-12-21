@@ -2023,6 +2023,20 @@ def _book_timestamp_value():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_book_bool(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "off", ""}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
 def _normalize_book_text(value: str) -> str:
     return (value or "").strip().lower()
 
@@ -2203,18 +2217,26 @@ def _book_query(include_inactive=False, include_deleted=False):
 
 def _ensure_admin_book_defaults(payload: Dict, *, existing: Dict = None, is_creation: bool = False) -> Dict:
     data = payload.copy()
-    if is_creation:
-        data["is_active"] = True
-        data["is_deleted"] = False
-        data["created_at"] = _book_timestamp_value()
-    else:
-        existing = existing or {}
-        if "is_active" not in data and ("is_active" not in existing or existing.get("is_active") is None):
-            data["is_active"] = True
-        if "is_deleted" not in data and ("is_deleted" not in existing or existing.get("is_deleted") is None):
-            data["is_deleted"] = False
-        if "created_at" not in data and ("created_at" not in existing or existing.get("created_at") is None):
-            data["created_at"] = _book_timestamp_value()
+    existing = existing or {}
+
+    active_value = _normalize_book_bool(
+        data.get("is_active") if "is_active" in data else (None if is_creation else existing.get("is_active")),
+        True,
+    )
+    deleted_value = _normalize_book_bool(
+        data.get("is_deleted") if "is_deleted" in data else (None if is_creation else existing.get("is_deleted")),
+        False,
+    )
+    created_source = data.get("created_at") if is_creation else data.get("created_at", existing.get("created_at"))
+    created_value = _book_created_at_value(created_source)
+    if isinstance(created_value, datetime) and created_value.tzinfo is None:
+        created_value = created_value.replace(tzinfo=timezone.utc)
+    if created_value is None:
+        created_value = _book_timestamp_value()
+
+    data["is_active"] = active_value
+    data["is_deleted"] = deleted_value
+    data["created_at"] = created_value
     data["updated_at"] = _book_timestamp_value()
     return data
 
@@ -2296,20 +2318,10 @@ def fetch_latest_books(limit: int = BOOK_LATEST_LIMIT) -> List[Dict]:
     if not firestore_available():
         return []
     try:
-        docs = (
-            _book_query(False, False)
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(limit)
-            .stream()
-        )
-        books = []
-        for doc in docs:
-            book = doc.to_dict()
-            book["id"] = doc.id
-            books.append(book)
+        all_books = _fetch_books_raw()
+        books = _filter_books_pythonically(all_books, include_inactive=False, include_deleted=False)
         books = _sort_books_by_created_at(books)
-        logger.info("[BOOKS][LATEST] fetched=%s limit=%s order=created_at_desc", len(books), limit)
-        return books
+        return books[:limit]
     except Exception as e:
         logger.error(f"[BOOKS] خطأ في جلب آخر الإضافات: {e}", exc_info=True)
         return []
@@ -3089,12 +3101,7 @@ def _finalize_book_creation(update: Update, context: CallbackContext, ctx: Dict)
         "cover_file_id": ctx.get("cover_file_id"),
         "pdf_file_id": ctx.get("pdf_file_id"),
         "pdf_filename": ctx.get("pdf_filename"),
-        "downloads_count": 0,
-        "is_active": True,
-        "is_deleted": False,
         "created_by": user_id,
-        "created_at": _book_timestamp_value(),
-        "updated_at": _book_timestamp_value(),
     }
     book_id = create_book_record(payload)
     _reset_book_creation(user_id)
