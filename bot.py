@@ -77,6 +77,28 @@ REQUEST_KWARGS = {
 USER_CACHE_TTL_SECONDS = int(os.getenv("USER_CACHE_TTL_SECONDS", 60))
 LAST_ACTIVE_UPDATE_INTERVAL_SECONDS = int(os.getenv("LAST_ACTIVE_UPDATE_INTERVAL_SECONDS", 60))
 
+
+def build_webhook_url(base_url: str, token: str) -> str:
+    """
+    تجهيز رابط الويب هوك بحيث ينتهي بواحد فقط من الشرطة المائلة ومعرّف التوكن.
+
+    - إذا كان base_url ينتهي بالفعل بالتوكن فلن نضيفه مرة أخرى.
+    - إذا لم يكن التوكن موجودًا نرجع الرابط بعد إزالة الشرطة المائلة الزائدة في النهاية.
+    """
+
+    if not base_url:
+        return ""
+
+    cleaned_base = base_url.rstrip("/")
+
+    if not token:
+        return cleaned_base
+
+    if cleaned_base.endswith(token):
+        return cleaned_base
+
+    return f"{cleaned_base}/{token}"
+
 # =================== خادم ويب بسيط لـ Render ===================
 
 app = Flask(__name__)
@@ -12149,13 +12171,21 @@ if __name__ == "__main__":
                 logger.error(f"❌ خطأ في تشغيل JobQueue: {e}", exc_info=True)
 
             # إعداد Webhook
+            webhook_url = build_webhook_url(WEBHOOK_URL, BOT_TOKEN)
+            if not webhook_url:
+                raise RuntimeError("❌ WEBHOOK_URL غير صالح بعد التنظيف، تأكد من ضبطه بشكل صحيح.")
+
             updater.bot.set_webhook(
-                WEBHOOK_URL + BOT_TOKEN,
+                webhook_url,
                 max_connections=WEBHOOK_MAX_CONNECTIONS,
                 timeout=WEBHOOK_TIMEOUT,
                 allowed_updates=ALLOWED_UPDATES,
             )
-            logger.info(f"✅ تم إعداد Webhook على {WEBHOOK_URL + BOT_TOKEN} بعدد اتصالات {WEBHOOK_MAX_CONNECTIONS}")
+            logger.info(
+                "✅ تم إعداد Webhook على %s بعدد اتصالات %s",
+                webhook_url,
+                WEBHOOK_MAX_CONNECTIONS,
+            )
             
             # تشغيل Flask (Blocking)
             run_flask()
