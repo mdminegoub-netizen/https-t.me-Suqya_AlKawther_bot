@@ -2997,17 +2997,18 @@ def handle_book_search_input(update: Update, context: CallbackContext):
     books = fetch_books_list(include_inactive=False, include_deleted=False)
     results = []
     for book in books:
-        keywords = book.get("keywords", [])
-        if isinstance(keywords, str):
-            keywords = [keywords]
-        elif not isinstance(keywords, list):
-            keywords = []
+        tags = book.get("tags") or book.get("keywords") or []
+        if isinstance(tags, str):
+            tags = [tags]
+        elif not isinstance(tags, list):
+            tags = []
         search_fields = [
             _normalize_book_text(book.get("title", "")),
             _normalize_book_text(book.get("author", "")),
             _normalize_book_text(book.get("description", "")),
+            _normalize_book_text(book.get("category_name_snapshot", "")),
         ]
-        search_fields.extend([_normalize_book_text(str(k)) for k in keywords])
+        search_fields.extend([_normalize_book_text(str(t)) for t in tags])
         if any(normalized_query in field for field in search_fields):
             results.append(book)
     token = uuid4().hex
