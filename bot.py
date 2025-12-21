@@ -2045,6 +2045,28 @@ def _normalize_book_text(value: str) -> str:
     return (value or "").strip().lower()
 
 
+def _normalize_category_id(val):
+    if val is None:
+        return ""
+    try:
+        # Firestore DocumentReference
+        if hasattr(val, "id"):
+            return str(val.id).strip()
+    except Exception:
+        pass
+    return str(val).strip()
+
+
+def _as_bool(v, default):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes", "y", "on")
+    if isinstance(v, (int, float)):
+        return bool(v)
+    return default
+
+
 def _parse_tags_input(text: str) -> List[str]:
     if not text:
         return []
@@ -2435,23 +2457,13 @@ def _filter_books_pythonically(books: List[Dict], include_inactive: bool, includ
     visible = []
     for book in books:
         book_id = book.get("id") or "unknown"
-        if not include_deleted and book.get("is_deleted") is True:
+        is_deleted = _as_bool(book.get("is_deleted"), False)
+        is_active = _as_bool(book.get("is_active"), True)
+        if not include_deleted and is_deleted:
             logger.info("[BOOKS][RAW_SKIP] %s is_deleted_true", book_id)
             continue
-        if not include_inactive and book.get("is_active") is False:
+        if not include_inactive and not is_active:
             logger.info("[BOOKS][RAW_SKIP] %s is_active_false", book_id)
-            continue
-        if not include_deleted and "is_deleted" not in book:
-            logger.info("[BOOKS][RAW_SKIP] %s missing_is_deleted", book_id)
-            continue
-        if not include_deleted and "is_deleted" in book and not isinstance(book.get("is_deleted"), bool):
-            logger.info("[BOOKS][RAW_SKIP] %s is_deleted_not_bool", book_id)
-            continue
-        if not include_inactive and "is_active" not in book:
-            logger.info("[BOOKS][RAW_SKIP] %s missing_is_active", book_id)
-            continue
-        if not include_inactive and "is_active" in book and not isinstance(book.get("is_active"), bool):
-            logger.info("[BOOKS][RAW_SKIP] %s is_active_not_bool", book_id)
             continue
         visible.append(book)
     logger.info("[BOOKS][VISIBLE] total=%s", len(visible))
@@ -2467,13 +2479,13 @@ def fetch_books_list(
         logger.warning("[BOOKS] Firestore غير متاح - تعذر جلب الكتب")
         return []
     try:
-        category_filter = (category_id or "").strip()
+        category_filter = _normalize_category_id(category_id)
         all_books = _fetch_books_raw()
         if category_filter:
             logger.info("[BOOKS][CAT_FILTER] wanted=%s total_before=%s", category_filter, len(all_books))
             sample = [b.get("category_id") for b in all_books[:10]]
             logger.info("[BOOKS][CAT_FILTER] sample_category_ids=%s", sample)
-            filtered = [b for b in all_books if (b.get("category_id") or "").strip() == category_filter]
+            filtered = [b for b in all_books if _normalize_category_id(b.get("category_id")) == category_filter]
             logger.info("[BOOKS][CAT_FILTER] total_after=%s", len(filtered))
             all_books = filtered
         books = _filter_books_pythonically(all_books, include_inactive, include_deleted)
@@ -2874,16 +2886,16 @@ def show_books_by_category(update: Update, context: CallbackContext, category_id
             msg.reply_text("هذا التصنيف غير متاح حالياً.", reply_markup=books_home_keyboard())
         return
     books_list = fetch_books_list(include_inactive=False, include_deleted=False)
-    category_samples = [
-        {"value": book.get("category_id"), "type": type(book.get("category_id")).__name__} for book in books_list[:5]
-    ]
+    requested = _normalize_category_id(category_id)
+    logger.info("[BOOKS][CAT] requested=%s", requested)
     logger.info(
-        "[BOOKS][LIST][CATEGORY_DEBUG] requested_category_id=%s type=%s sample_category_ids=%s",
-        category_id,
-        type(category_id).__name__,
-        category_samples,
+        "[BOOKS][CAT] sample=%s",
+        [
+            {"id": b.get("id"), "cat": repr(b.get("category_id")), "norm": _normalize_category_id(b.get("category_id"))}
+            for b in books_list[:20]
+        ],
     )
-    books = [book for book in books_list if str(book.get("category_id")) == str(category_id)]
+    books = [book for book in books_list if _normalize_category_id(book.get("category_id")) == requested]
     logger.info(
         "[BOOKS][LIST][DISPLAY] category=%s page=%s total=%s",
         category_id,
