@@ -2692,7 +2692,7 @@ def _book_detail_keyboard(book_id: str, is_saved: bool) -> InlineKeyboardMarkup:
                 )
             ],
             [save_button],
-            [InlineKeyboardButton("🔙 رجوع", callback_data=BOOKS_HOME_BACK)],
+            [InlineKeyboardButton("🔙 رجوع", callback_data=BOOKS_BACK_CALLBACK)],
         ]
     )
 
@@ -3817,7 +3817,11 @@ def handle_books_callback(update: Update, context: CallbackContext):
         )
         return
 
-    if data in {BOOKS_HOME_BACK, BOOKS_BACK_CALLBACK}:
+    if data == BOOKS_HOME_BACK:
+        open_books_home(update, context, from_callback=True)
+        return
+
+    if data == BOOKS_BACK_CALLBACK:
         last_route = context.user_data.get("books_last_route", BOOKS_DEFAULT_ROUTE)
         _render_books_route(update, context, last_route, from_callback=True)
         return
