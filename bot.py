@@ -9,6 +9,7 @@ from uuid import uuid4
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
 from typing import Dict, List, Tuple
+from html import escape
 
 import pytz
 from flask import Flask, request
@@ -2658,16 +2659,25 @@ def _paginate_items(items: List[Dict], page: int, page_size: int):
     return items[start : start + page_size], safe_page, total_pages
 
 
+def _h(v):
+    return escape(str(v or ""), quote=False)
+
+
 def _book_caption(book: Dict, category_name: str = None) -> str:
+    title = _h(book.get("title", "كتاب"))
+    author = _h(book.get("author", "غير محدد"))
+    cat = _h(category_name or book.get("category_name_snapshot", "غير مصنف"))
+    desc = book.get("description")
+    desc = _h(desc) if desc else ""
+    downloads = _h(book.get("downloads_count", 0))
+
     lines = [
-        f"📖 <b>{book.get('title', 'كتاب')}</b>",
-        f"✍️ المؤلف: {book.get('author', 'غير محدد')}",
+        f"📖 <b>{title}</b>",
+        f"✍️ المؤلف: {author}",
+        f"🗂 التصنيف: {cat}",
     ]
-    if category_name or book.get("category_name_snapshot"):
-        lines.append(f"🗂 التصنيف: {category_name or book.get('category_name_snapshot', 'غير مصنف')}")
-    if book.get("description"):
-        lines.append(f"📝 الوصف:\n{book.get('description')}")
-    downloads = book.get("downloads_count", 0)
+    if desc:
+        lines.append(f"📝 الوصف:\n{desc}")
     lines.append(f"⬇️ عدد التحميلات: {downloads}")
     return "\n\n".join(lines)
 
@@ -2989,6 +2999,9 @@ def prompt_book_search(update: Update, context: CallbackContext):
     )
 
 
+MAX_CAPTION = 1000
+
+
 def _send_book_detail(update: Update, context: CallbackContext, book_id: str, route_str: str, from_callback: bool = False):
     book = get_book_by_id(book_id)
     if not book or book.get("is_deleted") or not book.get("is_active", True):
@@ -3013,31 +3026,41 @@ def _send_book_detail(update: Update, context: CallbackContext, book_id: str, ro
     cover_id = book.get("cover_file_id")
     try:
         if cover_id:
-            context.bot.send_photo(
-                chat_id=chat_id,
-                photo=cover_id,
-                caption=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-            )
-            return
+            if len(caption) <= MAX_CAPTION:
+                context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=cover_id,
+                    caption=caption,
+                    reply_markup=keyboard,
+                    parse_mode="HTML",
+                )
+                return
+            context.bot.send_photo(chat_id=chat_id, photo=cover_id)
     except Exception as e:
         logger.warning(
-            "[BOOKS] تعذر إرسال غلاف الكتاب %s: %s — سيتم إرسال التفاصيل دون غلاف",
+            "[BOOKS] send_photo failed book=%s err=%s",
             book_id,
             e,
             exc_info=True,
         )
 
     try:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text=caption,
-            reply_markup=keyboard,
-            parse_mode="HTML",
-        )
+        if len(caption) <= 3800:
+            context.bot.send_message(
+                chat_id=chat_id,
+                text=caption,
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        else:
+            context.bot.send_message(
+                chat_id=chat_id,
+                text=caption[:3800],
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
     except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إرسال تفاصيل الكتاب: {e}", exc_info=True)
+        logger.error("[BOOKS] send_message failed book=%s err=%s", book_id, e, exc_info=True)
         if update.callback_query:
             update.callback_query.message.reply_text("تعذر عرض الكتاب حالياً.", reply_markup=books_home_keyboard())
 
