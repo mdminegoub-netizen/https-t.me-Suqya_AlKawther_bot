@@ -4,7 +4,6 @@ import json
 import logging
 import re
 import random
-from uuid import uuid4
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
 from typing import Dict, List, Tuple
@@ -32,7 +31,6 @@ from telegram.ext import (
     CallbackContext,
     CommandHandler,
     CallbackQueryHandler,
-    DispatcherHandlerStop,
 )
 
 # =================== إعدادات أساسية ===================
@@ -292,6 +290,7 @@ USERS_COLLECTION = "users"
 WATER_LOGS_COLLECTION = "water_logs"
 TIPS_COLLECTION = "tips"
 NOTES_COLLECTION = "notes"
+LETTERS_COLLECTION = "letters"
 GLOBAL_CONFIG_COLLECTION = "global_config"
 # Collections جديدة للمجتمع والمنافسات
 COMMUNITY_BENEFITS_COLLECTION = "community_benefits"
@@ -299,8 +298,6 @@ COMPETITION_POINTS_COLLECTION = "competition_points"
 COMMUNITY_MEDALS_COLLECTION = "community_medals"
 AUDIO_LIBRARY_COLLECTION = "audio_library"
 AUDIO_LIBRARY_FILE = "audio_library.json"
-BOOK_CATEGORIES_COLLECTION = "book_categories"
-BOOKS_COLLECTION = "books"
 
 
 # =================== نهاية Firebase ===================
@@ -319,11 +316,41 @@ def get_user_record_local_by_id(user_id: int) -> Dict:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_active": datetime.now(timezone.utc).isoformat(),
             "heart_memos": [],
-            "saved_books": [],
-            "saved_books_updated_at": None,
+            "letters_to_self": []
         }
     ensure_medal_defaults(data[uid])
     return data[uid]
+
+# دالة المساعدة للرسائل (محلية)
+def save_letter_local(user_id: int, letter_data: Dict) -> str:
+    """نسخة محلية من save_letter"""
+    record = get_user_record_local_by_id(user_id)
+    letters = record.get("letters_to_self", [])
+    
+    letter_data["id"] = f"letter_{len(letters)}"
+    letters.append(letter_data)
+    
+    update_user_record_local(user_id, letters_to_self=letters)
+    return letter_data["id"]
+
+def get_user_letters_local(user_id: int) -> List[Dict]:
+    """نسخة محلية من get_user_letters"""
+    record = get_user_record_local_by_id(user_id)
+    return record.get("letters_to_self", [])
+
+def update_letter_local(letter_id: str, letter_data: Dict):
+    """نسخة محلية من update_letter"""
+    try:
+        idx = int(letter_id.split("_")[1])
+        user_id = int(letter_id.split("_")[0])
+        record = get_user_record_local_by_id(user_id)
+        letters = record.get("letters_to_self", [])
+        
+        if 0 <= idx < len(letters):
+            letters[idx].update(letter_data)
+            update_user_record_local(user_id, letters_to_self=letters)
+    except:
+        pass
 
 
 def migrate_data_to_firestore():
@@ -364,9 +391,17 @@ def migrate_data_to_firestore():
                 
                 # إزالة المذكرات من بيانات المستخدم
                 user_data.pop("heart_memos", None)
-
-            # تجاهل بيانات الرسائل القديمة إن وجدت
-            user_data.pop("letters_to_self", None)
+            
+            # تحويل letters_to_self إلى تنسيق Firestore
+            letters = user_data.get("letters_to_self", [])
+            if letters and isinstance(letters, list) and len(letters) > 0:
+                # حفظ كل رسالة كوثيقة منفصلة
+                for letter in letters:
+                    if isinstance(letter, dict) and letter.get("content"):
+                        save_letter(user_id, letter)
+                
+                # إزالة الرسائل من بيانات المستخدم
+                user_data.pop("letters_to_self", None)
             
             # حفظ بيانات المستخدم
             doc_ref.set(user_data)
@@ -442,8 +477,7 @@ def get_user_record_local(user: User) -> Dict:
             "tasbih_total": 0,
             "adhkar_count": 0,
             "heart_memos": [],
-            "saved_books": [],
-            "saved_books_updated_at": None,
+            "letters_to_self": [],
             "points": 0,
             "level": 0,
             "medals": [],
@@ -479,8 +513,7 @@ def get_user_record_local(user: User) -> Dict:
             "tasbih_total": 0,
             "adhkar_count": 0,
             "heart_memos": [],
-            "saved_books": [],
-            "saved_books_updated_at": None,
+            "letters_to_self": [],
             "points": 0,
             "level": 0,
             "medals": [],
@@ -518,19 +551,13 @@ def get_all_user_ids_local() -> List[int]:
 
 def get_active_user_ids_local() -> List[int]:
     """نسخة محلية من get_active_user_ids"""
-    return [
-        int(uid)
-        for uid, rec in data.items()
-        if uid != "GLOBAL_KEY" and not rec.get("is_banned", False)
-    ]
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and not rec.get("is_banned", False)]
 
 def get_banned_user_ids_local() -> List[int]:
     """نسخة محلية من get_banned_user_ids"""
-    return [
-        int(uid)
-        for uid, rec in data.items()
-        if uid != "GLOBAL_KEY" and rec.get("is_banned", False)
-    ]
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
 
 def get_users_sorted_by_points_local() -> List[Dict]:
     """نسخة محلية من get_users_sorted_by_points"""
@@ -576,12 +603,519 @@ def update_benefit_local(benefit_id: int, benefit_data: Dict):
     config["benefits"] = benefits
     update_global_config_local(config)
 
+
+def get_active_user_ids_local() -> List[int]:
+    """نسخة محلية من get_active_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and not rec.get("is_banned", False)]
+
+def get_banned_user_ids_local() -> List[int]:
+    """نسخة محلية من get_banned_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
+
+def get_users_sorted_by_points_local() -> List[Dict]:
+    """نسخة محلية من get_users_sorted_by_points"""
+    return sorted(
+        [r for k, r in data.items() if k != "GLOBAL_KEY"],
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
+# دالة المساعدة للفوائد (محلية)
+def get_benefits_local() -> List[Dict]:
+    """نسخة محلية من get_benefits"""
+    config = get_global_config_local()
+    return config.get("benefits", [])
+
+def save_benefit_local(benefit_data: Dict) -> str:
+    """نسخة محلية من save_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    if "id" not in benefit_data:
+        benefit_data["id"] = get_next_benefit_id_local()
+    
+    if "date" not in benefit_data:
+        benefit_data["date"] = datetime.now(timezone.utc).isoformat()
+    
+    benefits.append(benefit_data)
+    config["benefits"] = benefits
+    update_global_config_local(config)
+    
+    return str(benefit_data["id"])
+
+def update_benefit_local(benefit_id: int, benefit_data: Dict):
+    """نسخة محلية من update_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    for i, benefit in enumerate(benefits):
+        if benefit.get("id") == benefit_id:
+            benefits[i].update(benefit_data)
+            break
+    
+    config["benefits"] = benefits
+    update_global_config_local(config)
+
+
+def get_banned_user_ids_local() -> List[int]:
+    """نسخة محلية من get_banned_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
+
+def get_users_sorted_by_points_local() -> List[Dict]:
+    """نسخة محلية من get_users_sorted_by_points"""
+    return sorted(
+        [r for k, r in data.items() if k != "GLOBAL_KEY"],
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
+# دالة المساعدة للفوائد (محلية)
+def get_benefits_local() -> List[Dict]:
+    """نسخة محلية من get_benefits"""
+    config = get_global_config_local()
+    return config.get("benefits", [])
+
+def save_benefit_local(benefit_data: Dict) -> str:
+    """نسخة محلية من save_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    if "id" not in benefit_data:
+        benefit_data["id"] = get_next_benefit_id_local()
+    
+    if "date" not in benefit_data:
+        benefit_data["date"] = datetime.now(timezone.utc).isoformat()
+    
+    benefits.append(benefit_data)
+    config["benefits"] = benefits
+    update_global_config_local(config)
+    
+    return str(benefit_data["id"])
+
+def update_benefit_local(benefit_id: int, benefit_data: Dict):
+    """نسخة محلية من update_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    for i, benefit in enumerate(benefits):
+        if benefit.get("id") == benefit_id:
+            benefits[i].update(benefit_data)
+            break
+    
+    config["benefits"] = benefits
+    update_global_config_local(config)
+
+
 # =================== نهاية دوال التخزين المحلي ===================
 
 
+# =================== دوال التخزين المحلي (Fallback) ===================
+
+def get_user_record_local_by_id(user_id: int) -> Dict:
+    """مساعدة للحصول على سجل محلي بواسطة ID"""
+    uid = str(user_id)
+    if uid not in data:
+        # إنشاء سجل افتراضي
+        data[uid] = {
+            "user_id": user_id,
+            "first_name": "مستخدم",
+            "username": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_active": datetime.now(timezone.utc).isoformat(),
+            "heart_memos": [],
+            "letters_to_self": []
+        }
+    return data[uid]
+
+# دالة المساعدة للرسائل (محلية)
+def save_letter_local(user_id: int, letter_data: Dict) -> str:
+    """نسخة محلية من save_letter"""
+    record = get_user_record_local_by_id(user_id)
+    letters = record.get("letters_to_self", [])
+    
+    letter_data["id"] = f"letter_{len(letters)}"
+    letters.append(letter_data)
+    
+    update_user_record_local(user_id, letters_to_self=letters)
+    return letter_data["id"]
+
+def get_user_letters_local(user_id: int) -> List[Dict]:
+    """نسخة محلية من get_user_letters"""
+    record = get_user_record_local_by_id(user_id)
+    return record.get("letters_to_self", [])
+
+def update_letter_local(letter_id: str, letter_data: Dict):
+    """نسخة محلية من update_letter"""
+    try:
+        idx = int(letter_id.split("_")[1])
+        user_id = int(letter_id.split("_")[0])
+        record = get_user_record_local_by_id(user_id)
+        letters = record.get("letters_to_self", [])
+        
+        if 0 <= idx < len(letters):
+            letters[idx].update(letter_data)
+            update_user_record_local(user_id, letters_to_self=letters)
+    except:
+        pass
 
 
+def migrate_data_to_firestore():
+    """ترحيل البيانات من JSON المحلي إلى Firestore"""
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر، لا يمكن ترحيل البيانات")
+        return
+    
+    logger.info("بدء ترحيل البيانات إلى Firestore...")
+    
+    # تحميل البيانات المحلية
+    global data
+    if not data:
+        load_data_local()
+    
+    migrated_users = 0
+    migrated_benefits = 0
+    
+    # ترحيل المستخدمين
+    for user_id_str, user_data in data.items():
+        # تجاهل المفاتيح غير الرقمية (مثل GLOBAL_KEY أو _global_config)
+        if user_id_str == "GLOBAL_KEY" or user_id_str == GLOBAL_KEY or user_id_str.startswith("_"):
+            continue
+            
+        try:
+            user_id = int(user_id_str)
+            
+            # تحديث سجل المستخدم في Firestore
+            doc_ref = db.collection(USERS_COLLECTION).document(user_id_str)
+            
+            # تحويل heart_memos إلى تنسيق Firestore
+            heart_memos = user_data.get("heart_memos", [])
+            if heart_memos and isinstance(heart_memos, list) and len(heart_memos) > 0:
+                # حفظ كل مذكرة كوثيقة منفصلة
+                for memo in heart_memos:
+                    if memo.strip():  # تجاهل المذكرات الفارغة
+                        save_note(user_id, memo)
+                
+                # إزالة المذكرات من بيانات المستخدم
+                user_data.pop("heart_memos", None)
+            
+            # تحويل letters_to_self إلى تنسيق Firestore
+            letters = user_data.get("letters_to_self", [])
+            if letters and isinstance(letters, list) and len(letters) > 0:
+                # حفظ كل رسالة كوثيقة منفصلة
+                for letter in letters:
+                    if isinstance(letter, dict) and letter.get("content"):
+                        save_letter(user_id, letter)
+                
+                # إزالة الرسائل من بيانات المستخدم
+                user_data.pop("letters_to_self", None)
+            
+            # حفظ بيانات المستخدم
+            doc_ref.set(user_data)
+            migrated_users += 1
+            
+        except Exception as e:
+            logger.error(f"خطأ في ترحيل المستخدم {user_id_str}: {e}")
+    
+    # ترحيل الفوائد والنصائح
+    if "GLOBAL_KEY" in data:
+        global_config = data["GLOBAL_KEY"]
+        benefits = global_config.get("benefits", [])
+        
+        for benefit in benefits:
+            try:
+                save_benefit(benefit)
+                migrated_benefits += 1
+            except Exception as e:
+                logger.error(f"خطأ في ترحيل الفائدة: {e}")
+        
+        # حفظ الإعدادات العامة
+        config_doc_ref = db.collection(GLOBAL_CONFIG_COLLECTION).document("config")
+        config_doc_ref.set({
+            "motivation_times": _normalize_times(
+                global_config.get("motivation_times")
+                or global_config.get("motivation_hours"),
+                DEFAULT_MOTIVATION_TIMES_UTC.copy(),
+            ),
+            "motivation_messages": global_config.get("motivation_messages", []),
+            "benefits": []  # الفوائد محفوظة منفصلة الآن
+        })
+    
+    logger.info(f"✅ تم ترحيل {migrated_users} مستخدم و {migrated_benefits} فائدة إلى Firestore")
+    
+    # نسخة احتياطية من الملف المحلي
+    try:
+        backup_file = f"{DATA_FILE}.backup"
+        with open(backup_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"تم إنشاء نسخة احتياطية في {backup_file}")
+    except Exception as e:
+        logger.error(f"خطأ في إنشاء النسخة الاحتياطية: {e}")
 
+
+def get_user_record_local(user: User) -> Dict:
+    """نسخة محلية من get_user_record"""
+    user_id = str(user.id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    if user_id not in data:
+        data[user_id] = {
+            "user_id": user.id,
+            "first_name": user.first_name,
+            "username": user.username,
+            "created_at": now_iso,
+            "last_active": now_iso,
+            "is_new_user": True,
+            "is_banned": False,
+            "banned_by": None,
+            "banned_at": None,
+            "ban_reason": None,
+            "gender": None,
+            "age": None,
+            "weight": None,
+            "water_liters": None,
+            "cups_goal": None,
+            "reminders_on": False,
+            "today_date": None,
+            "today_cups": 0,
+            "quran_pages_goal": None,
+            "quran_pages_today": 0,
+            "quran_today_date": None,
+            "tasbih_total": 0,
+            "adhkar_count": 0,
+            "heart_memos": [],
+            "letters_to_self": [],
+            "points": 0,
+            "level": 0,
+            "medals": [],
+            "best_rank": None,
+            "daily_full_streak": 0,
+            "last_full_day": None,
+            "motivation_on": True,
+        }
+    else:
+        record = data[user_id]
+        record["first_name"] = user.first_name
+        record["username"] = user.username
+        record["last_active"] = now_iso
+        
+        # ضمان الحقول
+        default_fields = {
+            "is_banned": False,
+            "banned_by": None,
+            "banned_at": None,
+            "ban_reason": None,
+            "gender": None,
+            "age": None,
+            "weight": None,
+            "water_liters": None,
+            "cups_goal": None,
+            "reminders_on": False,
+            "today_date": None,
+            "today_cups": 0,
+            "quran_pages_goal": None,
+            "quran_pages_today": 0,
+            "quran_today_date": None,
+            "tasbih_total": 0,
+            "adhkar_count": 0,
+            "heart_memos": [],
+            "letters_to_self": [],
+            "points": 0,
+            "level": 0,
+            "medals": [],
+            "best_rank": None,
+            "daily_full_streak": 0,
+            "last_full_day": None,
+            "motivation_on": True,
+            "is_new_user": False
+        }
+        
+        for field, default_value in default_fields.items():
+            if field not in record:
+                record[field] = default_value
+    
+    save_data_local()
+    return data[user_id]
+
+
+def update_user_record_local(user_id: int, **kwargs):
+    """نسخة محلية من update_user_record"""
+    uid = str(user_id)
+    if uid not in data:
+        return
+    
+    data[uid].update(kwargs)
+    data[uid]["last_active"] = datetime.now(timezone.utc).isoformat()
+    save_data_local()
+
+
+def get_all_user_ids_local() -> List[int]:
+    """نسخة محلية من get_all_user_ids"""
+    return [int(uid) for uid in data.keys() if uid != "GLOBAL_KEY"]
+
+def get_active_user_ids_local() -> List[int]:
+    """نسخة محلية من get_active_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and not rec.get("is_banned", False)]
+
+def get_banned_user_ids_local() -> List[int]:
+    """نسخة محلية من get_banned_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
+
+def get_users_sorted_by_points_local() -> List[Dict]:
+    """نسخة محلية من get_users_sorted_by_points"""
+    return sorted(
+        [r for k, r in data.items() if k != "GLOBAL_KEY"],
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
+# دالة المساعدة للفوائد (محلية)
+def get_benefits_local() -> List[Dict]:
+    """نسخة محلية من get_benefits"""
+    config = get_global_config_local()
+    return config.get("benefits", [])
+
+def save_benefit_local(benefit_data: Dict) -> str:
+    """نسخة محلية من save_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    if "id" not in benefit_data:
+        benefit_data["id"] = get_next_benefit_id_local()
+    
+    if "date" not in benefit_data:
+        benefit_data["date"] = datetime.now(timezone.utc).isoformat()
+    
+    benefits.append(benefit_data)
+    config["benefits"] = benefits
+    update_global_config_local(config)
+    
+    return str(benefit_data["id"])
+
+def update_benefit_local(benefit_id: int, benefit_data: Dict):
+    """نسخة محلية من update_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    for i, benefit in enumerate(benefits):
+        if benefit.get("id") == benefit_id:
+            benefits[i].update(benefit_data)
+            break
+    
+    config["benefits"] = benefits
+    update_global_config_local(config)
+
+
+def get_active_user_ids_local() -> List[int]:
+    """نسخة محلية من get_active_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and not rec.get("is_banned", False)]
+
+def get_banned_user_ids_local() -> List[int]:
+    """نسخة محلية من get_banned_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
+
+def get_users_sorted_by_points_local() -> List[Dict]:
+    """نسخة محلية من get_users_sorted_by_points"""
+    return sorted(
+        [r for k, r in data.items() if k != "GLOBAL_KEY"],
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
+# دالة المساعدة للفوائد (محلية)
+def get_benefits_local() -> List[Dict]:
+    """نسخة محلية من get_benefits"""
+    config = get_global_config_local()
+    return config.get("benefits", [])
+
+def save_benefit_local(benefit_data: Dict) -> str:
+    """نسخة محلية من save_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    if "id" not in benefit_data:
+        benefit_data["id"] = get_next_benefit_id_local()
+    
+    if "date" not in benefit_data:
+        benefit_data["date"] = datetime.now(timezone.utc).isoformat()
+    
+    benefits.append(benefit_data)
+    config["benefits"] = benefits
+    update_global_config_local(config)
+    
+    return str(benefit_data["id"])
+
+def update_benefit_local(benefit_id: int, benefit_data: Dict):
+    """نسخة محلية من update_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    for i, benefit in enumerate(benefits):
+        if benefit.get("id") == benefit_id:
+            benefits[i].update(benefit_data)
+            break
+    
+    config["benefits"] = benefits
+    update_global_config_local(config)
+
+
+def get_banned_user_ids_local() -> List[int]:
+    """نسخة محلية من get_banned_user_ids"""
+    return [int(uid) for uid, rec in data.items() 
+            if uid != "GLOBAL_KEY" and rec.get("is_banned", False)]
+
+def get_users_sorted_by_points_local() -> List[Dict]:
+    """نسخة محلية من get_users_sorted_by_points"""
+    return sorted(
+        [r for k, r in data.items() if k != "GLOBAL_KEY"],
+        key=lambda r: r.get("points", 0),
+        reverse=True,
+    )
+
+# دالة المساعدة للفوائد (محلية)
+def get_benefits_local() -> List[Dict]:
+    """نسخة محلية من get_benefits"""
+    config = get_global_config_local()
+    return config.get("benefits", [])
+
+def save_benefit_local(benefit_data: Dict) -> str:
+    """نسخة محلية من save_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    if "id" not in benefit_data:
+        benefit_data["id"] = get_next_benefit_id_local()
+    
+    if "date" not in benefit_data:
+        benefit_data["date"] = datetime.now(timezone.utc).isoformat()
+    
+    benefits.append(benefit_data)
+    config["benefits"] = benefits
+    update_global_config_local(config)
+    
+    return str(benefit_data["id"])
+
+def update_benefit_local(benefit_id: int, benefit_data: Dict):
+    """نسخة محلية من update_benefit"""
+    config = get_global_config_local()
+    benefits = config.get("benefits", [])
+    
+    for i, benefit in enumerate(benefits):
+        if benefit.get("id") == benefit_id:
+            benefits[i].update(benefit_data)
+            break
+    
+    config["benefits"] = benefits
+    update_global_config_local(config)
+
+
+# =================== نهاية دوال التخزين المحلي ===================
 
 
 # =================== إعدادات افتراضية للجرعة التحفيزية (على مستوى البوت) ===================
@@ -986,7 +1520,7 @@ def get_user_record(user):
 
         if doc.exists:
             record = doc.to_dict()
-            # تحميل المذكرات من Subcollections إذا كانت غير موجودة في السجل
+            # تحميل المذكرات والرسائل من Subcollections إذا كانت غير موجودة في السجل
             try:
                 if not record.get("heart_memos"):
                     memos_data = []
@@ -997,8 +1531,19 @@ def get_user_record(user):
                     if memos_data:
                         memos_data.sort(key=lambda m: m.get("created_at") or "")
                         record["heart_memos"] = [m.get("note") for m in memos_data]
+                if not record.get("letters_to_self"):
+                    letters_list = []
+                    for letter_doc in doc_ref.collection("letters").stream():
+                        letter_data = letter_doc.to_dict()
+                        if letter_data:
+                            letters_list.append(letter_data)
+                    if letters_list:
+                        letters_list.sort(
+                            key=lambda l: l.get("created_at") or l.get("reminder_date") or ""
+                        )
+                        record["letters_to_self"] = letters_list
             except Exception as e:
-                logger.warning(f"⚠️ تعذر تحميل المذكرات الفرعية للمستخدم {user_id}: {e}")
+                logger.warning(f"⚠️ تعذر تحميل المذكرات/الرسائل الفرعية للمستخدم {user_id}: {e}")
 
             # تحديث آخر نشاط مع تقليل الكتابات المتكررة
             _throttled_last_active_update(user_id, now_iso, now_dt)
@@ -1034,8 +1579,7 @@ def get_user_record(user):
                 "tasbih_total": 0,
                 "adhkar_count": 0,
                 "heart_memos": [],
-                "saved_books": [],
-                "saved_books_updated_at": None,
+                "letters_to_self": [],
                 "points": 0,
                 "level": 1,
                 "streak_days": 0,
@@ -1131,30 +1675,6 @@ WAITING_QURAN_ADD_PAGES = set()
 WAITING_TASBIH = set()
 ACTIVE_TASBIH = {}      # user_id -> { "text": str, "target": int, "current": int }
 
-# مكتبة الكتب
-WAITING_BOOK_SEARCH = set()
-WAITING_BOOK_CATEGORY_NAME = set()
-WAITING_BOOK_CATEGORY_ORDER = set()
-WAITING_BOOK_ADD_CATEGORY = set()
-WAITING_BOOK_ADD_TITLE = set()
-WAITING_BOOK_ADD_AUTHOR = set()
-WAITING_BOOK_ADD_DESCRIPTION = set()
-WAITING_BOOK_ADD_TAGS = set()
-WAITING_BOOK_ADD_COVER = set()
-WAITING_BOOK_ADD_PDF = set()
-WAITING_BOOK_EDIT_FIELD = set()
-WAITING_BOOK_EDIT_COVER = set()
-WAITING_BOOK_EDIT_PDF = set()
-WAITING_BOOK_ADMIN_SEARCH = set()
-BOOK_CREATION_CONTEXT: Dict[int, Dict] = {}
-BOOK_CATEGORY_EDIT_CONTEXT: Dict[int, Dict] = {}
-BOOK_EDIT_CONTEXT: Dict[int, Dict] = {}
-BOOK_SEARCH_CACHE: Dict[str, Dict] = {}
-BOOK_NAV_CACHE: Dict[str, Dict] = {}
-BOOKS_PAGE_SIZE = 5
-BOOK_SEARCH_PAGE_SIZE = 5
-BOOK_LATEST_LIMIT = 20
-
 # مذكّرات قلبي
 WAITING_MEMO_MENU = set()
 WAITING_MEMO_ADD = set()
@@ -1164,6 +1684,14 @@ WAITING_MEMO_DELETE_SELECT = set()
 MEMO_EDIT_INDEX = {}
 
 # رسائل إلى نفسي
+WAITING_LETTER_MENU = set()
+WAITING_LETTER_ADD = set()
+WAITING_LETTER_ADD_CONTENT = set()
+WAITING_LETTER_REMINDER_OPTION = set()
+WAITING_LETTER_CUSTOM_DATE = set()
+WAITING_LETTER_DELETE_SELECT = set()
+LETTER_CURRENT_DATA = {}  # user_id -> { "content": str, "reminder_date": str }
+
 # دعم / إدارة
 WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
@@ -1442,13 +1970,7 @@ BTN_STATS_ONLY = "📊 إحصائياتي"
 BTN_MEDALS_ONLY = "🏅 ميدالياتي"
 BTN_STATS_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 BTN_MEDALS = "ميدالياتي 🏵️"
-BTN_BOOKS_MAIN = "📚 مكتبة الكتب"
-BTN_BOOKS_MAIN_LABEL = "📚 مكتبة الكتب (مكتبة طالب العلم📘)"
-BTN_BOOKS_ADMIN = "📚 إدارة مكتبة الكتب"
-BTN_BOOKS_MANAGE_CATEGORIES = "🗂 إدارة التصنيفات"
-BTN_BOOKS_ADD_BOOK = "➕ إضافة كتاب"
-BTN_BOOKS_MANAGE_BOOKS = "📋 إدارة الكتب"
-BTN_BOOKS_BACK_MENU = "🔙 رجوع إلى مكتبة الكتب"
+BTN_LETTER_MAIN = "رسالة إلى نفسي 💌"
 
 BTN_SUPPORT = "تواصل مع الدعم ✉️"
 BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
@@ -1543,6 +2065,19 @@ BTN_ADMIN_RESET_MEDALS = "تصفير ميداليات المنافسات وال�
 BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
 BTN_MOTIVATION_OFF = "إيقاف الجرعة التحفيزية 😴"
 
+# رسالة إلى نفسي
+BTN_LETTER_ADD = "✍️ كتابة رسالة جديدة"
+BTN_LETTER_VIEW = "📋 عرض الرسائل"
+BTN_LETTER_DELETE = "🗑 حذف رسالة"
+BTN_LETTER_BACK = "رجوع ⬅️"
+
+# خيارات التذكير لرسالة إلى نفسي
+BTN_REMINDER_WEEK = "بعد أسبوع 📅"
+BTN_REMINDER_MONTH = "بعد شهر 🌙"
+BTN_REMINDER_2MONTHS = "بعد شهرين 📆"
+BTN_REMINDER_CUSTOM = "تاريخ مخصص 🗓️"
+BTN_REMINDER_NONE = "بدون تذكير ❌"
+
 # الميداليات
 MEDAL_BEGINNING = "ميدالية بداية الطريق 🌱"
 MEDAL_PERSISTENCE = "ميدالية الاستمرار 🚀"
@@ -1580,8 +2115,8 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
         [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
@@ -1598,8 +2133,8 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
         [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
@@ -1618,8 +2153,8 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
         # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: رسالة إلى نفسي على اليسار ومذكرات قلبي على اليمين
+        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_LETTER_MAIN)],
         # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
         [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
         # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
@@ -1878,12 +2413,24 @@ def build_memos_menu_kb(is_admin_flag: bool):
         rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
-BOOKS_ADMIN_MENU_KB = ReplyKeyboardMarkup(
+# ---- رسالة إلى نفسي ----
+def build_letters_menu_kb(is_admin_flag: bool):
+    rows = [
+        [KeyboardButton(BTN_LETTER_ADD)],
+        [KeyboardButton(BTN_LETTER_VIEW), KeyboardButton(BTN_LETTER_DELETE)],
+        [KeyboardButton(BTN_LETTER_BACK)],
+    ]
+    if is_admin_flag:
+        rows.append([KeyboardButton(BTN_ADMIN_PANEL)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+REMINDER_OPTIONS_KB = ReplyKeyboardMarkup(
     [
-        [KeyboardButton(BTN_BOOKS_MANAGE_CATEGORIES)],
-        [KeyboardButton(BTN_BOOKS_ADD_BOOK)],
-        [KeyboardButton(BTN_BOOKS_MANAGE_BOOKS)],
-        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
+        [KeyboardButton(BTN_REMINDER_WEEK), KeyboardButton(BTN_REMINDER_MONTH)],
+        [KeyboardButton(BTN_REMINDER_2MONTHS), KeyboardButton(BTN_REMINDER_CUSTOM)],
+        [KeyboardButton(BTN_REMINDER_NONE)],
+        [KeyboardButton(BTN_CANCEL)],
     ],
     resize_keyboard=True,
 )
@@ -1896,7 +2443,6 @@ ADMIN_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
-        [KeyboardButton(BTN_BOOKS_ADMIN)],
         [KeyboardButton(BTN_ADMIN_MANAGE_COMPETITION)],
         [KeyboardButton(BTN_MANAGE_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
@@ -1911,7 +2457,6 @@ SUPERVISOR_PANEL_KB = ReplyKeyboardMarkup(
         [KeyboardButton(BTN_ADMIN_BAN_USER), KeyboardButton(BTN_ADMIN_UNBAN_USER)],
         [KeyboardButton(BTN_ADMIN_BANNED_LIST)],
         [KeyboardButton(BTN_ADMIN_MOTIVATION_MENU)],
-        [KeyboardButton(BTN_BOOKS_ADMIN)],
         [KeyboardButton(BTN_MANAGE_COURSES)],
         [KeyboardButton(BTN_BACK_MAIN)],
     ],
@@ -1976,6 +2521,7 @@ POINTS_WATER_DAILY_BONUS = 20
 
 POINTS_PER_QURAN_PAGE = 3
 POINTS_QURAN_DAILY_BONUS = 30
+POINTS_PER_LETTER = 5
 
 
 def tasbih_points_for_session(target_count: int) -> int:
@@ -1998,1505 +2544,6 @@ def ensure_medal_defaults(record: dict):
     record.setdefault("daily_full_count", 0)
     record.setdefault("daily_full_streak", 0)
     record.setdefault("last_full_day", None)
-    record.setdefault("saved_books", [])
-    record.setdefault("saved_books_updated_at", None)
-
-# =================== مكتبة الكتب ===================
-
-BOOKS_CALLBACK_PREFIX = "BOOKS"
-BOOKS_HOME_BACK = "BOOKS:home"
-BOOKS_LATEST_CALLBACK = "BOOKS:latest:0"
-BOOKS_SAVED_CALLBACK = "BOOKS:saved:0"
-BOOKS_SEARCH_PROMPT_CALLBACK = "BOOKS:search_prompt"
-BOOKS_EXIT_CALLBACK = "BOOKS:exit"
-BOOKS_ADMIN_MANAGE_CATEGORIES = "BOOKS:admin_categories"
-BOOKS_ADMIN_MANAGE_BOOKS = "BOOKS:admin_books"
-BOOKS_ADMIN_ADD_BOOK = "BOOKS:admin_add_book"
-BOOKS_CATEGORY_SELECT_PREFIX = "BOOKS:cat"
-BOOKS_SEARCH_RESULTS_PREFIX = "BOOKS:search_results"
-BOOKS_ADMIN_EDIT_CATEGORY_PREFIX = "BOOKS:edit_category"
-BOOKS_ADMIN_EDIT_BOOK_PREFIX = "BOOKS:edit_book"
-
-
-def _book_timestamp_value():
-    if firestore_available():
-        return firestore.SERVER_TIMESTAMP
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _normalize_book_text(value: str) -> str:
-    return (value or "").strip().lower()
-
-
-def _parse_tags_input(text: str) -> List[str]:
-    if not text:
-        return []
-    tags = [t.strip() for t in text.split(",") if t.strip()]
-    normalized = []
-    for tag in tags:
-        normalized_tag = tag.replace("#", "").strip()
-        if normalized_tag:
-            normalized.append(normalized_tag)
-    return normalized
-
-
-def _book_category_sort_key(cat: Dict) -> Tuple:
-    return (
-        cat.get("order") if cat.get("order") is not None else 0,
-        cat.get("name") or "",
-    )
-
-
-def fetch_book_categories(include_inactive: bool = False) -> List[Dict]:
-    if not firestore_available():
-        logger.warning("[BOOKS] Firestore غير متاح - لا يمكن جلب التصنيفات")
-        return []
-    try:
-        query = db.collection(BOOK_CATEGORIES_COLLECTION)
-        if not include_inactive:
-            query = query.where("is_active", "==", True)
-        docs = query.stream()
-        categories = []
-        for doc in docs:
-            data = doc.to_dict()
-            data["id"] = doc.id
-            categories.append(data)
-        categories.sort(key=_book_category_sort_key)
-        return categories
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في جلب التصنيفات: {e}", exc_info=True)
-        return []
-
-
-def get_book_category(category_id: str) -> Dict:
-    if not firestore_available():
-        return {}
-    try:
-        doc = db.collection(BOOK_CATEGORIES_COLLECTION).document(category_id).get()
-        if doc.exists:
-            data = doc.to_dict()
-            data["id"] = doc.id
-            return data
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في قراءة التصنيف {category_id}: {e}")
-    return {}
-
-
-def save_book_category(name: str, order: int = None, created_by: int = None) -> str:
-    if not firestore_available():
-        logger.warning("[BOOKS] Firestore غير متاح - لن يتم حفظ التصنيف")
-        return ""
-    payload = {
-        "name": name.strip(),
-        "slug": re.sub(r"\s+", "-", name.strip().lower()),
-        "order": order if order is not None else 0,
-        "is_active": True,
-        "created_by": created_by,
-        "created_at": _book_timestamp_value(),
-        "updated_at": _book_timestamp_value(),
-    }
-    try:
-        doc_ref = db.collection(BOOK_CATEGORIES_COLLECTION).add(payload)[1]
-        logger.info("[BOOKS] تم إنشاء تصنيف جديد %s", doc_ref.id)
-        return doc_ref.id
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إنشاء التصنيف: {e}")
-        return ""
-
-
-def update_book_category(category_id: str, **fields):
-    if not firestore_available():
-        return False
-    try:
-        fields["updated_at"] = _book_timestamp_value()
-        db.collection(BOOK_CATEGORIES_COLLECTION).document(category_id).update(fields)
-        logger.info("[BOOKS] تم تحديث التصنيف %s", category_id)
-        return True
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في تحديث التصنيف {category_id}: {e}")
-        return False
-
-
-def deactivate_book_category(category_id: str) -> bool:
-    return update_book_category(category_id, is_active=False)
-
-
-def category_has_books(category_id: str) -> bool:
-    if not firestore_available():
-        return False
-    try:
-        docs = (
-            db.collection(BOOKS_COLLECTION)
-            .where("category_id", "==", category_id)
-            .where("is_deleted", "==", False)
-            .limit(1)
-            .stream()
-        )
-        for _ in docs:
-            return True
-        return False
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في فحص كتب التصنيف {category_id}: {e}")
-        return False
-
-
-def delete_book_category(category_id: str) -> bool:
-    if category_has_books(category_id):
-        return False
-    if not firestore_available():
-        return False
-    try:
-        db.collection(BOOK_CATEGORIES_COLLECTION).document(category_id).delete()
-        logger.info("[BOOKS] تم حذف التصنيف نهائياً %s", category_id)
-        return True
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في حذف التصنيف {category_id}: {e}")
-        return False
-
-
-def _book_query(include_inactive=False, include_deleted=False):
-    query = db.collection(BOOKS_COLLECTION)
-    if not include_inactive:
-        query = query.where("is_active", "==", True)
-    if not include_deleted:
-        query = query.where("is_deleted", "==", False)
-    return query
-
-
-def fetch_books_list(
-    category_id: str = None,
-    include_inactive: bool = False,
-    include_deleted: bool = False,
-) -> List[Dict]:
-    if not firestore_available():
-        logger.warning("[BOOKS] Firestore غير متاح - تعذر جلب الكتب")
-        return []
-    try:
-        query = _book_query(include_inactive, include_deleted)
-        if category_id:
-            query = query.where("category_id", "==", category_id)
-        docs = query.stream()
-        books = []
-        for doc in docs:
-            book = doc.to_dict()
-            book["id"] = doc.id
-            books.append(book)
-        books.sort(key=lambda b: b.get("created_at") or "", reverse=True)
-        return books
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في جلب الكتب: {e}", exc_info=True)
-        return []
-
-
-def fetch_latest_books(limit: int = BOOK_LATEST_LIMIT) -> List[Dict]:
-    if not firestore_available():
-        return []
-    try:
-        docs = (
-            _book_query(False, False)
-            .order_by("created_at", direction=firestore.Query.DESCENDING)
-            .limit(limit)
-            .stream()
-        )
-        books = []
-        for doc in docs:
-            book = doc.to_dict()
-            book["id"] = doc.id
-            books.append(book)
-        return books
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في جلب آخر الإضافات: {e}", exc_info=True)
-        return []
-
-
-def get_book_by_id(book_id: str) -> Dict:
-    if not firestore_available():
-        return {}
-    try:
-        doc = db.collection(BOOKS_COLLECTION).document(book_id).get()
-        if doc.exists:
-            book = doc.to_dict()
-            book["id"] = doc.id
-            return book
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في قراءة الكتاب {book_id}: {e}")
-    return {}
-
-
-def create_book_record(payload: Dict) -> str:
-    if not firestore_available():
-        logger.warning("[BOOKS] Firestore غير متاح - لن يتم حفظ الكتاب")
-        return ""
-    payload = payload.copy()
-    payload.setdefault("downloads_count", 0)
-    payload.setdefault("is_active", True)
-    payload.setdefault("is_deleted", False)
-    payload.setdefault("created_at", _book_timestamp_value())
-    payload.setdefault("updated_at", _book_timestamp_value())
-    try:
-        doc_ref = db.collection(BOOKS_COLLECTION).add(payload)[1]
-        logger.info("[BOOKS] تم إنشاء كتاب جديد %s", doc_ref.id)
-        return doc_ref.id
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إنشاء الكتاب: {e}", exc_info=True)
-        return ""
-
-
-def update_book_record(book_id: str, **fields) -> bool:
-    if not firestore_available():
-        return False
-    try:
-        fields["updated_at"] = _book_timestamp_value()
-        db.collection(BOOKS_COLLECTION).document(book_id).update(fields)
-        logger.info("[BOOKS] تم تحديث الكتاب %s", book_id)
-        return True
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في تحديث الكتاب {book_id}: {e}", exc_info=True)
-        return False
-
-
-def soft_delete_book(book_id: str) -> bool:
-    return update_book_record(book_id, is_deleted=True)
-
-
-def increment_book_download(book_id: str):
-    if not firestore_available():
-        return
-    try:
-        db.collection(BOOKS_COLLECTION).document(book_id).update(
-            {
-                "downloads_count": firestore.Increment(1),
-                "updated_at": _book_timestamp_value(),
-            }
-        )
-        logger.info("[BOOKS] زيادة عداد التحميل للكتاب %s", book_id)
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في زيادة عداد التحميل للكتاب {book_id}: {e}")
-
-
-def _book_matches_query(book: Dict, term: str) -> bool:
-    search_texts = [
-        book.get("title", ""),
-        book.get("author", ""),
-        book.get("description", ""),
-    ]
-    tags = book.get("tags", [])
-    search_texts.extend(tags if isinstance(tags, list) else [])
-    normalized_term = _normalize_book_text(term)
-    for txt in search_texts:
-        if normalized_term in _normalize_book_text(str(txt)):
-            return True
-    return False
-
-
-def search_books(term: str) -> List[Dict]:
-    if not term:
-        return []
-    if not firestore_available():
-        return []
-    try:
-        books = fetch_books_list(include_inactive=False, include_deleted=False)
-        matches = [b for b in books if _book_matches_query(b, term)]
-        matches.sort(key=lambda b: b.get("title", ""))
-        return matches
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في البحث عن الكتب: {e}", exc_info=True)
-        return []
-
-
-def _fetch_books_by_ids(book_ids: List[str]) -> List[Dict]:
-    books: List[Dict] = []
-    for bid in book_ids:
-        book = get_book_by_id(bid)
-        if book and not book.get("is_deleted") and book.get("is_active", True):
-            books.append(book)
-    return books
-
-
-def _paginate_items(items: List[Dict], page: int, page_size: int):
-    total = len(items)
-    total_pages = max((total - 1) // page_size + 1, 1) if total else 1
-    safe_page = max(0, min(page, total_pages - 1))
-    start = safe_page * page_size
-    return items[start : start + page_size], safe_page, total_pages
-
-
-def _book_caption(book: Dict, category_name: str = None) -> str:
-    lines = [
-        f"📖 <b>{book.get('title', 'كتاب')}</b>",
-        f"✍️ المؤلف: {book.get('author', 'غير محدد')}",
-    ]
-    if category_name or book.get("category_name_snapshot"):
-        lines.append(f"🗂 التصنيف: {category_name or book.get('category_name_snapshot', 'غير مصنف')}")
-    if book.get("description"):
-        lines.append(f"📝 الوصف:\n{book.get('description')}")
-    downloads = book.get("downloads_count", 0)
-    lines.append(f"⬇️ عدد التحميلات: {downloads}")
-    return "\n\n".join(lines)
-
-
-def _book_detail_keyboard(book_id: str, back_payload: str, is_saved: bool) -> InlineKeyboardMarkup:
-    back_target = (
-        f"{BOOKS_CALLBACK_PREFIX}:list:{back_payload}"
-        if back_payload
-        else BOOKS_HOME_BACK
-    )
-    save_button = InlineKeyboardButton(
-        "❌ إزالة من المحفوظات" if is_saved else "⭐ احفظ للقراءة لاحقًا",
-        callback_data=f"{BOOKS_CALLBACK_PREFIX}:toggle_save:{book_id}:{back_payload or 'home:none:0'}",
-    )
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "⬇️ تحميل PDF",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:download:{book_id}:{back_payload or 'home:none:0'}",
-                )
-            ],
-            [save_button],
-            [InlineKeyboardButton("🔙 رجوع", callback_data=back_target)],
-        ]
-    )
-
-
-def _book_list_keyboard(
-    items: List[Dict],
-    page: int,
-    total_pages: int,
-    source: str,
-    category_id: str = None,
-    search_token: str = None,
-) -> InlineKeyboardMarkup:
-    rows = []
-    for book in items:
-        title = book.get("title", "كتاب")
-        button_text = f"📘 {title}"
-        back_payload = _encode_route(source, category_id, search_token, page)
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    button_text,
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:book:{book.get('id')}:{back_payload}",
-                )
-            ]
-        )
-    nav_row = []
-    if page > 0:
-        nav_row.append(
-            InlineKeyboardButton(
-                "⬅️ السابق",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:list:{_encode_route(source, category_id, search_token, page - 1)}",
-            )
-        )
-    if page < total_pages - 1:
-        nav_row.append(
-            InlineKeyboardButton(
-                "التالي ➡️",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:list:{_encode_route(source, category_id, search_token, page + 1)}",
-            )
-        )
-    if nav_row:
-        rows.append(nav_row)
-    rows.append([InlineKeyboardButton("↩️ رجوع للقائمة", callback_data=BOOKS_HOME_BACK)])
-    return InlineKeyboardMarkup(rows)
-
-
-def _encode_route(source: str, category_id: str, search_token: str, page: int) -> str:
-    parts = [source, category_id or "none", str(page)]
-    if source == "search" and search_token:
-        parts.append(search_token)
-    return ":".join(parts)
-
-
-def _parse_route(route: str) -> Dict:
-    parts = (route or "").split(":")
-    if len(parts) < 3:
-        return {"source": "home", "category_id": None, "page": 0, "search_token": None}
-    source, category_id, page_str = parts[0], parts[1], parts[2]
-    search_token = parts[3] if len(parts) > 3 else None
-    try:
-        page = int(page_str)
-    except Exception:
-        page = 0
-    return {
-        "source": source,
-        "category_id": None if category_id == "none" else category_id,
-        "page": page,
-        "search_token": search_token,
-    }
-
-
-def _ensure_saved_books_defaults(record: Dict):
-    if "saved_books" not in record:
-        record["saved_books"] = []
-    if "saved_books_updated_at" not in record:
-        record["saved_books_updated_at"] = None
-
-
-def add_book_to_saved(user_id: int, book_id: str) -> bool:
-    record = get_user_record_by_id(user_id) or {}
-    _ensure_saved_books_defaults(record)
-    if book_id in record.get("saved_books", []):
-        return True
-    saved = record.get("saved_books", [])
-    saved.append(book_id)
-    update_user_record(
-        user_id,
-        saved_books=saved,
-        saved_books_updated_at=datetime.now(timezone.utc).isoformat(),
-    )
-    return True
-
-
-def books_home_keyboard() -> InlineKeyboardMarkup:
-    categories = fetch_book_categories(include_inactive=False)
-    rows = []
-    for cat in categories:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"🗂 {cat.get('name', 'تصنيف')}",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:cat:{cat.get('id')}:0",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton("🆕 آخر الإضافات", callback_data=BOOKS_LATEST_CALLBACK)])
-    rows.append([InlineKeyboardButton("🔎 بحث داخل المكتبة", callback_data=BOOKS_SEARCH_PROMPT_CALLBACK)])
-    rows.append([InlineKeyboardButton("📌 محفوظاتي", callback_data=BOOKS_SAVED_CALLBACK)])
-    rows.append([InlineKeyboardButton("🔙 رجوع", callback_data=BOOKS_EXIT_CALLBACK)])
-    return InlineKeyboardMarkup(rows)
-
-
-def open_books_home(update: Update, context: CallbackContext, from_callback: bool = False):
-    if not firestore_available():
-        if from_callback and update.callback_query:
-            update.callback_query.answer()
-            update.callback_query.message.reply_text(
-                "خدمة مكتبة الكتب غير متاحة حالياً. حاول لاحقاً.",
-                reply_markup=user_main_keyboard(update.effective_user.id),
-            )
-            return
-        update.message.reply_text(
-            "خدمة مكتبة الكتب غير متاحة حالياً. حاول لاحقاً.",
-            reply_markup=user_main_keyboard(update.effective_user.id),
-        )
-        return
-    categories = fetch_book_categories()
-    text = "📚 مكتبة طالب العلم\nاختر تصنيفًا أو خيارًا من القائمة:"
-    kb = books_home_keyboard()
-    if from_callback and update.callback_query:
-        try:
-            update.callback_query.edit_message_text(text, reply_markup=kb)
-        except Exception:
-            update.callback_query.message.reply_text(text, reply_markup=kb)
-        return
-    update.message.reply_text(text, reply_markup=kb)
-
-
-def _get_books_for_search_token(token: str) -> Tuple[List[Dict], str]:
-    entry = BOOK_SEARCH_CACHE.get(token)
-    if not entry:
-        return [], ""
-    if not entry.get("book_ids"):
-        books = search_books(entry.get("query", ""))
-        entry["book_ids"] = [b.get("id") for b in books if b.get("id")]
-    books = _fetch_books_by_ids(entry.get("book_ids", []))
-    return books, entry.get("query", "")
-
-
-def _send_books_list_message(
-    update: Update,
-    context: CallbackContext,
-    books: List[Dict],
-    title: str,
-    source: str,
-    category_id: str = None,
-    search_token: str = None,
-    page: int = 0,
-    empty_message: str = None,
-    from_callback: bool = False,
-):
-    page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
-    if not books:
-        message_text = empty_message or "لا توجد كتب متاحة هنا بعد."
-        if from_callback and update.callback_query:
-            update.callback_query.edit_message_text(message_text, reply_markup=books_home_keyboard())
-        else:
-            update.message.reply_text(message_text, reply_markup=books_home_keyboard())
-        return
-
-    lines = [title, f"الصفحة {safe_page + 1} من {total_pages}", ""]
-    start_index = safe_page * BOOKS_PAGE_SIZE
-    for idx, book in enumerate(page_items, start=1 + start_index):
-        lines.append(f"{idx}. {book.get('title', 'كتاب')} — {book.get('author', 'مؤلف غير معروف')}")
-    keyboard = _book_list_keyboard(page_items, safe_page, total_pages, source, category_id, search_token)
-
-    text = "\n".join(lines)
-    if from_callback and update.callback_query:
-        try:
-            update.callback_query.edit_message_text(text, reply_markup=keyboard)
-        except Exception:
-            update.callback_query.message.reply_text(text, reply_markup=keyboard)
-    else:
-        update.message.reply_text(text, reply_markup=keyboard)
-
-
-def show_books_by_category(update: Update, context: CallbackContext, category_id: str, page: int = 0, from_callback: bool = False):
-    category = get_book_category(category_id)
-    if not category or not category.get("is_active", True):
-        msg = update.callback_query.message if from_callback and update.callback_query else update.message
-        if msg:
-            msg.reply_text("هذا التصنيف غير متاح حالياً.", reply_markup=books_home_keyboard())
-        return
-    books = fetch_books_list(category_id=category_id, include_inactive=False, include_deleted=False)
-    title = f"🗂 كتب تصنيف «{category.get('name', 'غير مسمى')}»"
-    _send_books_list_message(
-        update,
-        context,
-        books,
-        title,
-        source="cat",
-        category_id=category_id,
-        page=page,
-        empty_message="لا توجد كتب في هذا التصنيف حتى الآن.",
-        from_callback=from_callback,
-    )
-
-
-def show_latest_books(update: Update, context: CallbackContext, page: int = 0, from_callback: bool = False):
-    books = fetch_latest_books(limit=BOOK_LATEST_LIMIT)
-    _send_books_list_message(
-        update,
-        context,
-        books,
-        "🆕 آخر الإضافات",
-        source="latest",
-        page=page,
-        empty_message="لا توجد إضافات حديثة حتى الآن.",
-        from_callback=from_callback,
-    )
-
-
-def show_saved_books(update: Update, context: CallbackContext, page: int = 0, from_callback: bool = False):
-    record = get_user_record(update.effective_user)
-    _ensure_saved_books_defaults(record)
-    saved_ids = record.get("saved_books", [])
-    books = _fetch_books_by_ids(saved_ids)
-    _send_books_list_message(
-        update,
-        context,
-        books,
-        "📌 كتبك المحفوظة",
-        source="saved",
-        page=page,
-        empty_message="لا توجد كتب محفوظة حالياً.",
-        from_callback=from_callback,
-    )
-
-
-def _render_search_results(update: Update, context: CallbackContext, token: str, page: int = 0, from_callback: bool = False):
-    books, query_text = _get_books_for_search_token(token)
-    _send_books_list_message(
-        update,
-        context,
-        books,
-        f"نتائج البحث عن: {query_text}",
-        source="search",
-        search_token=token,
-        page=page,
-        empty_message="لا توجد نتائج مطابقة.",
-        from_callback=from_callback,
-    )
-
-
-def handle_book_search_input(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    text = (update.message.text or "").strip()
-    WAITING_BOOK_SEARCH.discard(user_id)
-    if not text:
-        update.message.reply_text(
-            "الرجاء كتابة كلمة بحث صالحة.",
-            reply_markup=books_home_keyboard(),
-        )
-        return
-    results = search_books(text)
-    token = uuid4().hex
-    BOOK_SEARCH_CACHE[token] = {"query": text, "book_ids": [b.get("id") for b in results if b.get("id")]}
-    _render_search_results(update, context, token, page=0, from_callback=False)
-
-
-def prompt_book_search(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    WAITING_BOOK_SEARCH.add(user_id)
-    update.callback_query.answer()
-    update.callback_query.message.reply_text(
-        "أرسل الآن كلمة البحث.\nسأبحث في العنوان، المؤلف، الوصف والكلمات المفتاحية.",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def _send_book_detail(update: Update, context: CallbackContext, book_id: str, route_str: str, from_callback: bool = False):
-    book = get_book_by_id(book_id)
-    if not book or book.get("is_deleted") or not book.get("is_active", True):
-        target = update.callback_query if from_callback else update.message
-        target.reply_text("هذا الكتاب غير متاح حالياً.", reply_markup=books_home_keyboard())
-        return
-
-    category_name = None
-    if book.get("category_id"):
-        category = get_book_category(book.get("category_id"))
-        category_name = category.get("name") if category else book.get("category_name_snapshot")
-    record = get_user_record_by_id(update.effective_user.id) or {}
-    _ensure_saved_books_defaults(record)
-    is_saved = book_id in record.get("saved_books", [])
-    caption = _book_caption(book, category_name=category_name)
-    keyboard = _book_detail_keyboard(book_id, route_str, is_saved)
-
-    if from_callback and update.callback_query:
-        update.callback_query.answer()
-    chat_id = update.effective_chat.id if update.effective_chat else update.callback_query.message.chat_id
-    cover_id = book.get("cover_file_id")
-    try:
-        if cover_id:
-            context.bot.send_photo(
-                chat_id=chat_id,
-                photo=cover_id,
-                caption=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-            )
-        else:
-            context.bot.send_message(
-                chat_id=chat_id,
-                text=caption,
-                reply_markup=keyboard,
-                parse_mode="HTML",
-            )
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إرسال تفاصيل الكتاب: {e}")
-        if update.callback_query:
-            update.callback_query.message.reply_text("تعذر عرض الكتاب حالياً.", reply_markup=books_home_keyboard())
-
-
-def handle_book_download(update: Update, context: CallbackContext, book_id: str, route_str: str):
-    query = update.callback_query
-    book = get_book_by_id(book_id)
-    if not book or book.get("is_deleted") or not book.get("is_active", True):
-        if query:
-            query.answer("الكتاب غير متاح.", show_alert=True)
-        return
-    file_id = book.get("pdf_file_id")
-    if not file_id:
-        if query:
-            query.answer("ملف الكتاب غير متوفر.", show_alert=True)
-        return
-    try:
-        context.bot.send_document(
-            chat_id=update.effective_chat.id,
-            document=file_id,
-            filename=book.get("pdf_filename") or None,
-            caption=book.get("title") or "",
-        )
-        increment_book_download(book_id)
-        if query:
-            query.answer("تم إرسال الكتاب ✅")
-            try:
-                query.edit_message_reply_markup(
-                    reply_markup=_book_detail_keyboard(
-                        book_id,
-                        route_str,
-                        book_id in (get_user_record_by_id(query.from_user.id) or {}).get("saved_books", []),
-                    )
-                )
-            except Exception:
-                pass
-    except Exception as e:
-        logger.error(f"[BOOKS] خطأ في إرسال الكتاب: {e}")
-        if query:
-            query.answer("تعذر إرسال الكتاب الآن.", show_alert=True)
-
-
-def handle_toggle_saved(update: Update, context: CallbackContext, book_id: str, route_str: str):
-    query = update.callback_query
-    user_id = query.from_user.id
-    record = get_user_record_by_id(user_id) or {}
-    _ensure_saved_books_defaults(record)
-    is_saved = book_id in record.get("saved_books", [])
-    if is_saved:
-        remove_book_from_saved(user_id, book_id)
-        query.answer("تمت إزالته من محفوظاتك.", show_alert=False)
-    else:
-        add_book_to_saved(user_id, book_id)
-        query.answer("تم حفظ الكتاب للقراءة لاحقًا.", show_alert=False)
-    try:
-        updated_saved = not is_saved
-        query.edit_message_reply_markup(reply_markup=_book_detail_keyboard(book_id, route_str, updated_saved))
-    except Exception:
-        pass
-
-
-# =================== إدارة المكتبة (أدمن/مشرفة) ===================
-
-
-def _ensure_is_admin_or_supervisor(user_id: int) -> bool:
-    return is_admin(user_id) or is_supervisor(user_id)
-
-
-def open_books_admin_menu(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _ensure_is_admin_or_supervisor(user_id):
-        return
-    update.message.reply_text(
-        "📚 إدارة مكتبة الكتب\nاختر العملية المطلوبة:",
-        reply_markup=BOOKS_ADMIN_MENU_KB,
-    )
-
-
-def _admin_categories_keyboard(categories: List[Dict]) -> InlineKeyboardMarkup:
-    rows = []
-    for cat in categories:
-        status = "✅" if cat.get("is_active", True) else "⛔️"
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"{status} {cat.get('name', 'تصنيف')}",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category:{cat.get('id')}",
-                )
-            ]
-        )
-    rows.append([InlineKeyboardButton("➕ إضافة تصنيف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category_add")])
-    rows.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_back")])
-    return InlineKeyboardMarkup(rows)
-
-
-def open_book_categories_admin(update_or_query, context: CallbackContext, notice: str = None, use_callback: bool = False):
-    user_obj = getattr(update_or_query, "effective_user", None) or getattr(update_or_query, "from_user", None) or getattr(getattr(update_or_query, "callback_query", None), "from_user", None)
-    user_id = getattr(user_obj, "id", None)
-    if user_id and not _ensure_is_admin_or_supervisor(user_id):
-        return
-    if not firestore_available():
-        message_obj = getattr(update_or_query, "message", None) or getattr(getattr(update_or_query, "callback_query", None), "message", None)
-        if message_obj:
-            message_obj.reply_text("قاعدة البيانات غير متاحة حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-    categories = fetch_book_categories(include_inactive=True)
-    text_lines = ["🗂 إدارة التصنيفات"]
-    if notice:
-        text_lines.append(notice)
-    if not categories:
-        text_lines.append("لا توجد تصنيفات بعد. أضف تصنيفًا جديدًا للبدء.")
-    kb = _admin_categories_keyboard(categories)
-    text = "\n".join(text_lines)
-    query = getattr(update_or_query, "callback_query", None)
-    message_obj = getattr(update_or_query, "message", None) or getattr(query, "message", None)
-    if use_callback and query:
-        try:
-            query.edit_message_text(text, reply_markup=kb)
-            return
-        except Exception:
-            pass
-    if message_obj:
-        message_obj.reply_text(text, reply_markup=kb)
-
-
-def start_add_book_category(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _ensure_is_admin_or_supervisor(user_id):
-        return
-    BOOK_CATEGORY_EDIT_CONTEXT[user_id] = {"mode": "create"}
-    WAITING_BOOK_CATEGORY_NAME.add(user_id)
-    update.message.reply_text(
-        "أرسل اسم التصنيف الجديد:",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def _start_category_rename(query: Update.callback_query, category_id: str):
-    user_id = query.from_user.id
-    BOOK_CATEGORY_EDIT_CONTEXT[user_id] = {"mode": "rename", "category_id": category_id}
-    WAITING_BOOK_CATEGORY_NAME.add(user_id)
-    query.answer()
-    query.message.reply_text("أرسل الاسم الجديد للتصنيف:", reply_markup=CANCEL_KB)
-
-
-def _start_category_order_edit(query: Update.callback_query, category_id: str):
-    user_id = query.from_user.id
-    BOOK_CATEGORY_EDIT_CONTEXT[user_id] = {"mode": "order", "category_id": category_id}
-    WAITING_BOOK_CATEGORY_ORDER.add(user_id)
-    query.answer()
-    query.message.reply_text(
-        "أرسل رقم الترتيب (استخدم الأرقام فقط).",
-        reply_markup=CANCEL_KB,
-    )
-
-
-def _category_options_keyboard(category_id: str, is_active: bool) -> InlineKeyboardMarkup:
-    toggle_text = "👁️ إخفاء" if is_active else "✅ إظهار"
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("✏️ تعديل الاسم", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category_rename:{category_id}")],
-            [InlineKeyboardButton("🔢 تعديل الترتيب", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category_order:{category_id}")],
-            [InlineKeyboardButton(toggle_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category_toggle:{category_id}")],
-            [InlineKeyboardButton("🗑 حذف نهائي", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_category_delete:{category_id}")],
-            [InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_categories")],
-        ]
-    )
-
-
-def _show_category_options(query: Update.callback_query, category_id: str):
-    cat = get_book_category(category_id)
-    if not cat:
-        query.answer("التصنيف غير موجود.", show_alert=True)
-        return
-    text = (
-        f"التصنيف: {cat.get('name', 'غير مسمى')}\n"
-        f"الحالة: {'مفعل' if cat.get('is_active', True) else 'مخفي'}\n"
-        f"الترتيب: {cat.get('order', 0)}"
-    )
-    kb = _category_options_keyboard(category_id, cat.get("is_active", True))
-    try:
-        query.edit_message_text(text, reply_markup=kb)
-    except Exception:
-        query.message.reply_text(text, reply_markup=kb)
-
-
-def _handle_category_toggle(query: Update.callback_query, category_id: str):
-    cat = get_book_category(category_id)
-    if not cat:
-        query.answer("التصنيف غير موجود.", show_alert=True)
-        return
-    new_state = not cat.get("is_active", True)
-    update_book_category(category_id, is_active=new_state)
-    query.answer("تم تحديث حالة التصنيف.")
-    _show_category_options(query, category_id)
-
-
-def _handle_category_delete(update: Update, context: CallbackContext, query: Update.callback_query, category_id: str):
-    if category_has_books(category_id):
-        query.answer("لا يمكن حذف تصنيف يحتوي على كتب. أخفِه بدلاً من ذلك.", show_alert=True)
-        return
-    if delete_book_category(category_id):
-        query.answer("تم حذف التصنيف.", show_alert=True)
-        open_book_categories_admin(update, context, use_callback=True)
-    else:
-        query.answer("تعذر حذف التصنيف.", show_alert=True)
-
-
-def _reset_book_creation(user_id: int):
-    WAITING_BOOK_ADD_CATEGORY.discard(user_id)
-    WAITING_BOOK_ADD_TITLE.discard(user_id)
-    WAITING_BOOK_ADD_AUTHOR.discard(user_id)
-    WAITING_BOOK_ADD_DESCRIPTION.discard(user_id)
-    WAITING_BOOK_ADD_TAGS.discard(user_id)
-    WAITING_BOOK_ADD_COVER.discard(user_id)
-    WAITING_BOOK_ADD_PDF.discard(user_id)
-    BOOK_CREATION_CONTEXT.pop(user_id, None)
-
-
-def start_add_book_flow(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    if not _ensure_is_admin_or_supervisor(user_id):
-        return
-    if not firestore_available():
-        update.message.reply_text("قاعدة البيانات غير متاحة حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-    categories = fetch_book_categories()
-    if not categories:
-        update.message.reply_text("لا توجد تصنيفات نشطة. أضف تصنيفًا أولاً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-    BOOK_CREATION_CONTEXT[user_id] = {"mode": "create"}
-    WAITING_BOOK_ADD_CATEGORY.add(user_id)
-    buttons = [
-        [
-            InlineKeyboardButton(
-                cat.get("name", "تصنيف"),
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_select_category:{cat.get('id')}",
-            )
-        ]
-        for cat in categories
-    ]
-    buttons.append([InlineKeyboardButton("إلغاء", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_cancel_creation")])
-    update.message.reply_text(
-        "اختر التصنيف للكتاب الجديد:",
-        reply_markup=InlineKeyboardMarkup(buttons),
-    )
-
-
-def _finalize_book_creation(update: Update, context: CallbackContext, ctx: Dict):
-    user_id = update.effective_user.id
-    required_fields = ["category_id", "title", "author", "pdf_file_id"]
-    if any(not ctx.get(f) for f in required_fields):
-        update.message.reply_text("البيانات غير مكتملة. يرجى إعادة المحاولة.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        _reset_book_creation(user_id)
-        return
-    category_snapshot = None
-    if ctx.get("category_id"):
-        cat = get_book_category(ctx.get("category_id"))
-        category_snapshot = cat.get("name") if cat else None
-    payload = {
-        "title": ctx.get("title"),
-        "author": ctx.get("author"),
-        "category_id": ctx.get("category_id"),
-        "category_name_snapshot": category_snapshot,
-        "description": ctx.get("description") or "",
-        "tags": ctx.get("tags") or [],
-        "cover_file_id": ctx.get("cover_file_id"),
-        "pdf_file_id": ctx.get("pdf_file_id"),
-        "pdf_filename": ctx.get("pdf_filename"),
-        "downloads_count": 0,
-        "is_active": True,
-        "is_deleted": False,
-        "created_by": user_id,
-        "created_at": _book_timestamp_value(),
-        "updated_at": _book_timestamp_value(),
-    }
-    book_id = create_book_record(payload)
-    _reset_book_creation(user_id)
-    if book_id:
-        update.message.reply_text(f"تم حفظ الكتاب بنجاح (ID: {book_id}).", reply_markup=BOOKS_ADMIN_MENU_KB)
-    else:
-        update.message.reply_text("تعذر حفظ الكتاب حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-
-
-def _admin_books_keyboard(
-    items: List[Dict],
-    page: int,
-    total_pages: int,
-    source: str,
-    category_id: str = None,
-    search_token: str = None,
-) -> InlineKeyboardMarkup:
-    rows = []
-    route = _encode_route(source, category_id, search_token, page)
-    for book in items:
-        rows.append(
-            [
-                InlineKeyboardButton(
-                    f"✏️ {book.get('title', 'كتاب')}",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book.get('id')}:{route}",
-                )
-            ]
-        )
-    nav_row = []
-    if page > 0:
-        nav_row.append(
-            InlineKeyboardButton(
-                "⬅️ السابق",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{_encode_route(source, category_id, search_token, page - 1)}",
-            )
-        )
-    if page < total_pages - 1:
-        nav_row.append(
-            InlineKeyboardButton(
-                "التالي ➡️",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{_encode_route(source, category_id, search_token, page + 1)}",
-            )
-        )
-    if nav_row:
-        rows.append(nav_row)
-    rows.append([InlineKeyboardButton("🔍 بحث إداري", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_search_prompt")])
-    rows.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_back")])
-    return InlineKeyboardMarkup(rows)
-
-
-def _send_admin_books_list(
-    update_or_query,
-    context: CallbackContext,
-    books: List[Dict],
-    title: str,
-    source: str,
-    category_id: str = None,
-    search_token: str = None,
-    page: int = 0,
-    from_callback: bool = False,
-):
-    page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
-    text_lines = [title, f"الصفحة {safe_page + 1} من {total_pages}", ""]
-    if not books:
-        text_lines.append("لا توجد كتب متاحة.")
-    else:
-        start_index = safe_page * BOOKS_PAGE_SIZE
-        for idx, book in enumerate(page_items, start=1 + start_index):
-            if book.get("is_deleted"):
-                status_label = "🗑 محذوف"
-            else:
-                status_label = "✅" if book.get("is_active", True) else "⛔️ مخفي"
-            text_lines.append(f"{idx}. {book.get('title', 'كتاب')} — {book.get('author', 'مؤلف')} ({status_label})")
-    kb = _admin_books_keyboard(page_items if books else [], safe_page, total_pages, source, category_id, search_token)
-    text = "\n".join(text_lines)
-    query = getattr(update_or_query, "callback_query", None)
-    message_obj = getattr(update_or_query, "message", None) or getattr(query, "message", None)
-    if from_callback and query:
-        try:
-            query.edit_message_text(text, reply_markup=kb)
-            return
-        except Exception:
-            pass
-    if message_obj:
-        message_obj.reply_text(text, reply_markup=kb)
-
-
-def open_books_admin_list(update_or_query, context: CallbackContext, category_id: str = None, page: int = 0, search_token: str = None, from_callback: bool = False):
-    user_obj = getattr(update_or_query, "effective_user", None) or getattr(update_or_query, "from_user", None) or getattr(getattr(update_or_query, "callback_query", None), "from_user", None)
-    user_id = getattr(user_obj, "id", None)
-    if user_id and not _ensure_is_admin_or_supervisor(user_id):
-        return
-    if not firestore_available():
-        target = getattr(update_or_query, "message", None) or getattr(getattr(update_or_query, "callback_query", None), "message", None)
-        if target:
-            target.reply_text("قاعدة البيانات غير متاحة حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-    if search_token:
-        books, query_text = _get_books_for_search_token(search_token)
-        title = f"نتائج البحث الإداري: {query_text}"
-        _send_admin_books_list(update_or_query, context, books, title, source="admin_search", search_token=search_token, page=page, from_callback=from_callback)
-        return
-    books = fetch_books_list(category_id=category_id, include_inactive=True, include_deleted=True)
-    title = "📋 إدارة الكتب"
-    if category_id:
-        cat = get_book_category(category_id)
-        if cat:
-            title += f" — {cat.get('name', '')}"
-    _send_admin_books_list(update_or_query, context, books, title, source="admin_cat" if category_id else "admin_all", category_id=category_id, page=page, from_callback=from_callback)
-
-
-def _book_admin_detail_keyboard(book_id: str, route: str, is_active: bool, is_deleted: bool) -> InlineKeyboardMarkup:
-    toggle_text = "👁️ إخفاء" if is_active else "✅ تفعيل"
-    delete_text = "🗑 حذف منطقي" if not is_deleted else "♻️ استرجاع"
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("✏️ تعديل العنوان", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:title:{book_id}:{route}")],
-            [InlineKeyboardButton("✍️ تعديل المؤلف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:author:{book_id}:{route}")],
-            [InlineKeyboardButton("📝 تعديل الوصف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:description:{book_id}:{route}")],
-            [InlineKeyboardButton("🏷️ تعديل الكلمات المفتاحية", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:tags:{book_id}:{route}")],
-            [InlineKeyboardButton("🗂 تغيير التصنيف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:category:{book_id}:{route}")],
-            [InlineKeyboardButton("🖼 تغيير الغلاف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:cover:{book_id}:{route}")],
-            [InlineKeyboardButton("📄 تغيير ملف PDF", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:pdf:{book_id}:{route}")],
-            [InlineKeyboardButton(toggle_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_toggle:{book_id}:{route}")],
-            [InlineKeyboardButton(delete_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_delete:{book_id}:{route}")],
-            [InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{route}")],
-        ]
-    )
-
-
-def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: str, route: str):
-    book = get_book_by_id(book_id)
-    if not book:
-        update.callback_query.answer("الكتاب غير موجود.", show_alert=True)
-        return
-    category_name = None
-    if book.get("category_id"):
-        cat = get_book_category(book.get("category_id"))
-        category_name = cat.get("name") if cat else book.get("category_name_snapshot")
-    caption = _book_caption(book, category_name=category_name)
-    kb = _book_admin_detail_keyboard(book_id, route, book.get("is_active", True), book.get("is_deleted", False))
-    try:
-        update.callback_query.edit_message_text(caption, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        update.callback_query.message.reply_text(caption, reply_markup=kb, parse_mode="HTML")
-
-
-def _admin_set_book_category(update: Update, context: CallbackContext, book_id: str, category_id: str, route: str):
-    cat = get_book_category(category_id)
-    if not cat or not cat.get("is_active", True):
-        update.callback_query.answer("التصنيف غير متاح.", show_alert=True)
-        return
-    update_book_record(book_id, category_id=category_id, category_name_snapshot=cat.get("name"))
-    update.callback_query.answer("تم تحديث التصنيف.")
-    _send_admin_book_detail(update, context, book_id, route)
-
-
-def _start_book_field_edit(query: Update.callback_query, field: str, book_id: str, route: str):
-    user_id = query.from_user.id
-    BOOK_EDIT_CONTEXT[user_id] = {"book_id": book_id, "field": field, "route": route}
-    if field in {"title", "author", "description", "tags"}:
-        WAITING_BOOK_EDIT_FIELD.add(user_id)
-        prompt = {
-            "title": "أرسل العنوان الجديد:",
-            "author": "أرسل اسم المؤلف الجديد:",
-            "description": "أرسل الوصف الجديد (أو اكتب تخطي لمسح الوصف):",
-            "tags": "أرسل الكلمات المفتاحية مفصولة بفواصل:",
-        }.get(field, "أرسل القيمة الجديدة:")
-        query.answer()
-        query.message.reply_text(prompt, reply_markup=CANCEL_KB)
-    elif field == "category":
-        query.answer()
-        categories = fetch_book_categories()
-        if not categories:
-            query.message.reply_text("لا توجد تصنيفات متاحة.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            return
-        buttons = [
-            [
-                InlineKeyboardButton(
-                    cat.get("name", "تصنيف"),
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_category:{book_id}:{cat.get('id')}:{route}",
-                )
-            ]
-            for cat in categories
-        ]
-        buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}:{route}")])
-        query.message.reply_text("اختر التصنيف الجديد:", reply_markup=InlineKeyboardMarkup(buttons))
-    elif field == "cover":
-        query.answer()
-        WAITING_BOOK_EDIT_COVER.add(user_id)
-        query.message.reply_text("أرسل صورة الغلاف الجديدة:", reply_markup=CANCEL_KB)
-    elif field == "pdf":
-        query.answer()
-        WAITING_BOOK_EDIT_PDF.add(user_id)
-        query.message.reply_text("أرسل ملف الـ PDF الجديد:", reply_markup=CANCEL_KB)
-
-
-def _handle_admin_book_toggle(update: Update, context: CallbackContext, book_id: str, route: str):
-    book = get_book_by_id(book_id)
-    if not book:
-        update.callback_query.answer("الكتاب غير موجود.", show_alert=True)
-        return
-    new_state = not book.get("is_active", True)
-    update_book_record(book_id, is_active=new_state)
-    update.callback_query.answer("تم تحديث حالة الكتاب.")
-    _send_admin_book_detail(update, context, book_id, route)
-
-
-def _handle_admin_book_delete(update: Update, context: CallbackContext, book_id: str, route: str):
-    book = get_book_by_id(book_id)
-    if not book:
-        update.callback_query.answer("الكتاب غير موجود.", show_alert=True)
-        return
-    new_deleted = not book.get("is_deleted", False)
-    update_book_record(book_id, is_deleted=new_deleted)
-    update.callback_query.answer("تم تحديث حالة الحذف.")
-    _send_admin_book_detail(update, context, book_id, route)
-
-
-def start_admin_book_search_prompt(query: Update.callback_query):
-    user_id = query.from_user.id
-    WAITING_BOOK_ADMIN_SEARCH.add(user_id)
-    query.answer()
-    query.message.reply_text("أرسل الآن عبارة البحث للبحث الإداري:", reply_markup=CANCEL_KB)
-
-
-def handle_admin_book_search_input(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    text = (update.message.text or "").strip()
-    WAITING_BOOK_ADMIN_SEARCH.discard(user_id)
-    if not text:
-        update.message.reply_text("الرجاء كتابة عبارة بحث صالحة.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-    results = search_books(text)
-    token = uuid4().hex
-    BOOK_SEARCH_CACHE[token] = {"query": text, "book_ids": [b.get("id") for b in results if b.get("id")]}
-    open_books_admin_list(update, context, search_token=token, page=0, from_callback=False)
-
-
-def handle_book_media_message(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id if update.effective_user else None
-    if not user_id:
-        return
-
-    if user_id in WAITING_BOOK_ADD_COVER or user_id in WAITING_BOOK_EDIT_COVER:
-        photo_list = update.message.photo or []
-        if not photo_list:
-            update.message.reply_text("أرسل صورة غلاف صالحة أو اكتب تخطي.", reply_markup=CANCEL_KB)
-            return
-        file_id = photo_list[-1].file_id
-        if user_id in WAITING_BOOK_ADD_COVER:
-            ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-            ctx["cover_file_id"] = file_id
-            BOOK_CREATION_CONTEXT[user_id] = ctx
-            WAITING_BOOK_ADD_COVER.discard(user_id)
-            WAITING_BOOK_ADD_PDF.add(user_id)
-            update.message.reply_text("تم حفظ الغلاف. الآن أرسل ملف الـ PDF للكتاب.", reply_markup=CANCEL_KB)
-        else:
-            ctx = BOOK_EDIT_CONTEXT.get(user_id, {})
-            book_id = ctx.get("book_id")
-            route = ctx.get("route")
-            update_book_record(book_id, cover_file_id=file_id)
-            WAITING_BOOK_EDIT_COVER.discard(user_id)
-            BOOK_EDIT_CONTEXT.pop(user_id, None)
-            update.message.reply_text("تم تحديث الغلاف.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            if book_id and route:
-                try:
-                    _send_admin_book_detail(update, context, book_id, route)
-                except Exception:
-                    pass
-        raise DispatcherHandlerStop()
-
-    if user_id in WAITING_BOOK_ADD_PDF or user_id in WAITING_BOOK_EDIT_PDF:
-        doc = update.message.document
-        mime_type = (doc.mime_type or "").lower() if doc else ""
-        filename = (doc.file_name or "").lower() if doc else ""
-        if not doc or not (mime_type.startswith("application/pdf") or filename.endswith(".pdf")):
-            update.message.reply_text("أرسل ملف PDF صالح.", reply_markup=CANCEL_KB)
-            return
-        file_id = doc.file_id
-        filename = doc.file_name
-        if user_id in WAITING_BOOK_ADD_PDF:
-            ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-            ctx["pdf_file_id"] = file_id
-            ctx["pdf_filename"] = filename
-            BOOK_CREATION_CONTEXT[user_id] = ctx
-            WAITING_BOOK_ADD_PDF.discard(user_id)
-            _finalize_book_creation(update, context, ctx)
-        else:
-            ctx = BOOK_EDIT_CONTEXT.get(user_id, {})
-            book_id = ctx.get("book_id")
-            route = ctx.get("route")
-            update_book_record(book_id, pdf_file_id=file_id, pdf_filename=filename)
-            WAITING_BOOK_EDIT_PDF.discard(user_id)
-            BOOK_EDIT_CONTEXT.pop(user_id, None)
-            update.message.reply_text("تم تحديث ملف الكتاب.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            if book_id and route:
-                try:
-                    _send_admin_book_detail(update, context, book_id, route)
-                except Exception:
-                    pass
-        raise DispatcherHandlerStop()
-
-
-def handle_books_callback(update: Update, context: CallbackContext):
-    query = update.callback_query
-    data = query.data or ""
-    user_id = query.from_user.id
-    is_privileged = _ensure_is_admin_or_supervisor(user_id)
-
-    # إدارة المكتبة للأدمن/المشرفة
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin"):
-        if not is_privileged:
-            query.answer("غير مصرح لك باستخدام هذه الخيارات.", show_alert=True)
-            return
-    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_back":
-        query.answer()
-        query.message.reply_text("رجعنا لقائمة إدارة المكتبة.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-
-    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_categories":
-        open_book_categories_admin(update, context, use_callback=True)
-        return
-
-    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_category_add":
-        BOOK_CATEGORY_EDIT_CONTEXT[user_id] = {"mode": "create"}
-        WAITING_BOOK_CATEGORY_NAME.add(user_id)
-        query.answer()
-        query.message.reply_text("أرسل اسم التصنيف الجديد:", reply_markup=CANCEL_KB)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_category_rename:"):
-        cat_id = data.split(":")[2]
-        _start_category_rename(query, cat_id)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_category_order:"):
-        cat_id = data.split(":")[2]
-        _start_category_order_edit(query, cat_id)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_category_toggle:"):
-        cat_id = data.split(":")[2]
-        _handle_category_toggle(query, cat_id)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_category_delete:"):
-        cat_id = data.split(":")[2]
-        _handle_category_delete(update, context, query, cat_id)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_category:"):
-        parts = data.split(":")
-        cat_id = parts[2] if len(parts) > 2 else None
-        if not cat_id:
-            query.answer("تصنيف غير معروف.", show_alert=True)
-            return
-        _show_category_options(query, cat_id)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_select_category:"):
-        cat_id = data.split(":")[2]
-        cat = get_book_category(cat_id)
-        if not cat or not cat.get("is_active", True):
-            query.answer("التصنيف غير متاح.", show_alert=True)
-            return
-        ctx = BOOK_CREATION_CONTEXT.get(user_id, {"mode": "create"})
-        ctx["category_id"] = cat_id
-        ctx["category_name_snapshot"] = cat.get("name")
-        BOOK_CREATION_CONTEXT[user_id] = ctx
-        WAITING_BOOK_ADD_CATEGORY.discard(user_id)
-        WAITING_BOOK_ADD_TITLE.add(user_id)
-        query.answer()
-        query.message.reply_text("أرسل عنوان الكتاب:", reply_markup=CANCEL_KB)
-        return
-
-    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_cancel_creation":
-        _reset_book_creation(user_id)
-        query.answer("تم الإلغاء.")
-        query.message.reply_text("تم إلغاء إضافة الكتاب.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_list:"):
-        route = data.split(":", 2)[2]
-        route_info = _parse_route(route)
-        source = route_info.get("source")
-        page = route_info.get("page", 0)
-        category_id = route_info.get("category_id")
-        search_token = route_info.get("search_token")
-        open_books_admin_list(update, context, category_id=category_id if source == "admin_cat" else None, page=page, search_token=search_token if source == "admin_search" else None, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
-            return
-        book_id = parts[2]
-        route = parts[3]
-        _send_admin_book_detail(update, context, book_id, route)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:"):
-        parts = data.split(":")
-        if len(parts) < 4:
-            return
-        field = parts[2]
-        book_id = parts[3]
-        route = ":".join(parts[4:]) if len(parts) > 4 else "admin_all:none:0"
-        _start_book_field_edit(query, field, book_id, route)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_category:"):
-        parts = data.split(":")
-        if len(parts) < 6:
-            return
-        book_id = parts[3]
-        category_id = parts[4]
-        route = ":".join(parts[5:])
-        _admin_set_book_category(update, context, book_id, category_id, route)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_toggle:"):
-        parts = data.split(":")
-        if len(parts) < 3:
-            return
-        book_id = parts[2]
-        route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
-        _handle_admin_book_toggle(update, context, book_id, route)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_delete:"):
-        parts = data.split(":")
-        if len(parts) < 3:
-            return
-        book_id = parts[2]
-        route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
-        _handle_admin_book_delete(update, context, book_id, route)
-        return
-
-    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_search_prompt":
-        start_admin_book_search_prompt(query)
-        return
-
-    if data == BOOKS_EXIT_CALLBACK:
-        query.answer()
-        query.message.reply_text(
-            "تم الرجوع للقائمة الرئيسية.",
-            reply_markup=user_main_keyboard(user_id),
-        )
-        return
-
-    if data == BOOKS_HOME_BACK:
-        open_books_home(update, context, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:cat:"):
-        try:
-            _, _, cat_id, page_str = data.split(":", 3)
-            page = int(page_str)
-        except Exception:
-            cat_id = None
-            page = 0
-        if cat_id:
-            show_books_by_category(update, context, cat_id, page=page, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:latest:"):
-        try:
-            page = int(data.split(":")[2])
-        except Exception:
-            page = 0
-        show_latest_books(update, context, page=page, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:saved:"):
-        try:
-            page = int(data.split(":")[2])
-        except Exception:
-            page = 0
-        show_saved_books(update, context, page=page, from_callback=True)
-        return
-
-    if data == BOOKS_SEARCH_PROMPT_CALLBACK:
-        prompt_book_search(update, context)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:list:"):
-        route = data.split(":", 2)[2]
-        route_info = _parse_route(route)
-        source = route_info.get("source")
-        page = route_info.get("page", 0)
-        if source == "cat":
-            show_books_by_category(update, context, route_info.get("category_id"), page=page, from_callback=True)
-        elif source == "latest":
-            show_latest_books(update, context, page=page, from_callback=True)
-        elif source == "saved":
-            show_saved_books(update, context, page=page, from_callback=True)
-        elif source == "search":
-            token = route_info.get("search_token")
-            if token:
-                _render_search_results(update, context, token, page=page, from_callback=True)
-        else:
-            open_books_home(update, context, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:book:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
-            return
-        book_id = parts[2]
-        route = parts[3]
-        _send_book_detail(update, context, book_id, route, from_callback=True)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:download:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
-            return
-        book_id = parts[2]
-        route = parts[3]
-        handle_book_download(update, context, book_id, route)
-        return
-
-    if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:toggle_save:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
-            return
-        book_id = parts[2]
-        route = parts[3]
-        handle_toggle_saved(update, context, book_id, route)
-        return
-
-    query.answer()
-
-
-def remove_book_from_saved(user_id: int, book_id: str) -> bool:
-    record = get_user_record_by_id(user_id) or {}
-    _ensure_saved_books_defaults(record)
-    saved = record.get("saved_books", [])
-    if book_id not in saved:
-        return True
-    saved = [bid for bid in saved if bid != book_id]
-    update_user_record(
-        user_id,
-        saved_books=saved,
-        saved_books_updated_at=datetime.now(timezone.utc).isoformat(),
-    )
-    return True
 
 
 # =================== دوال مساعدة عامة ===================
@@ -3913,6 +2960,168 @@ def save_note(user_id: int, note_text: str):
         logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
 
 
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
+
+
+def save_benefit(benefit_data: Dict):
+    """حفظ فائدة/نصيحة في Firestore"""
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return None
+    
+    try:
+        # إضافة معلومات إضافية
+        if "created_at" not in benefit_data:
+            benefit_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        if "likes" not in benefit_data:
+            benefit_data["likes"] = 0
+        
+        # حفظ الفائدة
+        doc_ref = db.collection(BENEFITS_COLLECTION).add(benefit_data)
+        benefit_id = doc_ref[1].id
+        logger.info(f"✅ تم حفظ فائدة جديدة في Firestore (ID: {benefit_id})")
+        return benefit_id
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة: {e}")
+        return None
+
+
+def save_note(user_id: int, note_text: str):
+    """حفظ مذكرة قلبي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # حفظ المذكرة في subcollection
+        note_data = {
+            "user_id": user_id,
+            "note": note_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("heart_memos").add(note_data)
+        logger.info(f"✅ تم حفظ مذكرة قلبي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
+
+
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
+
+
+def save_benefit(benefit_data: Dict):
+    """حفظ فائدة/نصيحة في Firestore"""
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return None
+    
+    try:
+        # إضافة معلومات إضافية
+        if "created_at" not in benefit_data:
+            benefit_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        if "likes" not in benefit_data:
+            benefit_data["likes"] = 0
+        
+        # حفظ الفائدة
+        doc_ref = db.collection(BENEFITS_COLLECTION).add(benefit_data)
+        benefit_id = doc_ref[1].id
+        logger.info(f"✅ تم حفظ فائدة جديدة في Firestore (ID: {benefit_id})")
+        return benefit_id
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الفائدة: {e}")
+        return None
+
+
+def save_note(user_id: int, note_text: str):
+    """حفظ مذكرة قلبي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # حفظ المذكرة في subcollection
+        note_data = {
+            "user_id": user_id,
+            "note": note_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("heart_memos").add(note_data)
+        logger.info(f"✅ تم حفظ مذكرة قلبي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ المذكرة للمستخدم {user_id}: {e}")
+
+
+def save_letter(user_id: int, letter_data: Dict):
+    """حفظ رسالة إلى نفسي في Firestore"""
+    user_id_str = str(user_id)
+    
+    if not firestore_available():
+        logger.warning("Firestore غير متوفر")
+        return
+    
+    try:
+        # إضافة معلومات إضافية
+        letter_data["user_id"] = user_id
+        if "created_at" not in letter_data:
+            letter_data["created_at"] = datetime.now(timezone.utc).isoformat()
+        
+        # حفظ الرسالة في subcollection
+        db.collection(USERS_COLLECTION).document(user_id_str).collection("letters").add(letter_data)
+        logger.info(f"✅ تم حفظ رسالة إلى نفسي للمستخدم {user_id} في Firestore")
+        
+    except Exception as e:
+        logger.error(f"❌ خطأ في حفظ الرسالة للمستخدم {user_id}: {e}")
+
+
 def save_benefit(benefit_data: Dict):
     """حفظ فائدة/نصيحة في Firestore"""
     
@@ -3956,23 +3165,12 @@ def start_command(update: Update, context: CallbackContext):
     WAITING_MEMO_EDIT_SELECT.discard(user_id)
     WAITING_MEMO_EDIT_TEXT.discard(user_id)
     WAITING_MEMO_DELETE_SELECT.discard(user_id)
-    WAITING_BOOK_SEARCH.discard(user_id)
-    WAITING_BOOK_ADMIN_SEARCH.discard(user_id)
-    WAITING_BOOK_CATEGORY_NAME.discard(user_id)
-    WAITING_BOOK_CATEGORY_ORDER.discard(user_id)
-    WAITING_BOOK_ADD_CATEGORY.discard(user_id)
-    WAITING_BOOK_ADD_TITLE.discard(user_id)
-    WAITING_BOOK_ADD_AUTHOR.discard(user_id)
-    WAITING_BOOK_ADD_DESCRIPTION.discard(user_id)
-    WAITING_BOOK_ADD_TAGS.discard(user_id)
-    WAITING_BOOK_ADD_COVER.discard(user_id)
-    WAITING_BOOK_ADD_PDF.discard(user_id)
-    WAITING_BOOK_EDIT_FIELD.discard(user_id)
-    WAITING_BOOK_EDIT_COVER.discard(user_id)
-    WAITING_BOOK_EDIT_PDF.discard(user_id)
-    BOOK_CREATION_CONTEXT.pop(user_id, None)
-    BOOK_EDIT_CONTEXT.pop(user_id, None)
-    BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_ADD_CONTENT.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
     WAITING_SUPPORT_GENDER.discard(user_id)
     WAITING_BROADCAST.discard(user_id)
     WAITING_WATER_ADD_CUPS.discard(user_id)
@@ -4096,7 +3294,7 @@ def help_command(update: Update, context: CallbackContext):
         "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
         "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
         "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
-        "• مكتبة الكتب 📚 → تصفّح الكتب الموثوقة، التحميل، البحث، والحفظ للقراءة لاحقًا.\n"
+        "• رسالة إلى نفسي 💌 → كتابة رسائل مستقبلية مع تذكير بعد وقت معين.\n"
         "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
         "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
@@ -4104,6 +3302,514 @@ def help_command(update: Update, context: CallbackContext):
         "• الاشعارات 🔔 → تشغيل أو إيقاف الجرعة التحفيزية خلال اليوم.",
         reply_markup=kb,
     )
+
+# =================== قسم رسالة إلى نفسي ===================
+
+
+def open_letters_menu(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    WAITING_LETTER_MENU.add(user_id)
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_ADD_CONTENT.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
+    LETTER_CURRENT_DATA.pop(user_id, None)
+
+    letters_text = format_letters_list(letters)
+    kb = build_letters_menu_kb(is_admin(user_id))
+
+    update.message.reply_text(
+        f"💌 رسالة إلى نفسي:\n\n{letters_text}\n\n"
+        "يمكنك كتابة رسالة إلى نفسك المستقبلية مع تذكير بعد أسبوع، شهر، أو تاريخ مخصص.\n"
+        "سأرسل لك الرسالة عندما يحين الموعد المحدد 🤍",
+        reply_markup=kb,
+    )
+
+
+def format_letters_list(letters: List[Dict]) -> str:
+    if not letters:
+        return "لا توجد رسائل بعد."
+    
+    lines = []
+    for idx, letter in enumerate(letters, start=1):
+        content_preview = letter.get("content", "")[:30]
+        reminder_date = letter.get("reminder_date")
+        
+        if reminder_date:
+            try:
+                reminder_dt = datetime.fromisoformat(reminder_date).astimezone(timezone.utc)
+                now = datetime.now(timezone.utc)
+                if reminder_dt <= now:
+                    status = "✅ تم إرسالها"
+                else:
+                    time_left = reminder_dt - now
+                    days = time_left.days
+                    hours = time_left.seconds // 3600
+                    status = f"⏳ بعد {days} يوم و {hours} ساعة"
+            except:
+                status = "📅 بتاريخ معين"
+        else:
+            status = "❌ بدون تذكير"
+        
+        lines.append(f"{idx}. {content_preview}... ({status})")
+    
+    return "\n".join(lines)
+
+
+def handle_letter_add_start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_ADD.add(user_id)
+
+    update.message.reply_text(
+        "اكتب الآن نص الرسالة التي تريد إرسالها إلى نفسك في المستقبل 💌\n\n"
+        "يمكن أن تكون:\n"
+        "• تذكيرًا لهدف ما\n"
+        "• كلمات تشجيعية لنفسك المستقبلية\n"
+        "• دعاء تتمنى أن تتذكره\n"
+        "• أي شيء تريد أن تقرأه لاحقًا",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_letter_add_content(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_ADD.discard(user_id)
+        open_letters_menu(update, context)
+        return
+
+    if len(text) < 3:
+        update.message.reply_text(
+            "الرجاء كتابة رسالة أطول قليلًا (3 أحرف على الأقل).",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    LETTER_CURRENT_DATA[user_id] = {"content": text}
+    WAITING_LETTER_ADD.discard(user_id)
+    WAITING_LETTER_REMINDER_OPTION.add(user_id)
+
+    update.message.reply_text(
+        f"📝 تم حفظ محتوى الرسالة.\n\n"
+        f"الآن اختر متى تريد أن أذكّرك بها:\n\n"
+        f"• {BTN_REMINDER_WEEK}: سأرسلها لك بعد أسبوع من الآن\n"
+        f"• {BTN_REMINDER_MONTH}: سأرسلها لك بعد شهر\n"
+        f"• {BTN_REMINDER_2MONTHS}: سأرسلها لك بعد شهرين\n"
+        f"• {BTN_REMINDER_CUSTOM}: حدد تاريخًا مخصصًا\n"
+        f"• {BTN_REMINDER_NONE}: بدون تذكير (ستبقى مخزنة فقط)",
+        reply_markup=REMINDER_OPTIONS_KB,
+    )
+
+
+def handle_reminder_option(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+        open_letters_menu(update, context)
+        return
+
+    if user_id not in LETTER_CURRENT_DATA:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        update.message.reply_text(
+            "حدث خطأ، يرجى المحاولة مرة أخرى.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    now = datetime.now(timezone.utc)
+    reminder_date = None
+
+    if text == BTN_REMINDER_WEEK:
+        reminder_date = now + timedelta(days=7)
+    elif text == BTN_REMINDER_MONTH:
+        reminder_date = now + timedelta(days=30)
+    elif text == BTN_REMINDER_2MONTHS:
+        reminder_date = now + timedelta(days=60)
+    elif text == BTN_REMINDER_CUSTOM:
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        WAITING_LETTER_CUSTOM_DATE.add(user_id)
+        update.message.reply_text(
+            "أرسل التاريخ الذي تريد التذكير فيه بالصيغة:\n"
+            "`YYYY-MM-DD HH:MM`\n\n"
+            "مثال: `2024-12-25 15:30`\n\n"
+            "ملاحظة: التوقيت المستخدم هو UTC (التوقيت العالمي).",
+            reply_markup=CANCEL_KB,
+            parse_mode="Markdown",
+        )
+        return
+    elif text == BTN_REMINDER_NONE:
+        reminder_date = None
+    else:
+        update.message.reply_text(
+            "رجاءً اختر من الخيارات المتاحة.",
+            reply_markup=REMINDER_OPTIONS_KB,
+        )
+        return
+
+    # حفظ الرسالة
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+    
+    new_letter = {
+        "content": LETTER_CURRENT_DATA[user_id]["content"],
+        "created_at": now.isoformat(),
+        "reminder_date": reminder_date.isoformat() if reminder_date else None,
+        "sent": False
+    }
+    
+    letters.append(new_letter)
+    record["letters_to_self"] = letters
+    
+    # إضافة نقاط
+    add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
+    save_data()
+    # تحديث Firestore مباشرة
+    update_user_record(user_id, letters_to_self=letters)
+
+    # جدولة التذكير إذا كان هناك تاريخ
+    if reminder_date and context.job_queue:
+        try:
+            context.job_queue.run_once(
+                send_letter_reminder,
+                when=reminder_date,
+                context={
+                    "user_id": user_id,
+                    "letter_content": new_letter["content"],
+                    "letter_index": len(letters) - 1
+                },
+                name=f"letter_reminder_{user_id}_{len(letters)-1}"
+            )
+        except Exception as e:
+            logger.error(f"Error scheduling letter reminder: {e}")
+
+    WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+    LETTER_CURRENT_DATA.pop(user_id, None)
+
+    if reminder_date:
+        reminder_str = reminder_date.strftime("%Y-%m-%d %H:%M")
+        message = (
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📅 سأرسلها لك في:\n{reminder_str} (UTC)\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!"
+        )
+    else:
+        message = (
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📝 ستكون متاحة دائمًا في قسم «رسالة إلى نفسي 💌»\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!"
+        )
+
+    update.message.reply_text(
+        message,
+        reply_markup=build_letters_menu_kb(is_admin(user_id)),
+    )
+
+
+def handle_custom_date_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+        open_letters_menu(update, context)
+        return
+
+    if user_id not in LETTER_CURRENT_DATA:
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        update.message.reply_text(
+            "حدث خطأ، يرجى المحاولة مرة أخرى.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    try:
+        # تحليل التاريخ
+        if "T" in text:
+            reminder_date = datetime.fromisoformat(text).astimezone(timezone.utc)
+        else:
+            reminder_date = datetime.strptime(text, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        
+        now = datetime.now(timezone.utc)
+        if reminder_date <= now:
+            update.message.reply_text(
+                "الرجاء إدخال تاريخ في المستقبل، وليس في الماضي أو الحاضر.",
+                reply_markup=CANCEL_KB,
+            )
+            return
+
+        # حفظ الرسالة
+        record = get_user_record(user)
+        letters = record.get("letters_to_self", [])
+        
+        new_letter = {
+            "content": LETTER_CURRENT_DATA[user_id]["content"],
+            "created_at": now.isoformat(),
+            "reminder_date": reminder_date.isoformat(),
+            "sent": False
+        }
+        
+        letters.append(new_letter)
+        record["letters_to_self"] = letters
+        
+        # إضافة نقاط
+        add_points(user_id, POINTS_PER_LETTER, context, "كتابة رسالة إلى النفس")
+        save_data()
+        update_user_record(user_id, letters_to_self=letters)
+
+        # جدولة التذكير
+        if context.job_queue:
+            try:
+                context.job_queue.run_once(
+                    send_letter_reminder,
+                    when=reminder_date,
+                    context={
+                        "user_id": user_id,
+                        "letter_content": new_letter["content"],
+                        "letter_index": len(letters) - 1
+                    },
+                    name=f"letter_reminder_{user_id}_{len(letters)-1}"
+                )
+            except Exception as e:
+                logger.error(f"Error scheduling letter reminder: {e}")
+
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
+
+        reminder_str = reminder_date.strftime("%Y-%m-%d %H:%M")
+        update.message.reply_text(
+            f"✅ تم حفظ رسالتك بنجاح!\n\n"
+            f"📅 سأرسلها لك في:\n{reminder_str} (UTC)\n\n"
+            f"🎯 لقد حصلت على {POINTS_PER_LETTER} نقاط إضافية!",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+
+    except ValueError:
+        update.message.reply_text(
+            "صيغة التاريخ غير صحيحة. الرجاء استخدام الصيغة:\n"
+            "`YYYY-MM-DD HH:MM`\n"
+            "مثال: `2024-12-25 15:30`",
+            reply_markup=CANCEL_KB,
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error(f"Error processing custom date: {e}")
+        update.message.reply_text(
+            "حدث خطأ في معالجة التاريخ. الرجاء المحاولة مرة أخرى.",
+            reply_markup=CANCEL_KB,
+        )
+
+
+def send_letter_reminder(context: CallbackContext):
+    job = context.job
+    user_id = job.context["user_id"]
+    letter_content = job.context["letter_content"]
+    letter_index = job.context["letter_index"]
+
+    try:
+        # تحديث حالة الرسالة في البيانات
+        uid = str(user_id)
+        if uid in data:
+            record = data[uid]
+            letters = record.get("letters_to_self", [])
+            if letter_index < len(letters):
+                letters[letter_index]["sent"] = True
+                # تم حفظ البيانات في Firestore عبر update_user_record
+
+        # إرسال الرسالة للمستخدم
+        context.bot.send_message(
+            chat_id=user_id,
+            text=f"💌 رسالة من نفسك السابقة:\n\n{letter_content}\n\n"
+                 f"⏰ هذا هو الموعد الذي طلبت التذكير فيه 🤍",
+        )
+    except Exception as e:
+        logger.error(f"Error sending letter reminder to {user_id}: {e}")
+
+
+def handle_letter_view(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    if not letters:
+        update.message.reply_text(
+            "لا توجد رسائل بعد.\n"
+            "يمكنك كتابة رسالة جديدة من زر «✍️ كتابة رسالة جديدة».",
+            reply_markup=build_letters_menu_kb(is_admin(user.id)),
+        )
+        return
+
+    letters_with_details = []
+    for idx, letter in enumerate(letters, start=1):
+        content = letter.get("content", "")
+        created_at = letter.get("created_at", "")
+        reminder_date = letter.get("reminder_date")
+        sent = letter.get("sent", False)
+
+        try:
+            created_dt = datetime.fromisoformat(created_at).astimezone(timezone.utc)
+            created_str = created_dt.strftime("%Y-%m-%d")
+        except:
+            created_str = "تاريخ غير معروف"
+
+        if reminder_date:
+            try:
+                reminder_dt = datetime.fromisoformat(reminder_date).astimezone(timezone.utc)
+                now = datetime.now(timezone.utc)
+                if reminder_dt <= now or sent:
+                    status = "✅ تم إرسالها"
+                else:
+                    time_left = reminder_dt - now
+                    days = time_left.days
+                    hours = time_left.seconds // 3600
+                    status = f"⏳ بعد {days} يوم و {hours} ساعة"
+            except:
+                status = "📅 بتاريخ معين"
+        else:
+            status = "📝 مخزنة"
+
+        letters_with_details.append(
+            f"{idx}. {content[:50]}...\n"
+            f"   📅 كتبت في: {created_str}\n"
+            f"   📌 الحالة: {status}"
+        )
+
+    text = "📋 رسائلك إلى نفسك:\n\n" + "\n\n".join(letters_with_details)
+    update.message.reply_text(
+        text,
+        reply_markup=build_letters_menu_kb(is_admin(user.id)),
+    )
+
+
+def handle_letter_delete_select(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+
+    if not letters:
+        update.message.reply_text(
+            "لا توجد رسائل لحذفها حاليًا.",
+            reply_markup=build_letters_menu_kb(is_admin(user_id)),
+        )
+        return
+
+    WAITING_LETTER_MENU.discard(user_id)
+    WAITING_LETTER_DELETE_SELECT.add(user_id)
+
+    letters_text = format_letters_list(letters)
+    update.message.reply_text(
+        f"🗑 اختر رقم الرسالة التي تريد حذفها:\n\n{letters_text}\n\n"
+        "أرسل الرقم الآن، أو اضغط «إلغاء ❌».",
+        reply_markup=CANCEL_KB,
+    )
+
+
+def handle_letter_delete_input(update: Update, context: CallbackContext):
+    user = update.effective_user
+    record = get_user_record(user)
+    
+    # التحقق إذا كان المستخدم محظورًا
+    if record.get("is_banned", False):
+        return
+    
+    user_id = user.id
+    record = get_user_record(user)
+    letters = record.get("letters_to_self", [])
+    text = (update.message.text or "").strip()
+
+    if text == BTN_CANCEL:
+        WAITING_LETTER_DELETE_SELECT.discard(user_id)
+        open_letters_menu(update, context)
+        return
+
+    try:
+        idx = int(text) - 1
+        if idx < 0 or idx >= len(letters):
+            raise ValueError()
+    except ValueError:
+        update.message.reply_text(
+            "رجاءً أرسل رقم صحيح من القائمة، أو اضغط «إلغاء ❌».",
+            reply_markup=CANCEL_KB,
+        )
+        return
+
+    deleted = letters.pop(idx)
+    record["letters_to_self"] = letters
+    
+    # حفظ في Firestore
+    update_user_record(user.id, letters_to_self=record["letters_to_self"])
+    save_data()
+
+    WAITING_LETTER_DELETE_SELECT.discard(user_id)
+
+    content_preview = deleted.get("content", "")[:50]
+    update.message.reply_text(
+        f"🗑 تم حذف الرسالة:\n\n{content_preview}...",
+        reply_markup=build_letters_menu_kb(is_admin(user_id)),
+    )
+    open_letters_menu(update, context)
+
+# =================== قسم منبّه الماء ===================
+
 
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -5455,7 +5161,7 @@ def send_stats_overview(update: Update, context: CallbackContext):
     adhkar_count = record.get("adhkar_count", 0)
 
     memos_count = len(record.get("heart_memos", []))
-    saved_books_count = len(record.get("saved_books", []))
+    letters_count = len(record.get("letters_to_self", []))
 
     points = record.get("points", 0)
     level = record.get("level", 0)
@@ -5474,7 +5180,7 @@ def send_stats_overview(update: Update, context: CallbackContext):
 
     text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
     text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
-    text_lines.append(f"- عدد الكتب المحفوظة لديك: {saved_books_count} كتاب.")
+    text_lines.append(f"- عدد رسائلك إلى نفسك: {letters_count} رسالة.")
 
     text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
     if level <= 0:
@@ -8485,23 +8191,13 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_MEMO_EDIT_TEXT.discard(user_id)
         WAITING_MEMO_DELETE_SELECT.discard(user_id)
         MEMO_EDIT_INDEX.pop(user_id, None)
-        WAITING_BOOK_SEARCH.discard(user_id)
-        WAITING_BOOK_ADMIN_SEARCH.discard(user_id)
-        WAITING_BOOK_CATEGORY_NAME.discard(user_id)
-        WAITING_BOOK_CATEGORY_ORDER.discard(user_id)
-        WAITING_BOOK_ADD_CATEGORY.discard(user_id)
-        WAITING_BOOK_ADD_TITLE.discard(user_id)
-        WAITING_BOOK_ADD_AUTHOR.discard(user_id)
-        WAITING_BOOK_ADD_DESCRIPTION.discard(user_id)
-        WAITING_BOOK_ADD_TAGS.discard(user_id)
-        WAITING_BOOK_ADD_COVER.discard(user_id)
-        WAITING_BOOK_ADD_PDF.discard(user_id)
-        WAITING_BOOK_EDIT_FIELD.discard(user_id)
-        WAITING_BOOK_EDIT_COVER.discard(user_id)
-        WAITING_BOOK_EDIT_PDF.discard(user_id)
-        BOOK_CREATION_CONTEXT.pop(user_id, None)
-        BOOK_EDIT_CONTEXT.pop(user_id, None)
-        BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
+        WAITING_LETTER_MENU.discard(user_id)
+        WAITING_LETTER_ADD.discard(user_id)
+        WAITING_LETTER_ADD_CONTENT.discard(user_id)
+        WAITING_LETTER_REMINDER_OPTION.discard(user_id)
+        WAITING_LETTER_CUSTOM_DATE.discard(user_id)
+        WAITING_LETTER_DELETE_SELECT.discard(user_id)
+        LETTER_CURRENT_DATA.pop(user_id, None)
         WAITING_SUPPORT_GENDER.discard(user_id)
         WAITING_BROADCAST.discard(user_id)
         WAITING_MOTIVATION_ADD.discard(user_id)
@@ -8613,158 +8309,21 @@ def handle_text(update: Update, context: CallbackContext):
         handle_memo_delete_index_input(update, context)
         return
 
-    # مكتبة الكتب - حالات الإدخال النصي
-    if user_id in WAITING_BOOK_SEARCH:
-        handle_book_search_input(update, context)
+    # رسالة إلى نفسي
+    if user_id in WAITING_LETTER_ADD:
+        handle_letter_add_content(update, context)
         return
 
-    if user_id in WAITING_BOOK_ADMIN_SEARCH:
-        handle_admin_book_search_input(update, context)
+    if user_id in WAITING_LETTER_REMINDER_OPTION:
+        handle_reminder_option(update, context)
         return
 
-    if user_id in WAITING_BOOK_CATEGORY_NAME:
-        ctx = BOOK_CATEGORY_EDIT_CONTEXT.get(user_id, {})
-        name = text.strip()
-        if not name:
-            msg.reply_text("الرجاء إدخال اسم تصنيف صالح.", reply_markup=CANCEL_KB)
-            return
-        mode = ctx.get("mode")
-        if mode == "create":
-            ctx["name"] = name
-            BOOK_CATEGORY_EDIT_CONTEXT[user_id] = ctx
-            WAITING_BOOK_CATEGORY_NAME.discard(user_id)
-            WAITING_BOOK_CATEGORY_ORDER.add(user_id)
-            msg.reply_text("أرسل ترتيب العرض (رقم). اكتب تخطي للإبقاء على الترتيب الافتراضي.", reply_markup=CANCEL_KB)
-        elif mode == "rename" and ctx.get("category_id"):
-            slug_value = re.sub(r"\s+", "-", name.lower())
-            update_book_category(ctx["category_id"], name=name, slug=slug_value)
-            WAITING_BOOK_CATEGORY_NAME.discard(user_id)
-            BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("تم تحديث اسم التصنيف.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            open_book_categories_admin(update, context)
-        else:
-            WAITING_BOOK_CATEGORY_NAME.discard(user_id)
-            BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("تم إلغاء العملية.", reply_markup=BOOKS_ADMIN_MENU_KB)
+    if user_id in WAITING_LETTER_CUSTOM_DATE:
+        handle_custom_date_input(update, context)
         return
 
-    if user_id in WAITING_BOOK_CATEGORY_ORDER:
-        ctx = BOOK_CATEGORY_EDIT_CONTEXT.get(user_id, {})
-        order_val = 0
-        normalized = text.strip().lower()
-        if normalized not in {"تخطي", "skip", ""}:
-            try:
-                order_val = int(text)
-            except Exception:
-                msg.reply_text("الرجاء إدخال رقم صحيح للترتيب أو اكتب تخطي.", reply_markup=CANCEL_KB)
-                return
-        mode = ctx.get("mode")
-        if mode == "create" and ctx.get("name"):
-            slug_value = re.sub(r"\s+", "-", ctx.get("name").lower())
-            cat_id = save_book_category(ctx.get("name"), order_val, created_by=user_id)
-            WAITING_BOOK_CATEGORY_ORDER.discard(user_id)
-            BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
-            if cat_id:
-                msg.reply_text(f"تم إنشاء التصنيف بنجاح (ID: {cat_id}).", reply_markup=BOOKS_ADMIN_MENU_KB)
-            else:
-                msg.reply_text("تعذر إنشاء التصنيف حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            open_book_categories_admin(update, context)
-        elif mode == "order" and ctx.get("category_id"):
-            update_book_category(ctx["category_id"], order=order_val)
-            WAITING_BOOK_CATEGORY_ORDER.discard(user_id)
-            BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("تم تحديث ترتيب التصنيف.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            open_book_categories_admin(update, context)
-        else:
-            WAITING_BOOK_CATEGORY_ORDER.discard(user_id)
-            BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("تم إلغاء العملية.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_TITLE:
-        ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-        ctx["title"] = text
-        BOOK_CREATION_CONTEXT[user_id] = ctx
-        WAITING_BOOK_ADD_TITLE.discard(user_id)
-        WAITING_BOOK_ADD_AUTHOR.add(user_id)
-        msg.reply_text("أرسل اسم المؤلف:", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_CATEGORY:
-        msg.reply_text("اختر التصنيف من الأزرار المعروضة.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_AUTHOR:
-        ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-        ctx["author"] = text
-        BOOK_CREATION_CONTEXT[user_id] = ctx
-        WAITING_BOOK_ADD_AUTHOR.discard(user_id)
-        WAITING_BOOK_ADD_DESCRIPTION.add(user_id)
-        msg.reply_text("أرسل وصفًا مختصرًا (أو اكتب تخطي لتجاوز الوصف):", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_DESCRIPTION:
-        ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-        if text.strip().lower() in {"تخطي", "skip"}:
-            ctx["description"] = ""
-        else:
-            ctx["description"] = text
-        BOOK_CREATION_CONTEXT[user_id] = ctx
-        WAITING_BOOK_ADD_DESCRIPTION.discard(user_id)
-        WAITING_BOOK_ADD_TAGS.add(user_id)
-        msg.reply_text("أرسل الكلمات المفتاحية مفصولة بفواصل (أو اكتب تخطي):", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_TAGS:
-        ctx = BOOK_CREATION_CONTEXT.get(user_id, {})
-        if text.strip().lower() in {"تخطي", "skip"}:
-            ctx["tags"] = []
-        else:
-            ctx["tags"] = _parse_tags_input(text)
-        BOOK_CREATION_CONTEXT[user_id] = ctx
-        WAITING_BOOK_ADD_TAGS.discard(user_id)
-        WAITING_BOOK_ADD_COVER.add(user_id)
-        msg.reply_text("أرسل صورة الغلاف (اختياري) أو اكتب تخطي:", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_COVER:
-        if text.strip().lower() in {"تخطي", "skip"}:
-            WAITING_BOOK_ADD_COVER.discard(user_id)
-            WAITING_BOOK_ADD_PDF.add(user_id)
-            msg.reply_text("أرسل ملف الـ PDF للكتاب (إجباري):", reply_markup=CANCEL_KB)
-        else:
-            msg.reply_text("أرسل صورة غلاف صالحة أو اكتب تخطي.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_ADD_PDF:
-        msg.reply_text("أرسل ملف الـ PDF للكتاب.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_EDIT_FIELD:
-        ctx = BOOK_EDIT_CONTEXT.get(user_id, {})
-        book_id = ctx.get("book_id")
-        field = ctx.get("field")
-        route = ctx.get("route")
-        if not book_id or not field:
-            WAITING_BOOK_EDIT_FIELD.discard(user_id)
-            BOOK_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("حدث خطأ أثناء التعديل.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            return
-        update_data = {}
-        if field == "tags":
-            update_data["tags"] = _parse_tags_input(text)
-        elif field == "description" and text.strip().lower() in {"تخطي", "skip"}:
-            update_data["description"] = ""
-        else:
-            update_data[field] = text
-        update_book_record(book_id, **update_data)
-        WAITING_BOOK_EDIT_FIELD.discard(user_id)
-        BOOK_EDIT_CONTEXT.pop(user_id, None)
-        msg.reply_text("تم تحديث البيانات.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        try:
-            _send_admin_book_detail(update, context, book_id, route)
-        except Exception:
-            pass
+    if user_id in WAITING_LETTER_DELETE_SELECT:
+        handle_letter_delete_input(update, context)
         return
 
     # إدارة الجرعة التحفيزية
@@ -8851,16 +8410,8 @@ def handle_text(update: Update, context: CallbackContext):
         open_tasbih_menu(update, context)
         return
 
-    if text in {BTN_BOOKS_MAIN, BTN_BOOKS_MAIN_LABEL}:
-        open_books_home(update, context)
-        return
-
     if text == BTN_MEMOS_MAIN:
         open_memos_menu(update, context)
-        return
-
-    if text == BTN_BOOKS_ADMIN:
-        open_books_admin_menu(update, context)
         return
 
     if text == BTN_WATER_MAIN:
@@ -8886,6 +8437,10 @@ def handle_text(update: Update, context: CallbackContext):
         )
         return
 
+    if text == BTN_LETTER_MAIN:
+        open_letters_menu(update, context)
+        return
+
     if text == BTN_SUPPORT:
         handle_contact_support(update, context)
         return
@@ -8908,18 +8463,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_NOTIFICATIONS_MAIN:
         open_notifications_menu(update, context)
-        return
-
-    if text == BTN_BOOKS_MANAGE_CATEGORIES:
-        open_book_categories_admin(update, context)
-        return
-
-    if text == BTN_BOOKS_ADD_BOOK:
-        start_add_book_flow(update, context)
-        return
-
-    if text == BTN_BOOKS_MANAGE_BOOKS:
-        open_books_admin_list(update, context)
         return
 
     if text == BTN_BACK_MAIN:
@@ -9066,6 +8609,31 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_MY_BENEFITS:
         handle_my_benefits(update, context)
+        return
+
+    # رسالة إلى نفسي
+    if text == BTN_LETTER_ADD:
+        handle_letter_add_start(update, context)
+        return
+
+    if text == BTN_LETTER_VIEW:
+        handle_letter_view(update, context)
+        return
+
+    if text == BTN_LETTER_DELETE:
+        handle_letter_delete_select(update, context)
+        return
+
+    if text == BTN_LETTER_BACK:
+        msg.reply_text(
+            "تم الرجوع للقائمة الرئيسية.",
+            reply_markup=main_kb,
+        )
+        return
+
+    # خيارات التذكير (لرسالة إلى نفسي)
+    if text in [BTN_REMINDER_WEEK, BTN_REMINDER_MONTH, BTN_REMINDER_2MONTHS, BTN_REMINDER_CUSTOM, BTN_REMINDER_NONE]:
+        handle_reminder_option(update, context)
         return
 
     # المنافسات
@@ -10287,7 +9855,6 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
-        dispatcher.add_handler(CallbackQueryHandler(handle_books_callback, pattern=r"^BOOKS:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^support_open$"))
 
         channel_audio_filter = Filters.chat_type.channel & (
@@ -10307,11 +9874,6 @@ def start_bot():
             & ~Filters.chat_type.channel
         )
 
-        book_media_filter = (
-            Filters.photo
-            | Filters.document.mime_type("application/pdf")
-            | Filters.document.file_extension("pdf")
-        ) & ~Filters.chat_type.channel
         support_photo_filter = Filters.photo & ~Filters.chat_type.channel
         support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
         support_video_filter = Filters.video & ~Filters.chat_type.channel
@@ -10339,13 +9901,6 @@ def start_bot():
             MessageHandler(
                 reply_support_filter,
                 handle_support_admin_reply_any,
-            )
-        )
-
-        dispatcher.add_handler(
-            MessageHandler(
-                book_media_filter,
-                handle_book_media_message,
             )
         )
 
