@@ -1433,17 +1433,17 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 # =================== الأزرار ===================
 
 # رئيسية
-BTN_ADHKAR_MAIN = "أذكاري 🤲"
-BTN_QURAN_MAIN = "وردي القرآني 📖"
+BTN_ADHKAR_MAIN = "📿 أذكاري"
+BTN_QURAN_MAIN = "📖 وردي القرآني"
 BTN_TASBIH_MAIN = "السبحة 📿"
-BTN_MEMOS_MAIN = "مذكّرات قلبي 🩵"
-BTN_WATER_MAIN = "منبّه الماء 💧"
-BTN_STATS = "احصائياتي 📊"
+BTN_MEMOS_MAIN = "🗓️ مذكرات قلبي"
+BTN_WATER_MAIN = "💧 منبه الماء"
+BTN_STATS = "📊 احصائياتي"
 BTN_STATS_ONLY = "📊 إحصائياتي"
 BTN_MEDALS_ONLY = "🏅 ميدالياتي"
 BTN_STATS_BACK_MAIN = "↩️ رجوع للقائمة الرئيسية"
 BTN_MEDALS = "ميدالياتي 🏵️"
-BTN_BOOKS_MAIN = "مكتبة طالب العلم 📘"
+BTN_BOOKS_MAIN = "📚 مكتبة طالب العلم"
 BTN_BOOKS_ADMIN = "📚 إدارة مكتبة الكتب"
 BTN_BOOKS_MANAGE_CATEGORIES = "🗂 إدارة التصنيفات"
 BTN_BOOKS_ADD_BOOK = "➕ إضافة كتاب"
@@ -1451,12 +1451,12 @@ BTN_BOOKS_MANAGE_BOOKS = "📋 إدارة الكتب"
 BTN_BOOKS_BACKFILL = "♻️ تهيئة بيانات الكتب"
 BTN_BOOKS_BACK_MENU = "🔙 رجوع إلى مكتبة الكتب"
 
-BTN_SUPPORT = "تواصل مع الدعم ✉️"
-BTN_NOTIFICATIONS_MAIN = "الاشعارات 🔔"
+BTN_SUPPORT = "🆘 تواصل مع الدعم"
+BTN_NOTIFICATIONS_MAIN = "🔔 الاشعارات"
 # =================== أزرار قسم الدورات ===================
-BTN_COURSES_SECTION = "قسم الدورات 📚"
+BTN_COURSES_SECTION = "🧩 قسم الدورات"
 BTN_MANAGE_COURSES = "إدارة الدورات 📋"
-BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
+BTN_AUDIO_LIBRARY = "🎧 مكتبة صوتية"
 
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
@@ -1502,13 +1502,13 @@ def _is_back_placeholder_course(course_name: str) -> bool:
 
 
 # المنافسات و المجتمع
-BTN_COMP_MAIN = "المنافسات و المجتمع 🏅"
+BTN_COMP_MAIN = "🏆 المنافسات و المجتمع"
 BTN_MY_PROFILE = "ملفي التنافسي 🎯"
 BTN_TOP10 = "أفضل 10 🏅"
 BTN_TOP100 = "أفضل 100 🏆"
 
 # فوائد و نصائح
-BTN_BENEFITS_MAIN = "مجتمع الفوائد و النصائح 💡"
+BTN_BENEFITS_MAIN = "💡 مجتمع الفوائد و النصائح"
 BTN_BENEFIT_ADD = "✍️ أضف فائدة / نصيحة"
 BTN_BENEFIT_VIEW = "📖 استعراض الفوائد"
 BTN_BENEFIT_TOP10 = "🎆 أفضل 10 فوائد"
@@ -1541,7 +1541,7 @@ BTN_ADMIN_RESET_POINTS = "تصفير نقاط المنافسات والمجتم�
 BTN_ADMIN_RESET_MEDALS = "تصفير ميداليات المنافسات والمجتمع 🎆"
 
 # جرعة تحفيزية للمستخدم
-BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ✨"
+BTN_MOTIVATION_ON = "تشغيل الجرعة التحفيزية ⚡"
 BTN_MOTIVATION_OFF = "إيقاف الجرعة التحفيزية 😴"
 
 # الميداليات
@@ -1577,36 +1577,36 @@ MEDAL_RENAMES = {
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الأول: وردي القرآني في العمود الأيمن وأذكاري في العمود الأيسر
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة طالب العلم في العمود الأيمن وقسم الدورات في العمود الأيسر
+        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيمن ومذكرات قلبي في العمود الأيسر
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيمن والمنافسات والمجتمع في العمود الأيسر
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء في العمود الأيمن واحصائياتي في العمود الأيسر
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم في العمود الأيمن والاشعارات في العمود الأيسر
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
     ],
     resize_keyboard=True,
 )
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الأول: وردي القرآني في العمود الأيمن وأذكاري في العمود الأيسر
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة طالب العلم في العمود الأيمن وقسم الدورات في العمود الأيسر
+        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيمن ومذكرات قلبي في العمود الأيسر
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيمن والمنافسات والمجتمع في العمود الأيسر
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء في العمود الأيمن واحصائياتي في العمود الأيسر
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم في العمود الأيمن والاشعارات في العمود الأيسر
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -1615,18 +1615,18 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني على اليسار وأذكاري على اليمين
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة صوتية على اليسار وقسم الدورات على اليمين
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الثالث: مكتبة الكتب على اليسار ومذكرات قلبي على اليمين
-        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_MEMOS_MAIN)],
-        # السطر الرابع: مجتمع الفوائد والنصائح على اليسار والمنافسات والمجتمع على اليمين
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء على اليسار واحصائياتي على اليمين
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم على اليسار والاشعارات على اليمين
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الأول: وردي القرآني في العمود الأيمن وأذكاري في العمود الأيسر
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: مكتبة طالب العلم في العمود الأيمن وقسم الدورات في العمود الأيسر
+        [KeyboardButton(BTN_BOOKS_MAIN), KeyboardButton(BTN_COURSES_SECTION)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيمن ومذكرات قلبي في العمود الأيسر
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_MEMOS_MAIN)],
+        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيمن والمنافسات والمجتمع في العمود الأيسر
+        [KeyboardButton(BTN_BENEFITS_MAIN), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: منبه الماء في العمود الأيمن واحصائياتي في العمود الأيسر
+        [KeyboardButton(BTN_WATER_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: التواصل مع الدعم في العمود الأيمن والاشعارات في العمود الأيسر
+        [KeyboardButton(BTN_SUPPORT), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
