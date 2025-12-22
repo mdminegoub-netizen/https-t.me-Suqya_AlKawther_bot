@@ -3025,6 +3025,22 @@ def handle_book_search_input(update: Update, context: CallbackContext):
     _render_search_results(update, context, token, page=0, from_callback=False)
 
 
+def books_search_text_router(update: Update, context: CallbackContext):
+    if not update.message or not update.message.text:
+        return
+
+    user_id = update.effective_user.id
+    text = (update.message.text or "").strip()
+
+    # اقرأ الحالة من Firestore مباشرة (بدون كاش)
+    rec = get_user_record_by_id(user_id) or {}
+
+    if rec.get("book_search_waiting", False):
+        logger.info("[BOOKS][ROUTER] user=%s text=%r", user_id, text)
+        handle_book_search_input(update, context)
+        raise DispatcherHandlerStop()
+
+
 def prompt_book_search(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
 
@@ -10836,7 +10852,14 @@ def start_bot():
                 handle_audio_message,
             )
         )
-        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_text))
+        dispatcher.add_handler(
+            MessageHandler(Filters.text & ~Filters.command, books_search_text_router),
+            group=0,
+        )
+        dispatcher.add_handler(
+            MessageHandler(Filters.text & ~Filters.command, handle_text),
+            group=1,
+        )
         
         logger.info("✅ تم تسجيل جميع المعالجات")
         
