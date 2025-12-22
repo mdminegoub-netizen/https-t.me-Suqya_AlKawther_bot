@@ -449,6 +449,7 @@ def get_user_record_local(user: User) -> Dict:
             "level": 0,
             "medals": [],
             "best_rank": None,
+            "course_full_name": None,
             "daily_full_streak": 0,
             "last_full_day": None,
             "daily_full_count": 0,
@@ -491,6 +492,7 @@ def get_user_record_local(user: User) -> Dict:
             "last_full_day": None,
             "daily_full_count": 0,
             "motivation_on": True,
+            "course_full_name": None,
             "is_new_user": False
         }
         
@@ -1198,7 +1200,12 @@ WAITING_QUIZ_ANSWER_POINTS = set()
 WAITING_COURSE_COUNTRY = set()
 WAITING_COURSE_AGE = set()
 WAITING_COURSE_GENDER = set()
+WAITING_COURSE_FULL_NAME = set()
 COURSE_SUBSCRIPTION_CONTEXT: Dict[int, Dict] = {}
+WAITING_PROFILE_EDIT_NAME = set()
+WAITING_PROFILE_EDIT_AGE = set()
+WAITING_PROFILE_EDIT_COUNTRY = set()
+PROFILE_EDIT_CONTEXT: Dict[int, Dict] = {}
 
 
 def _lessons_back_keyboard(course_id: str):
@@ -1232,6 +1239,7 @@ def _reset_course_creation(user_id: int):
 
 def _reset_course_subscription_flow(user_id: int):
     WAITING_COURSE_COUNTRY.discard(user_id)
+    WAITING_COURSE_FULL_NAME.discard(user_id)
     WAITING_COURSE_AGE.discard(user_id)
     WAITING_COURSE_GENDER.discard(user_id)
     COURSE_SUBSCRIPTION_CONTEXT.pop(user_id, None)
@@ -1244,6 +1252,13 @@ def _course_creation_keyboard():
             [InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:admin_back")],
         ]
     )
+
+
+def _reset_profile_edit_flow(user_id: int):
+    WAITING_PROFILE_EDIT_NAME.discard(user_id)
+    WAITING_PROFILE_EDIT_AGE.discard(user_id)
+    WAITING_PROFILE_EDIT_COUNTRY.discard(user_id)
+    PROFILE_EDIT_CONTEXT.pop(user_id, None)
 
 
 def _reset_quiz_creation(user_id: int):
@@ -8836,8 +8851,47 @@ def handle_text(update: Update, context: CallbackContext):
 
         COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["country"] = text
         WAITING_COURSE_COUNTRY.discard(user_id)
-        WAITING_COURSE_AGE.add(user_id)
-        msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
+        saved_name = _get_saved_course_full_name(user_id)
+        if saved_name:
+            COURSE_SUBSCRIPTION_CONTEXT[user_id]["full_name"] = saved_name
+            WAITING_COURSE_AGE.add(user_id)
+            msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
+        else:
+            WAITING_COURSE_FULL_NAME.add(user_id)
+            msg.reply_text(
+                "ادخل اسمك الكامل الذي توده أن يظهر على الشهادة",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+        return
+
+    if user_id in WAITING_COURSE_FULL_NAME:
+        if text == BTN_CANCEL:
+            _reset_course_subscription_flow(user_id)
+            msg.reply_text("تم إلغاء التسجيل في الدورة.", reply_markup=COURSES_USER_MENU_KB)
+            return
+
+        full_name_value = text.strip()
+        if not full_name_value:
+            msg.reply_text(
+                "⚠️ الرجاء إدخال اسم كامل صالح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+            return
+
+        ctx = COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})
+        ctx["full_name"] = full_name_value
+        WAITING_COURSE_FULL_NAME.discard(user_id)
+        if ctx.get("age") is not None and ctx.get("gender"):
+            WAITING_COURSE_AGE.discard(user_id)
+            WAITING_COURSE_GENDER.discard(user_id)
+            _finalize_course_subscription(user, context)
+        elif ctx.get("age") is not None:
+            WAITING_COURSE_AGE.discard(user_id)
+            WAITING_COURSE_GENDER.add(user_id)
+            msg.reply_text("اختر الجنس:", reply_markup=GENDER_KB)
+        else:
+            WAITING_COURSE_AGE.add(user_id)
+            msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
         return
 
     if user_id in WAITING_COURSE_AGE:
@@ -8877,6 +8931,72 @@ def handle_text(update: Update, context: CallbackContext):
 
         WAITING_COURSE_GENDER.discard(user_id)
         _finalize_course_subscription(user, context)
+        return
+
+    if user_id in WAITING_PROFILE_EDIT_NAME:
+        if text == BTN_CANCEL:
+            _reset_profile_edit_flow(user_id)
+            msg.reply_text("تم إلغاء تعديل البيانات.", reply_markup=user_main_keyboard(user_id))
+            return
+
+        name_value = text.strip()
+        if not name_value:
+            msg.reply_text(
+                "⚠️ الرجاء إدخال اسم كامل صالح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+            return
+
+        PROFILE_EDIT_CONTEXT.setdefault(user_id, {})["full_name"] = name_value
+        WAITING_PROFILE_EDIT_NAME.discard(user_id)
+        WAITING_PROFILE_EDIT_AGE.add(user_id)
+        current_age = PROFILE_EDIT_CONTEXT[user_id].get("age")
+        age_hint = f"العمر الحالي: {current_age}" if current_age is not None else "العمر غير محدد"
+        msg.reply_text(f"{age_hint}\n\nكم عمرك الآن؟", reply_markup=ReplyKeyboardRemove())
+        return
+
+    if user_id in WAITING_PROFILE_EDIT_AGE:
+        if text == BTN_CANCEL:
+            _reset_profile_edit_flow(user_id)
+            msg.reply_text("تم إلغاء تعديل البيانات.", reply_markup=user_main_keyboard(user_id))
+            return
+
+        if not text.isdigit():
+            msg.reply_text("⚠️ أرسل عمرك كرقم صحيح.", reply_markup=ReplyKeyboardRemove())
+            return
+
+        age_val = int(text)
+        if age_val <= 0 or age_val > 120:
+            msg.reply_text("⚠️ الرجاء إدخال عمر صالح.", reply_markup=ReplyKeyboardRemove())
+            return
+
+        PROFILE_EDIT_CONTEXT.setdefault(user_id, {})["age"] = age_val
+        WAITING_PROFILE_EDIT_AGE.discard(user_id)
+        WAITING_PROFILE_EDIT_COUNTRY.add(user_id)
+        current_country = PROFILE_EDIT_CONTEXT[user_id].get("country") or "غير محدد"
+        msg.reply_text(
+            f"الدولة الحالية: {current_country}\n\nاكتب دولتك الآن.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return
+
+    if user_id in WAITING_PROFILE_EDIT_COUNTRY:
+        if text == BTN_CANCEL:
+            _reset_profile_edit_flow(user_id)
+            msg.reply_text("تم إلغاء تعديل البيانات.", reply_markup=user_main_keyboard(user_id))
+            return
+
+        country_val = text.strip()
+        if not country_val:
+            msg.reply_text(
+                "⚠️ الرجاء إدخال اسم دولة صحيح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
+            return
+
+        PROFILE_EDIT_CONTEXT.setdefault(user_id, {})["country"] = country_val
+        WAITING_PROFILE_EDIT_COUNTRY.discard(user_id)
+        _finalize_profile_edit(user_id, msg.chat_id, context)
         return
 
     # إجابات الاختبارات الخاصة بالدورات
@@ -11121,7 +11241,7 @@ def start_bot():
         )
 
         user_audio_filter = (
-            Filters.audio | Filters.voice | Filters.document.audio
+            Filters.audio | Filters.voice | Filters.document.audio | Filters.document
         ) & ~Filters.chat_type.channel
 
         dispatcher.add_handler(
@@ -11219,6 +11339,7 @@ COURSES_USER_MENU_KB = InlineKeyboardMarkup([
     [InlineKeyboardButton("📚 الدورات المتاحة", callback_data="COURSES:available")],
     [InlineKeyboardButton("📒 دوراتي", callback_data="COURSES:my_courses")],
     [InlineKeyboardButton("🗂 أرشيف الدورات", callback_data="COURSES:archive")],
+    [InlineKeyboardButton("📝 تعديل بياناتي", callback_data="COURSES:edit_profile")],
 ])
 
 COURSES_ADMIN_MENU_KB = InlineKeyboardMarkup([
@@ -11272,6 +11393,31 @@ def _ensure_subscription(user_id: int, course_id: str):
     if not sub_doc.exists:
         return None, sub_ref
     return sub_doc.to_dict(), sub_ref
+
+
+def _get_saved_course_full_name(user_id: int) -> str:
+    record = get_user_record_by_id(user_id) or {}
+    saved_name = (record.get("course_full_name") or "").strip()
+    if saved_name:
+        return saved_name
+
+    if not firestore_available():
+        return None
+
+    try:
+        docs = (
+            db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+            .where("user_id", "==", user_id)
+            .limit(1)
+            .stream()
+        )
+        for doc in docs:
+            name = (doc.to_dict() or {}).get("full_name")
+            if name:
+                return name
+    except Exception as e:
+        logger.debug(f"تعذر جلب اسم الشهادة المحفوظ: {e}")
+    return None
 
 
 # =================== Handlers للمستخدمين العاديين ===================
@@ -11538,6 +11684,57 @@ def show_archived_courses(query: Update.callback_query, context: CallbackContext
         )
 
 
+def start_profile_edit(query: Update.callback_query, context: CallbackContext):
+    user_id = query.from_user.id
+    if not firestore_available():
+        safe_edit_message_text(
+            query,
+            "❌ لا يمكن تعديل البيانات الآن.",
+            reply_markup=COURSES_USER_MENU_KB,
+        )
+        return
+
+    _reset_course_subscription_flow(user_id)
+    _reset_profile_edit_flow(user_id)
+
+    record = get_user_record_by_id(user_id) or {}
+    saved_name = _get_saved_course_full_name(user_id)
+    age = record.get("age")
+    country = record.get("country")
+
+    PROFILE_EDIT_CONTEXT[user_id] = {
+        "full_name": saved_name,
+        "age": age,
+        "country": country,
+    }
+
+    summary_lines = [
+        "📝 تعديل بياناتي",
+        f"الاسم الكامل: {saved_name or 'غير محدد'}",
+        f"العمر: {age if age is not None else 'غير محدد'}",
+        f"الدولة: {country or 'غير محددة'}",
+        "",
+        "أرسل الاسم الكامل الذي توده أن يظهر على الشهادة.",
+    ]
+
+    safe_edit_message_text(
+        query,
+        "\n".join(summary_lines),
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:back_user")]]
+        ),
+    )
+    try:
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="ادخل اسمك الكامل الذي توده أن يظهر على الشهادة",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+    except Exception as e:
+        logger.debug(f"تعذر إرسال رسالة بدء تعديل البيانات: {e}")
+    WAITING_PROFILE_EDIT_NAME.add(user_id)
+
+
 def _course_details_text(course_id: str, course: Dict, subscribed: bool, subscription: Dict):
     desc = course.get("description") or "لا يوجد وصف متاح."
     status = course.get("status", "active")
@@ -11651,6 +11848,7 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
     country = ctx.get("country")
     age = ctx.get("age")
     gender = ctx.get("gender")
+    full_name_value = (ctx.get("full_name") or _get_saved_course_full_name(user_id) or "").strip()
 
     if not course_id:
         context.bot.send_message(
@@ -11690,13 +11888,22 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
         _reset_course_subscription_flow(user_id)
         return
 
+    if not full_name_value:
+        WAITING_COURSE_FULL_NAME.add(user_id)
+        context.bot.send_message(
+            chat_id=user_id,
+            text="ادخل اسمك الكامل الذي توده أن يظهر على الشهادة",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return
+
     try:
         sub_data = {
             "id": sub_ref.id,
             "course_id": course_id,
             "user_id": user_id,
             "username": user.username,
-            "full_name": f"{user.first_name or ''} {user.last_name or ''}",
+            "full_name": full_name_value,
             "points": 0,
             "joined_at": firestore.SERVER_TIMESTAMP,
             "country": country,
@@ -11704,7 +11911,13 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
             "gender": gender,
         }
         sub_ref.set(sub_data)
-        update_user_record(user_id, country=country, age=age, gender=gender)
+        update_user_record(
+            user_id,
+            country=country,
+            age=age,
+            gender=gender,
+            course_full_name=full_name_value,
+        )
         context.bot.send_message(
             chat_id=user_id,
             text="✅ تم تسجيلك في الدورة بنجاح!\nستصلك الدروس والاختبارات هنا.",
@@ -11715,6 +11928,7 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
             "📥 تسجيل جديد في دورة\n"
             f"اسم الدورة: {course.get('name', 'دورة')}\n"
             f"المستخدم: {user.mention_html()} ({user.id})\n"
+            f"الاسم الكامل: {full_name_value}\n"
             f"البلد: {country}\n"
             f"العمر: {age}\n"
             f"الجنس: {'ذكر' if gender == 'male' else 'أنثى'}"
@@ -11733,6 +11947,70 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
         )
     finally:
         _reset_course_subscription_flow(user_id)
+
+
+def _finalize_profile_edit(user_id: int, chat_id: int, context: CallbackContext):
+    if not firestore_available():
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ لا يمكن تعديل البيانات الآن.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        _reset_profile_edit_flow(user_id)
+        return
+
+    ctx = PROFILE_EDIT_CONTEXT.get(user_id, {})
+    full_name = (ctx.get("full_name") or "").strip()
+    age = ctx.get("age")
+    country = ctx.get("country")
+
+    if not full_name:
+        WAITING_PROFILE_EDIT_NAME.add(user_id)
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="⚠️ أدخل اسمك الكامل لاعتماده على الشهادة.",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
+        return
+
+    try:
+        update_user_record(
+            user_id,
+            course_full_name=full_name,
+            age=age,
+            country=country,
+        )
+        try:
+            subs = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).where("user_id", "==", user_id).stream()
+            batch = db.batch()
+            count = 0
+            for sub in subs:
+                batch.update(
+                    sub.reference,
+                    {"full_name": full_name, "age": age, "country": country},
+                )
+                count += 1
+                if count % 400 == 0:
+                    batch.commit()
+                    batch = db.batch()
+            batch.commit()
+        except Exception as e:
+            logger.warning(f"تعذر تحديث بيانات الاشتراك للدورات: {e}")
+
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="✅ تم تحديث بياناتك بنجاح.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في حفظ بيانات الملف الشخصي: {e}")
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ لم نتمكن من تحديث البيانات حالياً.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+    finally:
+        _reset_profile_edit_flow(user_id)
 
 
 def _clear_attendance_confirmation(context: CallbackContext, chat_id: int):
@@ -11852,6 +12130,12 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
                 audio_message = context.bot.send_voice(
                     chat_id=query.message.chat_id,
                     voice=file_id,
+                    caption=title,
+                )
+            elif audio_kind == "document_audio":
+                audio_message = context.bot.send_document(
+                    chat_id=query.message.chat_id,
+                    document=file_id,
                     caption=title,
                 )
             else:
@@ -12831,8 +13115,8 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
         lessons_count = len(data.get("lessons_attended", []))
         quizzes_count = len(data.get("completed_quizzes", []))
         points = data.get("points", 0)
-        name = data.get("full_name") or data.get("username") or target_user_id
         user_record = get_user_record_by_id(int(target_user_id)) or {}
+        name = data.get("full_name") or user_record.get("course_full_name") or data.get("username") or target_user_id
         age = data.get("age") or user_record.get("age")
         country = data.get("country") or user_record.get("country") or "غير محدد"
         gender_val = data.get("gender") or user_record.get("gender")
@@ -12840,6 +13124,7 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
         username = data.get("username") or user_record.get("username")
 
         enrolled_courses = []
+        seen_courses = set()
         try:
             other_subs = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).where("user_id", "==", int(target_user_id)).stream()
             for sub in other_subs:
@@ -12847,33 +13132,38 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
                 sub_course_id = sub_data.get("course_id")
                 course_doc = _course_document(sub_course_id)
                 course_name = course_doc.get("name", "دورة") if course_doc else "دورة"
+                if not course_name or _is_back_placeholder_course(course_name):
+                    continue
+                if course_name in seen_courses:
+                    continue
+                seen_courses.add(course_name)
                 enrolled_courses.append(course_name)
         except Exception as e:
             logger.error(f"خطأ في جلب دورات المستخدم: {e}")
 
+        username_line = f"اسم المستخدم: @{username}" if username else None
         lines = [
-            f"👤 {name}",
-            f"🆔 ID: {target_user_id}",
-        ]
-        if username:
-            lines.append(f"👥 المستخدم: @{username}")
-
-        extra_lines = [
-            f"🌍 البلد: {country}",
-            f"🎂 العمر: {age if age is not None else 'غير محدد'}",
-            f"⚧️ الجنس: {gender_label}",
-            f"📚 عدد حضور الدروس: {lessons_count}",
-            f"📝 عدد الاختبارات: {quizzes_count}",
-            f"⭐️ مجموع النقاط: {points}",
+            "📌 بيانات الطالب",
+            f"الاسم الكامل: {name}",
+            f"المعرف: {target_user_id}",
+            username_line,
+            f"العمر: {age if age is not None else 'غير محدد'}",
+            f"الدولة: {country}",
+            f"الجنس: {gender_label}",
+            "",
+            "📊 التقدم",
+            f"حضور الدروس: {lessons_count}",
+            f"الاختبارات: {quizzes_count}",
+            f"مجموع النقاط: {points}",
         ]
 
         if enrolled_courses:
-            extra_lines.append("📒 الدورات المسجل فيها:")
+            lines.append("")
+            lines.append("📒 الدورات المسجل فيها:")
             for course_name in enrolled_courses:
-                extra_lines.append(f"• {course_name}")
+                lines.append(f"• {course_name}")
 
-        lines.extend(extra_lines)
-        text = "\n".join(lines)
+        text = "\n".join([ln for ln in lines if ln is not None])
 
         keyboard = [
             [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:stats_course_{course_id}")],
@@ -13047,11 +13337,23 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             and not data.startswith("COURSES:subscribe_")
             and (
                 user_id in WAITING_COURSE_COUNTRY
+                or user_id in WAITING_COURSE_FULL_NAME
                 or user_id in WAITING_COURSE_AGE
                 or user_id in WAITING_COURSE_GENDER
             )
         ):
             _reset_course_subscription_flow(user_id)
+
+        if (
+            data.startswith("COURSES:")
+            and data != "COURSES:edit_profile"
+            and (
+                user_id in WAITING_PROFILE_EDIT_NAME
+                or user_id in WAITING_PROFILE_EDIT_AGE
+                or user_id in WAITING_PROFILE_EDIT_COUNTRY
+            )
+        ):
+            _reset_profile_edit_flow(user_id)
 
         if (
             user_id in WAITING_NEW_COURSE
@@ -13066,6 +13368,8 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             show_my_courses(query, context)
         elif data == "COURSES:archive":
             show_archived_courses(query, context)
+        elif data == "COURSES:edit_profile":
+            start_profile_edit(query, context)
         elif data == "COURSES:back_user":
             safe_edit_message_text(
                 query,
