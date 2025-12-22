@@ -2709,12 +2709,11 @@ def _book_list_keyboard(
     for book in items:
         title = book.get("title", "كتاب")
         button_text = f"📘 {title}"
-        back_payload = _encode_route(source, category_id, search_token, page)
         rows.append(
             [
                 InlineKeyboardButton(
                     button_text,
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:book:{book.get('id')}:{back_payload}",
+                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:book:{book.get('id')}",
                 )
             ]
         )
@@ -2874,6 +2873,10 @@ def _send_books_list_message(
     from_callback: bool = False,
 ):
     page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
+    try:
+        context.user_data["books_last_route"] = _encode_route(source, category_id, search_token, safe_page)
+    except Exception:
+        pass
     if not books:
         message_text = empty_message or "لا توجد كتب متاحة هنا بعد."
         if from_callback and update.callback_query:
@@ -3020,7 +3023,7 @@ def handle_book_search_input(update: Update, context: CallbackContext):
         search_fields.extend([_normalize_book_text(str(t)) for t in tags])
         if any(normalized_query in field for field in search_fields):
             results.append(book)
-    token = uuid4().hex
+    token = uuid4().hex[:8]
     BOOK_SEARCH_CACHE[token] = {"query": text, "book_ids": [b.get("id") for b in results if b.get("id")]}
     _render_search_results(update, context, token, page=0, from_callback=False)
 
@@ -3914,11 +3917,11 @@ def handle_books_callback(update: Update, context: CallbackContext):
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:book:"):
-        parts = data.split(":", 3)
-        if len(parts) < 4:
+        parts = data.split(":")
+        if len(parts) < 3:
             return
         book_id = parts[2]
-        route = parts[3]
+        route = context.user_data.get("books_last_route", BOOKS_DEFAULT_ROUTE)
         _send_book_detail(update, context, book_id, route, from_callback=True)
         return
 
