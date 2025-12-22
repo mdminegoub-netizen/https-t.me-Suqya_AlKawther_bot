@@ -467,6 +467,7 @@ def get_user_record_local(user: User) -> Dict:
             "banned_at": None,
             "ban_reason": None,
             "gender": None,
+            "country": None,
             "age": None,
             "weight": None,
             "water_liters": None,
@@ -1022,6 +1023,7 @@ def get_user_record(user):
                 "banned_at": None,
                 "ban_reason": None,
                 "gender": None,
+                "country": None,
                 "age": None,
                 "weight": None,
                 "water_liters": None,
@@ -1193,6 +1195,10 @@ WAITING_QUIZ_TITLE = set()
 WAITING_QUIZ_QUESTION = set()
 WAITING_QUIZ_ANSWER_TEXT = set()
 WAITING_QUIZ_ANSWER_POINTS = set()
+WAITING_COURSE_COUNTRY = set()
+WAITING_COURSE_AGE = set()
+WAITING_COURSE_GENDER = set()
+COURSE_SUBSCRIPTION_CONTEXT: Dict[int, Dict] = {}
 
 
 def _lessons_back_keyboard(course_id: str):
@@ -1224,6 +1230,13 @@ def _reset_course_creation(user_id: int):
     COURSE_CREATION_CONTEXT.pop(user_id, None)
 
 
+def _reset_course_subscription_flow(user_id: int):
+    WAITING_COURSE_COUNTRY.discard(user_id)
+    WAITING_COURSE_AGE.discard(user_id)
+    WAITING_COURSE_GENDER.discard(user_id)
+    COURSE_SUBSCRIPTION_CONTEXT.pop(user_id, None)
+
+
 def _course_creation_keyboard():
     return InlineKeyboardMarkup(
         [
@@ -1242,7 +1255,19 @@ def _reset_quiz_creation(user_id: int):
     QUIZ_CREATION_CONTEXT.pop(user_id, None)
 
 
-def _save_lesson(user_id: int, course_id: str, title: str, content_type: str, msg, content_value: str = "", audio_file_id: str = None):
+def _save_lesson(
+    user_id: int,
+    course_id: str,
+    title: str,
+    content_type: str,
+    msg,
+    content_value: str = "",
+    audio_file_id: str = None,
+    audio_file_unique_id: str = None,
+    audio_kind: str = None,
+    source_chat_id: int = None,
+    source_message_id: int = None,
+):
     try:
         lesson_payload = {
             "course_id": course_id,
@@ -1250,6 +1275,10 @@ def _save_lesson(user_id: int, course_id: str, title: str, content_type: str, ms
             "content": content_value if content_type != "audio" else "",
             "content_type": content_type,
             "audio_file_id": audio_file_id,
+            "audio_file_unique_id": audio_file_unique_id,
+            "audio_kind": audio_kind,
+            "source_chat_id": source_chat_id,
+            "source_message_id": source_message_id,
             "created_at": firestore.SERVER_TIMESTAMP,
         }
         db.collection(COURSE_LESSONS_COLLECTION).add(lesson_payload)
@@ -1267,9 +1296,109 @@ def _save_lesson(user_id: int, course_id: str, title: str, content_type: str, ms
         _reset_lesson_creation(user_id)
 
 
+def _update_lesson(
+    user_id: int,
+    lesson_id: str,
+    course_id: str,
+    title: str,
+    content_type: str,
+    msg,
+    content_value: str = "",
+    audio_meta: Dict = None,
+):
+    try:
+        doc_ref = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id)
+        doc = doc_ref.get()
+        if not doc.exists:
+            msg.reply_text("❌ الدرس غير موجود.", reply_markup=_lessons_back_keyboard(course_id))
+            return
+
+        update_payload = {
+            "title": title,
+            "content_type": content_type,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }
+
+        if content_type == "audio":
+            update_payload.update(
+                {
+                    "content": "",
+                    "audio_file_id": (audio_meta or {}).get("file_id"),
+                    "audio_file_unique_id": (audio_meta or {}).get("file_unique_id"),
+                    "audio_kind": (audio_meta or {}).get("audio_kind"),
+                    "source_chat_id": (audio_meta or {}).get("source_chat_id"),
+                    "source_message_id": (audio_meta or {}).get("source_message_id"),
+                }
+            )
+        else:
+            update_payload.update(
+                {
+                    "content": content_value,
+                    "audio_file_id": None,
+                    "audio_file_unique_id": None,
+                    "audio_kind": None,
+                    "source_chat_id": None,
+                    "source_message_id": None,
+                }
+            )
+
+        doc_ref.update(update_payload)
+        msg.reply_text(
+            "✅ تم تحديث الدرس.",
+            reply_markup=_lessons_back_keyboard(course_id),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في تعديل الدرس: {e}")
+        msg.reply_text("❌ تعذر تعديل الدرس حالياً.", reply_markup=_lessons_back_keyboard(course_id))
+    finally:
+        _reset_lesson_creation(user_id)
+
+
+def _is_audio_document(document) -> bool:
+    if not document:
+        return False
+    mime = (getattr(document, "mime_type", "") or "").lower()
+    if mime.startswith("audio/"):
+        return True
+    filename = (getattr(document, "file_name", "") or "").lower()
+    audio_ext = (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac")
+    return any(filename.endswith(ext) for ext in audio_ext)
+
+
+def _extract_audio_metadata(message) -> Dict:
+    meta = {}
+    audio_kind = "audio"
+    audio_obj = None
+
+    if message.voice:
+        audio_kind = "voice"
+        audio_obj = message.voice
+    elif message.audio:
+        audio_kind = "audio"
+        audio_obj = message.audio
+    elif message.document:
+        audio_kind = "document_audio"
+        audio_obj = message.document
+
+    if audio_obj:
+        meta["file_id"] = getattr(audio_obj, "file_id", None)
+        meta["file_unique_id"] = getattr(audio_obj, "file_unique_id", None)
+        meta["audio_kind"] = audio_kind
+
+    if message.forward_from_chat:
+        meta["source_chat_id"] = message.forward_from_chat.id
+        forward_id = getattr(message, "forward_from_message_id", None)
+        if forward_id:
+            meta["source_message_id"] = forward_id
+
+    return meta
+
+
 def _finalize_quiz_creation_from_message(user_id: int, msg):
     ctx = QUIZ_CREATION_CONTEXT.get(user_id, {})
     course_id = ctx.get("course_id")
+    quiz_id = ctx.get("quiz_id")
+    is_edit_mode = ctx.get("mode") == "edit" and quiz_id
     if not course_id:
         msg.reply_text("❌ الدورة غير معروفة.", reply_markup=COURSES_ADMIN_MENU_KB)
         _reset_quiz_creation(user_id)
@@ -1285,19 +1414,26 @@ def _finalize_quiz_creation_from_message(user_id: int, msg):
         return
 
     try:
-        db.collection(COURSE_QUIZZES_COLLECTION).add(
-            {
-                "course_id": course_id,
-                "title": ctx.get("title"),
-                "question": ctx.get("question"),
-                "options": answers,
-                "created_at": firestore.SERVER_TIMESTAMP,
-            }
-        )
-        msg.reply_text(
-            "✅ تم إضافة الاختبار.",
-            reply_markup=_quizzes_back_keyboard(course_id),
-        )
+        quiz_payload = {
+            "course_id": course_id,
+            "title": ctx.get("title"),
+            "question": ctx.get("question"),
+            "options": answers,
+        }
+        if is_edit_mode:
+            quiz_payload["updated_at"] = firestore.SERVER_TIMESTAMP
+            db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).update(quiz_payload)
+            msg.reply_text(
+                "✅ تم تعديل الاختبار.",
+                reply_markup=_quizzes_back_keyboard(course_id),
+            )
+        else:
+            quiz_payload["created_at"] = firestore.SERVER_TIMESTAMP
+            db.collection(COURSE_QUIZZES_COLLECTION).add(quiz_payload)
+            msg.reply_text(
+                "✅ تم إضافة الاختبار.",
+                reply_markup=_quizzes_back_keyboard(course_id),
+            )
     except Exception as e:
         logger.error(f"خطأ في إضافة الاختبار: {e}")
         msg.reply_text("❌ تعذر حفظ الاختبار حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
@@ -1308,6 +1444,8 @@ def _finalize_quiz_creation_from_message(user_id: int, msg):
 def _finalize_quiz_creation_from_callback(user_id: int, query: Update.callback_query):
     ctx = QUIZ_CREATION_CONTEXT.get(user_id, {})
     course_id = ctx.get("course_id")
+    quiz_id = ctx.get("quiz_id")
+    is_edit_mode = ctx.get("mode") == "edit" and quiz_id
     if not course_id:
         safe_edit_message_text(query, "❌ الدورة غير معروفة.", reply_markup=COURSES_ADMIN_MENU_KB)
         _reset_quiz_creation(user_id)
@@ -1324,20 +1462,28 @@ def _finalize_quiz_creation_from_callback(user_id: int, query: Update.callback_q
         return
 
     try:
-        db.collection(COURSE_QUIZZES_COLLECTION).add(
-            {
-                "course_id": course_id,
-                "title": ctx.get("title"),
-                "question": ctx.get("question"),
-                "options": answers,
-                "created_at": firestore.SERVER_TIMESTAMP,
-            }
-        )
-        safe_edit_message_text(
-            query,
-            "✅ تم إضافة الاختبار.",
-            reply_markup=_quizzes_back_keyboard(course_id),
-        )
+        quiz_payload = {
+            "course_id": course_id,
+            "title": ctx.get("title"),
+            "question": ctx.get("question"),
+            "options": answers,
+        }
+        if is_edit_mode:
+            quiz_payload["updated_at"] = firestore.SERVER_TIMESTAMP
+            db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).update(quiz_payload)
+            safe_edit_message_text(
+                query,
+                "✅ تم تعديل الاختبار.",
+                reply_markup=_quizzes_back_keyboard(course_id),
+            )
+        else:
+            quiz_payload["created_at"] = firestore.SERVER_TIMESTAMP
+            db.collection(COURSE_QUIZZES_COLLECTION).add(quiz_payload)
+            safe_edit_message_text(
+                query,
+                "✅ تم إضافة الاختبار.",
+                reply_markup=_quizzes_back_keyboard(course_id),
+            )
     except Exception as e:
         logger.error(f"خطأ في إضافة الاختبار: {e}")
         safe_edit_message_text(query, "❌ تعذر حفظ الاختبار حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
@@ -1353,23 +1499,58 @@ def handle_audio_message(update: Update, context: CallbackContext):
     if user_id not in WAITING_LESSON_AUDIO:
         return
 
-    course_id = LESSON_CREATION_CONTEXT.get(user_id, {}).get("course_id")
-    title = LESSON_CREATION_CONTEXT.get(user_id, {}).get("title")
+    ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+    course_id = ctx.get("course_id")
+    title = ctx.get("title")
+    lesson_id = ctx.get("lesson_id")
+    edit_action = ctx.get("edit_action")
     if not course_id or not title:
         _reset_lesson_creation(user_id)
         update.message.reply_text("❌ البيانات غير مكتملة.", reply_markup=COURSES_ADMIN_MENU_KB)
         return
 
-    audio = update.message.audio or update.message.voice or update.message.document
-    file_id = None
-    if audio:
-        file_id = getattr(audio, "file_id", None)
+    document_obj = update.message.document
+    if document_obj and not _is_audio_document(document_obj):
+        update.message.reply_text(
+            "⚠️ الرجاء إرسال ملف صوتي فقط.",
+            reply_markup=_lessons_back_keyboard(course_id),
+        )
+        return
+
+    meta = _extract_audio_metadata(update.message)
+    file_id = meta.get("file_id")
 
     if not file_id:
         update.message.reply_text("❌ لم يتم استقبال ملف صوتي صالح.", reply_markup=_lessons_back_keyboard(course_id))
         return
 
-    _save_lesson(user_id, course_id, title, "audio", update.message, audio_file_id=file_id)
+    if edit_action == "edit_content":
+        if not lesson_id:
+            _reset_lesson_creation(user_id)
+            update.message.reply_text("❌ الدرس غير معروف.", reply_markup=COURSES_ADMIN_MENU_KB)
+            return
+        _update_lesson(
+            user_id,
+            lesson_id,
+            course_id,
+            title,
+            "audio",
+            update.message,
+            audio_meta=meta,
+        )
+    else:
+        _save_lesson(
+            user_id,
+            course_id,
+            title,
+            "audio",
+            update.message,
+            audio_file_id=file_id,
+            audio_file_unique_id=meta.get("file_unique_id"),
+            audio_kind=meta.get("audio_kind"),
+            source_chat_id=meta.get("source_chat_id"),
+            source_message_id=meta.get("source_message_id"),
+        )
 
 # أذكار النوم
 SLEEP_ADHKAR_STATE = {}  # user_id -> current_index
@@ -8646,6 +8827,58 @@ def handle_text(update: Update, context: CallbackContext):
     if user_id in WAITING_WATER_ADD_CUPS and not text.isdigit() and text != BTN_WATER_ADD_CUPS:
         WAITING_WATER_ADD_CUPS.discard(user_id)
 
+    # بيانات التسجيل في الدورات
+    if user_id in WAITING_COURSE_COUNTRY:
+        if text == BTN_CANCEL:
+            _reset_course_subscription_flow(user_id)
+            msg.reply_text("تم إلغاء التسجيل في الدورة.", reply_markup=COURSES_USER_MENU_KB)
+            return
+
+        COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["country"] = text
+        WAITING_COURSE_COUNTRY.discard(user_id)
+        WAITING_COURSE_AGE.add(user_id)
+        msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
+        return
+
+    if user_id in WAITING_COURSE_AGE:
+        if text == BTN_CANCEL:
+            _reset_course_subscription_flow(user_id)
+            msg.reply_text("تم إلغاء التسجيل في الدورة.", reply_markup=COURSES_USER_MENU_KB)
+            return
+
+        if not text.isdigit():
+            msg.reply_text("⚠️ أرسل عمرك كرقم صحيح.", reply_markup=ReplyKeyboardRemove())
+            return
+
+        age_val = int(text)
+        if age_val <= 0 or age_val > 120:
+            msg.reply_text("⚠️ الرجاء إدخال عمر صالح.", reply_markup=ReplyKeyboardRemove())
+            return
+
+        COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["age"] = age_val
+        WAITING_COURSE_AGE.discard(user_id)
+        WAITING_COURSE_GENDER.add(user_id)
+        msg.reply_text("اختر الجنس:", reply_markup=GENDER_KB)
+        return
+
+    if user_id in WAITING_COURSE_GENDER:
+        if text == BTN_CANCEL:
+            _reset_course_subscription_flow(user_id)
+            msg.reply_text("تم إلغاء التسجيل في الدورة.", reply_markup=COURSES_USER_MENU_KB)
+            return
+
+        if text == BTN_GENDER_MALE:
+            COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["gender"] = "male"
+        elif text == BTN_GENDER_FEMALE:
+            COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["gender"] = "female"
+        else:
+            msg.reply_text("رجاءً اختر من الأزرار الموجودة 👇", reply_markup=GENDER_KB)
+            return
+
+        WAITING_COURSE_GENDER.discard(user_id)
+        _finalize_course_subscription(user, context)
+        return
+
     # إجابات الاختبارات الخاصة بالدورات
     if user_id in WAITING_QUIZ_ANSWER:
         if _complete_quiz_answer(user_id, text, update, context):
@@ -8735,10 +8968,33 @@ def handle_text(update: Update, context: CallbackContext):
 
     # إنشاء درس جديد
     if user_id in WAITING_LESSON_TITLE:
-        course_id = LESSON_CREATION_CONTEXT.get(user_id, {}).get("course_id")
+        ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+        course_id = ctx.get("course_id")
+        lesson_id = ctx.get("lesson_id")
+        edit_action = ctx.get("edit_action")
         if text == BTN_CANCEL:
             _reset_lesson_creation(user_id)
             msg.reply_text("تم الإلغاء.", reply_markup=_lessons_back_keyboard(course_id))
+            return
+
+        if edit_action == "edit_title":
+            try:
+                doc_ref = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id)
+                if not doc_ref.get().exists:
+                    msg.reply_text("❌ الدرس غير موجود.", reply_markup=_lessons_back_keyboard(course_id))
+                else:
+                    doc_ref.update(
+                        {
+                            "title": text,
+                            "updated_at": firestore.SERVER_TIMESTAMP,
+                        }
+                    )
+                    msg.reply_text("✅ تم تعديل العنوان.", reply_markup=_lessons_back_keyboard(course_id))
+            except Exception as e:
+                logger.error(f"خطأ في تعديل عنوان الدرس: {e}")
+                msg.reply_text("❌ تعذر تعديل العنوان حالياً.", reply_markup=_lessons_back_keyboard(course_id))
+            finally:
+                _reset_lesson_creation(user_id)
             return
 
         LESSON_CREATION_CONTEXT.setdefault(user_id, {})["title"] = text
@@ -8755,9 +9011,12 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if user_id in WAITING_LESSON_CONTENT:
-        course_id = LESSON_CREATION_CONTEXT.get(user_id, {}).get("course_id")
-        content_type = LESSON_CREATION_CONTEXT.get(user_id, {}).get("content_type")
-        title = LESSON_CREATION_CONTEXT.get(user_id, {}).get("title")
+        ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+        course_id = ctx.get("course_id")
+        content_type = ctx.get("content_type")
+        title = ctx.get("title")
+        lesson_id = ctx.get("lesson_id")
+        edit_action = ctx.get("edit_action")
         if text == BTN_CANCEL:
             _reset_lesson_creation(user_id)
             msg.reply_text("تم الإلغاء.", reply_markup=_lessons_back_keyboard(course_id))
@@ -8768,7 +9027,22 @@ def handle_text(update: Update, context: CallbackContext):
             msg.reply_text("❌ البيانات غير مكتملة.", reply_markup=COURSES_ADMIN_MENU_KB)
             return
 
-        _save_lesson(user_id, course_id, title, content_type, msg, text)
+        if edit_action == "edit_content":
+            if not lesson_id:
+                _reset_lesson_creation(user_id)
+                msg.reply_text("❌ الدرس غير معروف.", reply_markup=COURSES_ADMIN_MENU_KB)
+                return
+            _update_lesson(
+                user_id,
+                lesson_id,
+                course_id,
+                title,
+                content_type,
+                msg,
+                content_value=text,
+            )
+        else:
+            _save_lesson(user_id, course_id, title, content_type, msg, text)
         return
     # إنشاء اختبار جديد
     if user_id in WAITING_QUIZ_TITLE:
@@ -8974,6 +9248,7 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_MOTIVATION_ADD.discard(user_id)
         WAITING_MOTIVATION_DELETE.discard(user_id)
         WAITING_MOTIVATION_TIMES.discard(user_id)
+        _reset_course_subscription_flow(user_id)
         WAITING_BAN_USER.discard(user_id)
         WAITING_UNBAN_USER.discard(user_id)
         WAITING_BAN_REASON.discard(user_id)
@@ -8982,6 +9257,8 @@ def handle_text(update: Update, context: CallbackContext):
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
         WAITING_WATER_ADD_CUPS.discard(user_id)
+        _reset_lesson_creation(user_id)
+        _reset_quiz_creation(user_id)
         update_user_record(user_id, book_search_waiting=False, book_search_waiting_at=None)
         
         # حالة خاصة: إلغاء تعديل الفائدة (المشكلة 1)
@@ -9363,7 +9640,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_MANAGE_COURSES:
-        open_courses_menu(update, context)
+        open_courses_admin_menu(update, context)
         return
 
     if text == BTN_BENEFITS_MAIN:
@@ -11005,16 +11282,10 @@ def open_courses_menu(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     msg = update.message
 
-    if is_admin(user_id) or is_supervisor(user_id):
-        msg.reply_text(
-            "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
-            reply_markup=COURSES_ADMIN_MENU_KB,
-        )
-    else:
-        msg.reply_text(
-            "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
-            reply_markup=COURSES_USER_MENU_KB,
-        )
+    msg.reply_text(
+        "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
+        reply_markup=COURSES_USER_MENU_KB,
+    )
     # إعادة الكيبورد الرئيسي لمنع ظهور زر الرجوع للقائمة الرئيسية في قوائم الدورات
     try:
         msg.reply_text(
@@ -11023,6 +11294,31 @@ def open_courses_menu(update: Update, context: CallbackContext):
         )
     except Exception:
         logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
+
+
+def open_courses_admin_menu(update: Update, context: CallbackContext):
+    """فتح لوحة إدارة الدورات من لوحة التحكم."""
+    user_id = update.effective_user.id
+    msg = update.message
+
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        msg.reply_text(
+            "هذا القسم خاص بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        return
+
+    msg.reply_text(
+        "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
+        reply_markup=COURSES_ADMIN_MENU_KB,
+    )
+    try:
+        msg.reply_text(
+            " ",
+            reply_markup=admin_panel_keyboard_for(user_id),
+        )
+    except Exception:
+        logger.debug("[COURSES] تعذر تحديث كيبورد لوحة التحكم للأدمن/المشرفة من الرسائل")
 
 
 def _show_courses_admin_menu_from_callback(query: Update.callback_query, user_id: int):
@@ -11320,27 +11616,108 @@ def subscribe_to_course(query: Update.callback_query, context: CallbackContext, 
         safe_edit_message_text(query, "✅ أنت مسجّل بالفعل في هذه الدورة.", reply_markup=COURSES_USER_MENU_KB)
         return
 
+    _reset_course_subscription_flow(user.id)
+    COURSE_SUBSCRIPTION_CONTEXT[user.id] = {
+        "course_id": course_id,
+        "course_name": course.get("name", "دورة"),
+    }
+    WAITING_COURSE_COUNTRY.add(user.id)
+
+    try:
+        safe_edit_message_text(
+            query,
+            "📝 لإتمام التسجيل يرجى إرسال بيانات بسيطة.\n\nأرسل اسم بلدك الآن.",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:view_{course_id}")],
+                ]
+            ),
+        )
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🌍 أرسل اسم بلدك للتسجيل في الدورة.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في بدء جمع بيانات التسجيل للدورة: {e}")
+        safe_edit_message_text(query, "❌ لم نتمكن من بدء التسجيل حالياً.", reply_markup=COURSES_USER_MENU_KB)
+        _reset_course_subscription_flow(user.id)
+
+
+def _finalize_course_subscription(user: User, context: CallbackContext):
+    user_id = user.id
+    ctx = COURSE_SUBSCRIPTION_CONTEXT.get(user_id, {})
+    course_id = ctx.get("course_id")
+    country = ctx.get("country")
+    age = ctx.get("age")
+    gender = ctx.get("gender")
+
+    if not course_id:
+        context.bot.send_message(
+            chat_id=user_id,
+            text="❌ لا توجد دورة قيد التسجيل حالياً.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        _reset_course_subscription_flow(user_id)
+        return
+
+    course = _course_document(course_id)
+    if not course or course.get("status", "active") != "active":
+        context.bot.send_message(
+            chat_id=user_id,
+            text="❌ هذه الدورة لم تعد متاحة للتسجيل.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        _reset_course_subscription_flow(user_id)
+        return
+
+    existing, sub_ref = _ensure_subscription(user_id, course_id)
+    if existing:
+        context.bot.send_message(
+            chat_id=user_id,
+            text="✅ أنت مسجل بالفعل في هذه الدورة.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        _reset_course_subscription_flow(user_id)
+        return
+
+    if not country or age is None or not gender:
+        context.bot.send_message(
+            chat_id=user_id,
+            text="⚠️ البيانات غير مكتملة. أعد المحاولة من جديد.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        _reset_course_subscription_flow(user_id)
+        return
+
     try:
         sub_data = {
             "id": sub_ref.id,
             "course_id": course_id,
-            "user_id": user.id,
+            "user_id": user_id,
             "username": user.username,
             "full_name": f"{user.first_name or ''} {user.last_name or ''}",
             "points": 0,
             "joined_at": firestore.SERVER_TIMESTAMP,
+            "country": country,
+            "age": age,
+            "gender": gender,
         }
         sub_ref.set(sub_data)
-        safe_edit_message_text(
-            query,
-            "✅ تم تسجيلك في الدورة بنجاح!\nستصلك الدروس والاختبارات هنا.",
-            reply_markup=COURSES_USER_MENU_KB,
+        update_user_record(user_id, country=country, age=age, gender=gender)
+        context.bot.send_message(
+            chat_id=user_id,
+            text="✅ تم تسجيلك في الدورة بنجاح!\nستصلك الدروس والاختبارات هنا.",
+            reply_markup=user_main_keyboard(user_id),
         )
 
         notify_text = (
             "📥 تسجيل جديد في دورة\n"
             f"اسم الدورة: {course.get('name', 'دورة')}\n"
-            f"المستخدم: {user.mention_html()} ({user.id})"
+            f"المستخدم: {user.mention_html()} ({user.id})\n"
+            f"البلد: {country}\n"
+            f"العمر: {age}\n"
+            f"الجنس: {'ذكر' if gender == 'male' else 'أنثى'}"
         )
         for admin_id in [ADMIN_ID, SUPERVISOR_ID]:
             try:
@@ -11348,12 +11725,14 @@ def subscribe_to_course(query: Update.callback_query, context: CallbackContext, 
             except Exception as e:
                 logger.warning(f"تعذر إرسال إشعار التسجيل إلى {admin_id}: {e}")
     except Exception as e:
-        logger.error(f"خطأ في التسجيل بالدورة: {e}")
-        safe_edit_message_text(
-            query,
-            "❌ لم نتمكن من إتمام التسجيل حالياً. حاول لاحقاً.",
-            reply_markup=COURSES_USER_MENU_KB,
+        logger.error(f"خطأ في إتمام التسجيل بالدورة: {e}")
+        context.bot.send_message(
+            chat_id=user_id,
+            text="❌ لم نتمكن من إتمام التسجيل حالياً. حاول لاحقاً.",
+            reply_markup=user_main_keyboard(user_id),
         )
+    finally:
+        _reset_course_subscription_flow(user_id)
 
 
 def _clear_attendance_confirmation(context: CallbackContext, chat_id: int):
@@ -11459,6 +11838,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
 
     if content_type == "audio":
         file_id = lesson.get("audio_file_id")
+        audio_kind = lesson.get("audio_kind")
         if not file_id:
             safe_edit_message_text(
                 query,
@@ -11468,11 +11848,18 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             return
 
         try:
-            audio_message = context.bot.send_audio(
-                chat_id=query.message.chat_id,
-                audio=file_id,
-                caption=title,
-            )
+            if audio_kind == "voice":
+                audio_message = context.bot.send_voice(
+                    chat_id=query.message.chat_id,
+                    voice=file_id,
+                    caption=title,
+                )
+            else:
+                audio_message = context.bot.send_audio(
+                    chat_id=query.message.chat_id,
+                    audio=file_id,
+                    caption=title,
+                )
             context.user_data["lesson_audio_msg_id"] = audio_message.message_id
             safe_edit_message_text(
                 query,
@@ -11481,6 +11868,23 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             )
         except Exception as e:
             logger.error(f"خطأ في إرسال الدرس الصوتي: {e}")
+            try:
+                if audio_kind == "document_audio":
+                    doc_msg = context.bot.send_document(
+                        chat_id=query.message.chat_id,
+                        document=file_id,
+                        caption=title,
+                    )
+                    context.user_data["lesson_audio_msg_id"] = doc_msg.message_id
+                    safe_edit_message_text(
+                        query,
+                        f"📖 {title}\nتم إرسال المقطع الصوتي أعلاه.",
+                        reply_markup=view_keyboard,
+                    )
+                    return
+            except Exception:
+                logger.debug("فشل إرسال الدرس كملف وثيقة بعد فشل الصوت.")
+
             safe_edit_message_text(
                 query,
                 f"<b>{title}</b>\n\nتعذر إرسال المقطع الصوتي. يرجى التأكد من صحة الملف الصوتي.",
@@ -11969,6 +12373,12 @@ def _admin_show_lessons_panel(query: Update.callback_query, course_id: str):
         keyboard.append(
             [InlineKeyboardButton(f"📖 {lesson.get('title', 'درس')}", callback_data=f"COURSES:view_lesson_{doc.id}")]
         )
+        keyboard.append(
+            [
+                InlineKeyboardButton("✏️ تعديل", callback_data=f"COURSES:lesson_edit_{doc.id}"),
+                InlineKeyboardButton("🗑 حذف", callback_data=f"COURSES:lesson_delete_{doc.id}"),
+            ]
+        )
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:manage_lessons")])
     safe_edit_message_text(
@@ -11976,6 +12386,137 @@ def _admin_show_lessons_panel(query: Update.callback_query, course_id: str):
         f"📖 إدارة الدروس للدورة: {course.get('name', 'دورة')}\nاختر إجراءً.",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+def _admin_open_lesson_edit_menu(query: Update.callback_query, lesson_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    lesson = lesson_doc.to_dict()
+    course_id = lesson.get("course_id")
+    keyboard = [
+        [InlineKeyboardButton("✏️ تعديل العنوان", callback_data=f"COURSES:lesson_edit_title_{lesson_id}")],
+        [InlineKeyboardButton("📝 تعديل المحتوى", callback_data=f"COURSES:lesson_edit_content_{lesson_id}")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:lessons_{course_id}")],
+    ]
+    safe_edit_message_text(
+        query,
+        f"🔧 إدارة الدرس: {lesson.get('title', 'درس')}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def _admin_request_lesson_title_edit(query: Update.callback_query, lesson_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    lesson = lesson_doc.to_dict()
+    course_id = lesson.get("course_id")
+    _reset_lesson_creation(user_id)
+    LESSON_CREATION_CONTEXT[user_id] = {
+        "course_id": course_id,
+        "lesson_id": lesson_id,
+        "edit_action": "edit_title",
+    }
+    WAITING_LESSON_TITLE.add(user_id)
+    safe_edit_message_text(
+        query,
+        "✏️ أرسل العنوان الجديد للدرس.",
+        reply_markup=_lessons_back_keyboard(course_id),
+    )
+
+
+def _admin_request_lesson_content_edit(query: Update.callback_query, lesson_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    lesson = lesson_doc.to_dict()
+    course_id = lesson.get("course_id")
+    _reset_lesson_creation(user_id)
+    LESSON_CREATION_CONTEXT[user_id] = {
+        "course_id": course_id,
+        "lesson_id": lesson_id,
+        "edit_action": "edit_content",
+        "title": lesson.get("title", "درس"),
+    }
+    lesson_type_kb = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📝 نص", callback_data=f"COURSES:lesson_type_text_{course_id}")],
+            [InlineKeyboardButton("🔊 ملف صوتي", callback_data=f"COURSES:lesson_type_audio_{course_id}")],
+            [InlineKeyboardButton("🔗 رابط", callback_data=f"COURSES:lesson_type_link_{course_id}")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:lessons_{course_id}")],
+        ]
+    )
+    safe_edit_message_text(
+        query,
+        "اختر نوع المحتوى الجديد ثم أرسله.",
+        reply_markup=lesson_type_kb,
+    )
+
+
+def _admin_confirm_delete_lesson(query: Update.callback_query, lesson_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    lesson = lesson_doc.to_dict()
+    course_id = lesson.get("course_id")
+    keyboard = [
+        [InlineKeyboardButton("✅ تأكيد الحذف", callback_data=f"COURSES:lesson_delete_confirm_{lesson_id}")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:lessons_{course_id}")],
+    ]
+    safe_edit_message_text(
+        query,
+        f"🗑 هل تريد حذف الدرس «{lesson.get('title', 'درس')}»؟",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def _admin_delete_lesson(query: Update.callback_query, lesson_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
+    if not lesson_doc.exists:
+        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    course_id = lesson_doc.to_dict().get("course_id")
+    try:
+        db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).delete()
+        _admin_show_lessons_panel(query, course_id)
+    except Exception as e:
+        logger.error(f"خطأ في حذف الدرس: {e}")
+        safe_edit_message_text(query, "❌ تعذر حذف الدرس حالياً.", reply_markup=_lessons_back_keyboard(course_id))
 
 
 def admin_manage_quizzes(query: Update.callback_query, context: CallbackContext):
@@ -12045,6 +12586,12 @@ def _admin_show_quizzes_panel(query: Update.callback_query, course_id: str):
         keyboard.append(
             [InlineKeyboardButton(f"📝 {quiz.get('title', 'اختبار')}", callback_data=f"COURSES:start_quiz_{doc.id}")]
         )
+        keyboard.append(
+            [
+                InlineKeyboardButton("✏️ تعديل", callback_data=f"COURSES:quiz_edit_{doc.id}"),
+                InlineKeyboardButton("🗑 حذف", callback_data=f"COURSES:quiz_delete_{doc.id}"),
+            ]
+        )
 
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data="COURSES:manage_quizzes")])
     safe_edit_message_text(
@@ -12052,6 +12599,78 @@ def _admin_show_quizzes_panel(query: Update.callback_query, course_id: str):
         f"📝 إدارة الاختبارات للدورة: {course.get('name', 'دورة')}\nاختر إجراءً.",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+def _admin_start_quiz_edit(query: Update.callback_query, quiz_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    quiz_doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+    if not quiz_doc.exists:
+        safe_edit_message_text(query, "❌ الاختبار غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    quiz = quiz_doc.to_dict()
+    course_id = quiz.get("course_id")
+    _reset_quiz_creation(user_id)
+    QUIZ_CREATION_CONTEXT[user_id] = {
+        "course_id": course_id,
+        "quiz_id": quiz_id,
+        "mode": "edit",
+    }
+    WAITING_NEW_QUIZ.add(user_id)
+    WAITING_QUIZ_TITLE.add(user_id)
+    safe_edit_message_text(
+        query,
+        "✏️ أرسل عنوان الاختبار الجديد.",
+        reply_markup=_quizzes_back_keyboard(course_id),
+    )
+
+
+def _admin_confirm_delete_quiz(query: Update.callback_query, quiz_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    quiz_doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+    if not quiz_doc.exists:
+        safe_edit_message_text(query, "❌ الاختبار غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    quiz = quiz_doc.to_dict()
+    course_id = quiz.get("course_id")
+    keyboard = [
+        [InlineKeyboardButton("✅ تأكيد الحذف", callback_data=f"COURSES:quiz_delete_confirm_{quiz_id}")],
+        [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:quizzes_{course_id}")],
+    ]
+    safe_edit_message_text(
+        query,
+        f"🗑 هل تريد حذف الاختبار «{quiz.get('title', 'اختبار')}»؟",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def _admin_delete_quiz(query: Update.callback_query, quiz_id: str):
+    user_id = query.from_user.id
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
+        return
+
+    quiz_doc = db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).get()
+    if not quiz_doc.exists:
+        safe_edit_message_text(query, "❌ الاختبار غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
+        return
+
+    course_id = quiz_doc.to_dict().get("course_id")
+    try:
+        db.collection(COURSE_QUIZZES_COLLECTION).document(quiz_id).delete()
+        _admin_show_quizzes_panel(query, course_id)
+    except Exception as e:
+        logger.error(f"خطأ في حذف الاختبار: {e}")
+        safe_edit_message_text(query, "❌ تعذر حذف الاختبار حالياً.", reply_markup=_quizzes_back_keyboard(course_id))
 
 
 def admin_statistics(query: Update.callback_query, context: CallbackContext):
@@ -12213,13 +12832,48 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
         quizzes_count = len(data.get("completed_quizzes", []))
         points = data.get("points", 0)
         name = data.get("full_name") or data.get("username") or target_user_id
+        user_record = get_user_record_by_id(int(target_user_id)) or {}
+        age = data.get("age") or user_record.get("age")
+        country = data.get("country") or user_record.get("country") or "غير محدد"
+        gender_val = data.get("gender") or user_record.get("gender")
+        gender_label = "ذكر" if gender_val == "male" else "أنثى" if gender_val == "female" else "غير محدد"
+        username = data.get("username") or user_record.get("username")
 
-        text = (
-            f"👤 {name}\n"
-            f"📚 عدد حضور الدروس: {lessons_count}\n"
-            f"📝 عدد الاختبارات: {quizzes_count}\n"
-            f"⭐️ مجموع النقاط: {points}"
-        )
+        enrolled_courses = []
+        try:
+            other_subs = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).where("user_id", "==", int(target_user_id)).stream()
+            for sub in other_subs:
+                sub_data = sub.to_dict()
+                sub_course_id = sub_data.get("course_id")
+                course_doc = _course_document(sub_course_id)
+                course_name = course_doc.get("name", "دورة") if course_doc else "دورة"
+                enrolled_courses.append(course_name)
+        except Exception as e:
+            logger.error(f"خطأ في جلب دورات المستخدم: {e}")
+
+        lines = [
+            f"👤 {name}",
+            f"🆔 ID: {target_user_id}",
+        ]
+        if username:
+            lines.append(f"👥 المستخدم: @{username}")
+
+        extra_lines = [
+            f"🌍 البلد: {country}",
+            f"🎂 العمر: {age if age is not None else 'غير محدد'}",
+            f"⚧️ الجنس: {gender_label}",
+            f"📚 عدد حضور الدروس: {lessons_count}",
+            f"📝 عدد الاختبارات: {quizzes_count}",
+            f"⭐️ مجموع النقاط: {points}",
+        ]
+
+        if enrolled_courses:
+            extra_lines.append("📒 الدورات المسجل فيها:")
+            for course_name in enrolled_courses:
+                extra_lines.append(f"• {course_name}")
+
+        lines.extend(extra_lines)
+        text = "\n".join(lines)
 
         keyboard = [
             [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:stats_course_{course_id}")],
@@ -12389,6 +13043,17 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         query.answer()
 
         if (
+            data.startswith("COURSES:")
+            and not data.startswith("COURSES:subscribe_")
+            and (
+                user_id in WAITING_COURSE_COUNTRY
+                or user_id in WAITING_COURSE_AGE
+                or user_id in WAITING_COURSE_GENDER
+            )
+        ):
+            _reset_course_subscription_flow(user_id)
+
+        if (
             user_id in WAITING_NEW_COURSE
             and not data.startswith("COURSES:create")
         ):
@@ -12483,18 +13148,34 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             start_quiz_flow(query, user_id, quiz_id)
 
         elif data.startswith("COURSES:lessons_"):
+            _reset_lesson_creation(user_id)
             course_id = data.replace("COURSES:lessons_", "")
             _admin_show_lessons_panel(query, course_id)
         elif data.startswith("COURSES:add_lesson_"):
             course_id = data.replace("COURSES:add_lesson_", "")
             WAITING_NEW_LESSON.add(user_id)
             WAITING_LESSON_TITLE.add(user_id)
-            LESSON_CREATION_CONTEXT[user_id] = {"course_id": course_id}
+            LESSON_CREATION_CONTEXT[user_id] = {"course_id": course_id, "edit_action": "create"}
             safe_edit_message_text(
                 query,
                 "✏️ أرسل عنوان الدرس أولاً.",
                 reply_markup=_lessons_back_keyboard(course_id),
             )
+        elif data.startswith("COURSES:lesson_edit_title_"):
+            lesson_id = data.replace("COURSES:lesson_edit_title_", "")
+            _admin_request_lesson_title_edit(query, lesson_id)
+        elif data.startswith("COURSES:lesson_edit_content_"):
+            lesson_id = data.replace("COURSES:lesson_edit_content_", "")
+            _admin_request_lesson_content_edit(query, lesson_id)
+        elif data.startswith("COURSES:lesson_edit_"):
+            lesson_id = data.replace("COURSES:lesson_edit_", "")
+            _admin_open_lesson_edit_menu(query, lesson_id)
+        elif data.startswith("COURSES:lesson_delete_confirm_"):
+            lesson_id = data.replace("COURSES:lesson_delete_confirm_", "")
+            _admin_delete_lesson(query, lesson_id)
+        elif data.startswith("COURSES:lesson_delete_"):
+            lesson_id = data.replace("COURSES:lesson_delete_", "")
+            _admin_confirm_delete_lesson(query, lesson_id)
         elif data.startswith("COURSES:lesson_type_"):
             parts = data.replace("COURSES:lesson_type_", "").split("_", 1)
             if len(parts) == 2:
@@ -12519,6 +13200,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                         reply_markup=_lessons_back_keyboard(course_id),
                     )
         elif data.startswith("COURSES:quizzes_"):
+            _reset_quiz_creation(user_id)
             course_id = data.replace("COURSES:quizzes_", "")
             _admin_show_quizzes_panel(query, course_id)
         elif data.startswith("COURSES:add_quiz_"):
@@ -12531,6 +13213,15 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 "✏️ أرسل عنوان الاختبار.",
                 reply_markup=_quizzes_back_keyboard(course_id),
             )
+        elif data.startswith("COURSES:quiz_edit_"):
+            quiz_id = data.replace("COURSES:quiz_edit_", "")
+            _admin_start_quiz_edit(query, quiz_id)
+        elif data.startswith("COURSES:quiz_delete_confirm_"):
+            quiz_id = data.replace("COURSES:quiz_delete_confirm_", "")
+            _admin_delete_quiz(query, quiz_id)
+        elif data.startswith("COURSES:quiz_delete_"):
+            quiz_id = data.replace("COURSES:quiz_delete_", "")
+            _admin_confirm_delete_quiz(query, quiz_id)
         elif data.startswith("COURSES:quiz_more_"):
             course_id = data.replace("COURSES:quiz_more_", "")
             WAITING_QUIZ_ANSWER_TEXT.add(user_id)
