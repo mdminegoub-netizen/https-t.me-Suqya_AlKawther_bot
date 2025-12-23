@@ -11211,6 +11211,8 @@ def start_bot():
             | Filters.document.file_extension("aac")
         )
 
+        user_audio_filter = (
+            (Filters.audio | Filters.voice | audio_document_filter)
         lesson_audio_filter = (
             (Filters.voice | Filters.audio | audio_document_filter)
             & Filters.chat_type.private
