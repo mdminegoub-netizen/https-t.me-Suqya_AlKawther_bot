@@ -11206,7 +11206,11 @@ def start_bot():
             | Filters.document.file_extension("aac")
         )
 
-        user_audio_filter = (Filters.audio | Filters.voice | audio_document_filter) & Filters.chat_type.private
+        user_audio_filter = (
+            Filters.chat_type.private
+            & Filters.user(WAITING_LESSON_AUDIO)
+            & (Filters.audio | Filters.voice | audio_document_filter)
+        )
         channel_audio_filter = Filters.chat_type.channel & (Filters.audio | Filters.voice | audio_document_filter)
 
         reply_support_filter = (
@@ -11227,7 +11231,7 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_photo_filter = Filters.photo & Filters.chat_type.private
         support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
         support_video_filter = Filters.video & Filters.chat_type.private
         support_video_note_filter = Filters.video_note & Filters.chat_type.private
@@ -11261,7 +11265,7 @@ def start_bot():
             MessageHandler(
                 support_photo_filter,
                 handle_support_photo,
-                run_async=True,
+                block=False,
             )
         )
 
