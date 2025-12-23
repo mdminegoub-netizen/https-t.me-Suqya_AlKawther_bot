@@ -34,7 +34,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     DispatcherHandlerStop,
-    MessageFilter,
+    BaseFilter,
 )
 
 # =================== إعدادات أساسية ===================
@@ -1181,11 +1181,15 @@ def _user_in_support_session(user) -> bool:
     return bool(user and user.id in WAITING_SUPPORT)
 
 
-class SupportSessionFilter(MessageFilter):
-    name = "support_session_filter"
+class SupportSessionFilter(BaseFilter):
+    def __call__(self, message):
+        return self.filter(message)
 
     def filter(self, message):
-        return _user_in_support_session(getattr(message, "from_user", None))
+        try:
+            return _user_in_support_session(getattr(message, "from_user", None))
+        except Exception:
+            return False
 
 
 def _user_waiting_book_media(user) -> bool:
@@ -11249,25 +11253,21 @@ def start_bot():
         support_photo_filter = (
             Filters.photo
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_audio_filter = (
             (Filters.audio | Filters.voice)
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_video_filter = (
             Filters.video
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_video_note_filter = (
             Filters.video_note
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
 
