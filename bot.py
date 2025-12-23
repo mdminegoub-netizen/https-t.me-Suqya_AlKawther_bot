@@ -1175,6 +1175,22 @@ WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
 SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_id
 
+# فلاتر مساعدة
+def _user_in_support_session(user) -> bool:
+    return bool(user and user.id in WAITING_SUPPORT)
+
+
+def _user_waiting_book_media(user) -> bool:
+    if not user:
+        return False
+    uid = user.id
+    return uid in (
+        WAITING_BOOK_ADD_COVER
+        | WAITING_BOOK_EDIT_COVER
+        | WAITING_BOOK_ADD_PDF
+        | WAITING_BOOK_EDIT_PDF
+    )
+
 # فوائد ونصائح
 WAITING_BENEFIT_TEXT = set()
 WAITING_BENEFIT_EDIT_TEXT = set()
@@ -3854,10 +3870,11 @@ def handle_admin_book_search_input(update: Update, context: CallbackContext):
 
 
 def handle_book_media_message(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id if update.effective_user else None
-    if not user_id:
+    user = update.effective_user
+    if not _user_waiting_book_media(user):
         return
 
+    user_id = user.id
     if user_id in WAITING_BOOK_ADD_COVER or user_id in WAITING_BOOK_EDIT_COVER:
         photo_list = update.message.photo or []
         if not photo_list:
@@ -8574,17 +8591,20 @@ def _is_reply_to_support_message(msg, bot_id: int) -> bool:
 
 
 def handle_support_photo(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-    if user_id not in WAITING_SUPPORT:
-        if is_reply:
+    user = update.effective_user
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
                 reply_markup=user_main_keyboard(user_id),
             )
         return  # لا تمس أي مسار آخر
 
-    user = update.effective_user
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+
     photos = update.message.photo or []
     if not photos:
         return
@@ -8615,17 +8635,20 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
 
 def handle_support_audio(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-    if user_id not in WAITING_SUPPORT:
-        if is_reply:
+    user = update.effective_user
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
                 reply_markup=user_main_keyboard(user_id),
             )
         return  # لا تمس أي مسار آخر
 
-    user = update.effective_user
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+
     audio = update.message.audio or update.message.voice
     if not audio:
         return
@@ -8658,17 +8681,20 @@ def handle_support_audio(update: Update, context: CallbackContext):
 
 
 def handle_support_video(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-    if user_id not in WAITING_SUPPORT:
-        if is_reply:
+    user = update.effective_user
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
                 reply_markup=user_main_keyboard(user_id),
             )
         return  # لا تمس أي مسار آخر
 
-    user = update.effective_user
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+
     video = update.message.video
     if not video:
         return
@@ -8702,17 +8728,20 @@ def handle_support_video(update: Update, context: CallbackContext):
 
 
 def handle_support_video_note(update: Update, context: CallbackContext):
-    user_id = update.effective_user.id
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-    if user_id not in WAITING_SUPPORT:
-        if is_reply:
+    user = update.effective_user
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
                 reply_markup=user_main_keyboard(user_id),
             )
         return
 
-    user = update.effective_user
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
+
     video_note = update.message.video_note
     if not video_note:
         return
@@ -11160,23 +11189,6 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
-        def _user_in_support_session(user):
-            return bool(user and user.id in WAITING_SUPPORT)
-
-        def _user_waiting_book_media(user):
-            if not user:
-                return False
-            uid = user.id
-            return uid in (
-                WAITING_BOOK_ADD_COVER
-                | WAITING_BOOK_EDIT_COVER
-                | WAITING_BOOK_ADD_PDF
-                | WAITING_BOOK_EDIT_PDF
-            )
-
-        support_session_filter = Filters.user(_user_in_support_session)
-        book_media_user_filter = Filters.user(_user_waiting_book_media)
-
         reply_support_filter = (
             Filters.reply
             & (
@@ -11194,11 +11206,11 @@ def start_bot():
             Filters.photo
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
-        ) & book_media_user_filter & ~Filters.chat_type.channel
-        support_photo_filter = Filters.photo & ~Filters.chat_type.channel & support_session_filter
-        support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel & support_session_filter
-        support_video_filter = Filters.video & ~Filters.chat_type.channel & support_session_filter
-        support_video_note_filter = Filters.video_note & ~Filters.chat_type.channel & support_session_filter
+        ) & Filters.chat_type.private
+        support_photo_filter = Filters.photo & Filters.chat_type.private
+        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
+        support_video_filter = Filters.video & Filters.chat_type.private
+        support_video_note_filter = Filters.video_note & Filters.chat_type.private
 
         dispatcher.add_handler(
             MessageHandler(
@@ -11259,7 +11271,7 @@ def start_bot():
 
         user_audio_filter = (
             Filters.audio | Filters.voice | Filters.document.audio | Filters.document
-        ) & ~Filters.chat_type.channel
+        ) & Filters.chat_type.private
 
         dispatcher.add_handler(
             MessageHandler(
