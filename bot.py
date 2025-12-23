@@ -1429,6 +1429,16 @@ def _extract_audio_metadata(message) -> Dict:
     return meta
 
 
+def _lesson_audio_message_type(message) -> str:
+    if message.voice:
+        return "voice"
+    if message.audio:
+        return "audio"
+    if message.document:
+        return "document"
+    return "unknown"
+
+
 def _finalize_quiz_creation_from_message(user_id: int, msg):
     ctx = QUIZ_CREATION_CONTEXT.get(user_id, {})
     course_id = ctx.get("course_id")
@@ -1546,6 +1556,12 @@ def handle_audio_message(update: Update, context: CallbackContext):
 
     document_obj = update.message.document
     if document_obj and not _is_audio_document(document_obj):
+        logger.warning(
+            "[LESSON_AUDIO][REJECT] user=%s type=document reason=non_audio_document mime=%s filename=%s",
+            user_id,
+            getattr(document_obj, "mime_type", None),
+            getattr(document_obj, "file_name", None),
+        )
         update.message.reply_text(
             "أرسل ملف صوتي فقط",
             reply_markup=_lessons_back_keyboard(course_id),
@@ -1555,7 +1571,24 @@ def handle_audio_message(update: Update, context: CallbackContext):
     meta = _extract_audio_metadata(update.message)
     file_id = meta.get("file_id")
 
+    logger.info(
+        "[LESSON_AUDIO][RECEIVED] user=%s type=%s forward=%s file_id=%s file_unique_id=%s source_chat_id=%s source_message_id=%s",
+        user_id,
+        _lesson_audio_message_type(update.message),
+        bool(update.message.forward_from_chat or update.message.forward_from),
+        file_id,
+        meta.get("file_unique_id"),
+        meta.get("source_chat_id"),
+        meta.get("source_message_id"),
+    )
+
     if not file_id:
+        logger.error(
+            "[LESSON_AUDIO][REJECT] user=%s type=%s reason=missing_file_id forward=%s",
+            user_id,
+            _lesson_audio_message_type(update.message),
+            bool(update.message.forward_from_chat or update.message.forward_from),
+        )
         update.message.reply_text("❌ لم يتم استقبال ملف صوتي صالح.", reply_markup=_lessons_back_keyboard(course_id))
         return
 
@@ -8597,14 +8630,7 @@ def _is_reply_to_support_message(msg, bot_id: int) -> bool:
 def handle_support_photo(update: Update, context: CallbackContext):
     user = update.effective_user
     if not _user_in_support_session(user):
-        user_id = user.id if user else None
-        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
-            update.message.reply_text(
-                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
-                reply_markup=user_main_keyboard(user_id),
-            )
-        return  # لا تمس أي مسار آخر
+        return
 
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
@@ -8642,14 +8668,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
 def handle_support_audio(update: Update, context: CallbackContext):
     user = update.effective_user
     if not _user_in_support_session(user):
-        user_id = user.id if user else None
-        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
-            update.message.reply_text(
-                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
-                reply_markup=user_main_keyboard(user_id),
-            )
-        return  # لا تمس أي مسار آخر
+        return
 
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
@@ -8689,14 +8708,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
 def handle_support_video(update: Update, context: CallbackContext):
     user = update.effective_user
     if not _user_in_support_session(user):
-        user_id = user.id if user else None
-        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
-            update.message.reply_text(
-                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
-                reply_markup=user_main_keyboard(user_id),
-            )
-        return  # لا تمس أي مسار آخر
+        return
 
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
@@ -8737,13 +8749,6 @@ def handle_support_video(update: Update, context: CallbackContext):
 def handle_support_video_note(update: Update, context: CallbackContext):
     user = update.effective_user
     if not _user_in_support_session(user):
-        user_id = user.id if user else None
-        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-        if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
-            update.message.reply_text(
-                "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
-                reply_markup=user_main_keyboard(user_id),
-            )
         return
 
     user_id = user.id
@@ -8765,7 +8770,8 @@ def handle_support_video_note(update: Update, context: CallbackContext):
 
     for admin_id in targets:
         try:
-            context.bot.send_message(chat_id=admin_id, text=text)
+            header_msg = context.bot.send_message(chat_id=admin_id, text=text)
+            _remember_support_message(admin_id, header_msg, user_id)
             context.bot.send_video_note(chat_id=admin_id, video_note=video_note.file_id)
         except Exception as e:
             logger.warning(f"Support video note forward failed to {admin_id}: {e}")
@@ -11194,8 +11200,7 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^support_open$"))
 
         audio_document_filter = (
-            Filters.document.audio
-            | Filters.document.mime_type("audio/")
+            Filters.document.mime_type("audio/")
             | Filters.document.file_extension("mp3")
             | Filters.document.file_extension("wav")
             | Filters.document.file_extension("ogg")
@@ -11207,9 +11212,11 @@ def start_bot():
         )
 
         user_audio_filter = (
-            Filters.chat_type.private
+            (Filters.audio | Filters.voice | audio_document_filter)
+        lesson_audio_filter = (
+            (Filters.voice | Filters.audio | audio_document_filter)
+            & Filters.chat_type.private
             & Filters.user(WAITING_LESSON_AUDIO)
-            & (Filters.audio | Filters.voice | audio_document_filter)
         )
         channel_audio_filter = Filters.chat_type.channel & (Filters.audio | Filters.voice | audio_document_filter)
 
@@ -11266,15 +11273,18 @@ def start_bot():
                 support_photo_filter,
                 handle_support_photo,
                 block=False,
+                lesson_audio_filter,
+                handle_audio_message,
             )
         )
 
         dispatcher.add_handler(
             MessageHandler(
-                book_media_filter,
-                handle_book_media_message,
+                support_photo_filter,
+                handle_support_photo,
             )
         )
+
         dispatcher.add_handler(
             MessageHandler(
                 support_audio_filter,
@@ -11293,11 +11303,10 @@ def start_bot():
                 handle_support_video_note,
             )
         )
-
         dispatcher.add_handler(
             MessageHandler(
-                user_audio_filter,
-                handle_audio_message,
+                book_media_filter,
+                handle_book_media_message,
             )
         )
         dispatcher.add_handler(
