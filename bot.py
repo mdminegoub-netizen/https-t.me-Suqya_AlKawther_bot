@@ -8625,6 +8625,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
     user = update.effective_user
     user_id = user.id
+    logger.info(f"[SUPPORT_MEDIA] photo from {user_id}")
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     photos = update.message.photo or []
@@ -8648,7 +8649,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
             sent = context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
             _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
-            logger.warning(f"Support photo forward failed to {admin_id}: {e}")
+            logger.exception("Support photo forward failed", exc_info=e)
 
     update.message.reply_text(
         _support_confirmation_text(record.get("gender"), True),
@@ -8671,6 +8672,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
 
     user = update.effective_user
     user_id = user.id
+    logger.info(f"[SUPPORT_MEDIA] audio from {user_id}")
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     audio = update.message.audio or update.message.voice
@@ -8696,7 +8698,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
                 sent = context.bot.send_audio(chat_id=admin_id, audio=audio.file_id, caption=text)
             _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
-            logger.warning(f"Support audio forward failed to {admin_id}: {e}")
+            logger.exception("Support audio forward failed", exc_info=e)
 
     update.message.reply_text(
         _support_confirmation_text(record.get("gender"), True),
@@ -8719,6 +8721,7 @@ def handle_support_video(update: Update, context: CallbackContext):
 
     user = update.effective_user
     user_id = user.id
+    logger.info(f"[SUPPORT_MEDIA] video from {user_id}")
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     video = update.message.video
@@ -8745,7 +8748,7 @@ def handle_support_video(update: Update, context: CallbackContext):
             )
             _remember_support_message(admin_id, sent, user_id)
         except Exception as e:
-            logger.warning(f"Support video forward failed to {admin_id}: {e}")
+            logger.exception("Support video forward failed", exc_info=e)
 
     update.message.reply_text(
         _support_confirmation_text(record.get("gender"), True),
@@ -8768,6 +8771,7 @@ def handle_support_video_note(update: Update, context: CallbackContext):
 
     user = update.effective_user
     user_id = user.id
+    logger.info(f"[SUPPORT_MEDIA] vnote from {user_id}")
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     video_note = update.message.video_note
@@ -8789,7 +8793,7 @@ def handle_support_video_note(update: Update, context: CallbackContext):
             context.bot.send_message(chat_id=admin_id, text=text)
             context.bot.send_video_note(chat_id=admin_id, video_note=video_note.file_id)
         except Exception as e:
-            logger.warning(f"Support video note forward failed to {admin_id}: {e}")
+            logger.exception("Support video note forward failed", exc_info=e)
 
     update.message.reply_text(
         _support_confirmation_text(record.get("gender"), True),
@@ -11301,32 +11305,38 @@ def start_bot():
                 support_photo_filter,
                 handle_support_photo,
                 run_async=True,
-            )
+            ),
+            group=0,
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                support_audio_filter,
+                handle_support_audio,
+            ),
+            group=0,
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_filter,
+                handle_support_video,
+            ),
+            group=0,
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_note_filter,
+                handle_support_video_note,
+            ),
+            group=0,
         )
 
         dispatcher.add_handler(
             MessageHandler(
                 book_media_filter,
                 handle_book_media_message,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_audio_filter,
-                handle_support_audio,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_filter,
-                handle_support_video,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_note_filter,
-                handle_support_video_note,
-            )
+            ),
+            group=1,
         )
 
         dispatcher.add_handler(
