@@ -8632,6 +8632,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
         _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_audio(update: Update, context: CallbackContext):
@@ -8678,6 +8679,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
         _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_video(update: Update, context: CallbackContext):
@@ -8725,6 +8727,7 @@ def handle_support_video(update: Update, context: CallbackContext):
         _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_video_note(update: Update, context: CallbackContext):
@@ -8767,6 +8770,7 @@ def handle_support_video_note(update: Update, context: CallbackContext):
         _support_confirmation_text(record.get("gender"), True),
         reply_markup=SUPPORT_SESSION_KB,
     )
+    raise DispatcherHandlerStop()
 
 # =================== دوال جديدة للميزات المطلوبة ===================
 
@@ -11241,6 +11245,7 @@ def start_bot():
             MessageHandler(
                 book_media_filter,
                 handle_book_media_message,
+                block=False,
             )
         )
 
@@ -11248,24 +11253,28 @@ def start_bot():
             MessageHandler(
                 support_photo_filter,
                 handle_support_photo,
+                block=False,
             )
         )
         dispatcher.add_handler(
             MessageHandler(
                 support_audio_filter,
                 handle_support_audio,
+                block=False,
             )
         )
         dispatcher.add_handler(
             MessageHandler(
                 support_video_filter,
                 handle_support_video,
+                block=False,
             )
         )
         dispatcher.add_handler(
             MessageHandler(
                 support_video_note_filter,
                 handle_support_video_note,
+                block=False,
             )
         )
 
