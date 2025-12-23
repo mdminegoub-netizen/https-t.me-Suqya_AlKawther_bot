@@ -11261,7 +11261,7 @@ def start_bot():
             MessageHandler(
                 support_photo_filter,
                 handle_support_photo,
-                block=False,
+                run_async=True,
             )
         )
 
