@@ -1182,6 +1182,9 @@ def _user_in_support_session(user) -> bool:
 
 
 class SupportSessionFilter(BaseFilter):
+    def __call__(self, message):
+        return self.filter(message)
+
     def filter(self, message):
         user = getattr(message, "from_user", None)
         return bool(user and user.id in WAITING_SUPPORT)
