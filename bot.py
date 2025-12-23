@@ -34,6 +34,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     DispatcherHandlerStop,
+    BaseFilter,
 )
 
 # =================== إعدادات أساسية ===================
