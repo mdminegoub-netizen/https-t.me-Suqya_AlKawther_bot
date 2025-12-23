@@ -11211,6 +11211,14 @@ def start_bot():
             | Filters.document.file_extension("aac")
         )
 
+        lesson_audio_filter = (
+            Filters.chat_type.private
+            & Filters.user(WAITING_LESSON_AUDIO)
+            & (
+                Filters.audio
+                | Filters.voice
+                | audio_document_filter
+            )
         user_audio_filter = (
             (Filters.audio | Filters.voice | audio_document_filter)
         lesson_audio_filter = (
@@ -11305,6 +11313,8 @@ def start_bot():
         )
         dispatcher.add_handler(
             MessageHandler(
+                lesson_audio_filter,
+                handle_audio_message,
                 book_media_filter,
                 handle_book_media_message,
             )
