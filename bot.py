@@ -11160,12 +11160,22 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
-        class _BookMediaUserMembership:
-            def __contains__(self, user_id):
-                return user_id in WAITING_BOOK_ADD_COVER or user_id in WAITING_BOOK_EDIT_COVER or user_id in WAITING_BOOK_ADD_PDF or user_id in WAITING_BOOK_EDIT_PDF
+        def _user_in_support_session(user):
+            return bool(user and user.id in WAITING_SUPPORT)
 
-        support_session_filter = Filters.user(WAITING_SUPPORT)
-        book_media_user_filter = Filters.user(_BookMediaUserMembership())
+        def _user_waiting_book_media(user):
+            if not user:
+                return False
+            uid = user.id
+            return uid in (
+                WAITING_BOOK_ADD_COVER
+                | WAITING_BOOK_EDIT_COVER
+                | WAITING_BOOK_ADD_PDF
+                | WAITING_BOOK_EDIT_PDF
+            )
+
+        support_session_filter = Filters.user(_user_in_support_session)
+        book_media_user_filter = Filters.user(_user_waiting_book_media)
 
         reply_support_filter = (
             Filters.reply
