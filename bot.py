@@ -34,6 +34,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     DispatcherHandlerStop,
+    BaseFilter,
 )
 
 # =================== إعدادات أساسية ===================
@@ -1178,6 +1179,17 @@ SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_i
 # فلاتر مساعدة
 def _user_in_support_session(user) -> bool:
     return bool(user and user.id in WAITING_SUPPORT)
+
+
+class SupportSessionFilter(BaseFilter):
+    def __call__(self, message):
+        return self.filter(message)
+
+    def filter(self, message):
+        try:
+            return _user_in_support_session(getattr(message, "from_user", None))
+        except Exception:
+            return False
 
 
 def _user_waiting_book_media(user) -> bool:
@@ -11237,32 +11249,25 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_session_filter = Filters.create(
-            lambda m: _user_in_support_session(getattr(m, "from_user", None)) if m else False,
-            name="support_session_filter",
-        )
+        support_session_filter = SupportSessionFilter()
         support_photo_filter = (
             Filters.photo
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_audio_filter = (
             (Filters.audio | Filters.voice)
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_video_filter = (
             Filters.video
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
         support_video_note_filter = (
             Filters.video_note
             & Filters.chat_type.private
-            & Filters.user(WAITING_SUPPORT)
             & support_session_filter
         )
 
