@@ -8,7 +8,7 @@ from collections import defaultdict
 from uuid import uuid4
 from datetime import datetime, timezone, time, timedelta
 from threading import Thread
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pytz
 from flask import Flask, request
@@ -1392,7 +1392,7 @@ def _is_audio_document(document) -> bool:
     if mime.startswith("audio/"):
         return True
     filename = (getattr(document, "file_name", "") or "").lower()
-    audio_ext = (".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac")
+    audio_ext = (".mp3", ".wav", ".ogg", ".oga", ".opus", ".m4a", ".flac", ".aac")
     return any(filename.endswith(ext) for ext in audio_ext)
 
 
@@ -1400,25 +1400,29 @@ def _extract_audio_metadata(message) -> Dict:
     meta: Dict = {}
     audio_obj = None
     audio_kind = None
+    forward_id = getattr(message, "forward_from_message_id", None)
 
     if message.voice:
-        audio_kind = "voice"
-        audio_obj = message.voice
+        audio_kind = "voice"; audio_obj = message.voice
     elif message.audio:
-        audio_kind = "audio"
-        audio_obj = message.audio
+        audio_kind = "audio"; audio_obj = message.audio
     elif message.document and _is_audio_document(message.document):
-        audio_kind = "document_audio"
-        audio_obj = message.document
+        audio_kind = "document_audio"; audio_obj = message.document
 
     if audio_obj:
         meta["file_id"] = getattr(audio_obj, "file_id", None)
         meta["file_unique_id"] = getattr(audio_obj, "file_unique_id", None)
         meta["audio_kind"] = audio_kind
 
+    # forward from channel/group
     if message.forward_from_chat:
         meta["source_chat_id"] = message.forward_from_chat.id
-        forward_id = getattr(message, "forward_from_message_id", None)
+        if forward_id:
+            meta["source_message_id"] = forward_id
+
+    # forward from user (عند ظهور forward_from)
+    elif message.forward_from:
+        meta["source_chat_id"] = message.forward_from.id
         if forward_id:
             meta["source_message_id"] = forward_id
 
@@ -1543,7 +1547,7 @@ def handle_audio_message(update: Update, context: CallbackContext):
     document_obj = update.message.document
     if document_obj and not _is_audio_document(document_obj):
         update.message.reply_text(
-            "⚠️ الرجاء إرسال ملف صوتي فقط.",
+            "أرسل ملف صوتي فقط",
             reply_markup=_lessons_back_keyboard(course_id),
         )
         return
@@ -8011,7 +8015,7 @@ def handle_ban_reason_input(update: Update, context: CallbackContext):
 
 # =================== نظام الدعم ولوحة التحكم ===================
 
-def _send_support_session_opened_message(reply_func, gender: str | None = None):
+def _send_support_session_opened_message(reply_func, gender: Optional[str] = None):
     is_female = gender == "female"
     text = (
         "حياكِ الله يا طيبة، تم فتح المحادثة مع الدعم.\n\n"
@@ -8023,7 +8027,7 @@ def _send_support_session_opened_message(reply_func, gender: str | None = None):
     reply_func(text, reply_markup=SUPPORT_SESSION_KB)
 
 
-def _open_support_session(update: Update, user_id: int, gender: str | None):
+def _open_support_session(update: Update, user_id: int, gender: Optional[str]):
     WAITING_SUPPORT.add(user_id)
     _send_support_session_opened_message(update.message.reply_text, gender)
 
@@ -8369,7 +8373,7 @@ def forward_support_to_admin(user, text: str, context: CallbackContext):
             logger.error(f"Error sending support message to supervisor: {e}")
 
 
-def _support_confirmation_text(gender: str | None, session_open: bool) -> str:
+def _support_confirmation_text(gender: Optional[str], session_open: bool) -> str:
     is_female = gender == "female"
 
     if session_open:
@@ -8405,7 +8409,7 @@ def _support_header(user: User) -> str:
     )
 
 
-def _remember_support_message(admin_id: int | None, sent_message, target_user_id: int):
+def _remember_support_message(admin_id: Optional[int], sent_message, target_user_id: int):
     if admin_id is None or sent_message is None:
         return
 
@@ -8415,7 +8419,7 @@ def _remember_support_message(admin_id: int | None, sent_message, target_user_id
         logger.debug("تعذر حفظ ربط رسالة الدعم: %s", e)
 
 
-def _extract_target_id_from_support_message(msg) -> int | None:
+def _extract_target_id_from_support_message(msg) -> Optional[int]:
     src = ""
     if msg.text:
         src = msg.text
@@ -11189,9 +11193,21 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_books_callback, pattern=r"^BOOKS:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^support_open$"))
 
-        channel_audio_filter = Filters.chat_type.channel & (
-            Filters.audio | Filters.voice | Filters.document.audio
+        audio_document_filter = (
+            Filters.document.audio
+            | Filters.document.mime_type("audio/")
+            | Filters.document.file_extension("mp3")
+            | Filters.document.file_extension("wav")
+            | Filters.document.file_extension("ogg")
+            | Filters.document.file_extension("oga")
+            | Filters.document.file_extension("opus")
+            | Filters.document.file_extension("m4a")
+            | Filters.document.file_extension("flac")
+            | Filters.document.file_extension("aac")
         )
+
+        user_audio_filter = (Filters.audio | Filters.voice | audio_document_filter) & Filters.chat_type.private
+        channel_audio_filter = Filters.chat_type.channel & (Filters.audio | Filters.voice | audio_document_filter)
 
         reply_support_filter = (
             Filters.reply
@@ -11211,7 +11227,7 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private
+        support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
         support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
         support_video_filter = Filters.video & Filters.chat_type.private
         support_video_note_filter = Filters.video_note & Filters.chat_type.private
@@ -11243,15 +11259,16 @@ def start_bot():
 
         dispatcher.add_handler(
             MessageHandler(
-                book_media_filter,
-                handle_book_media_message,
+                support_photo_filter,
+                handle_support_photo,
+                block=False,
             )
         )
 
         dispatcher.add_handler(
             MessageHandler(
-                support_photo_filter,
-                handle_support_photo,
+                book_media_filter,
+                handle_book_media_message,
             )
         )
         dispatcher.add_handler(
@@ -11272,10 +11289,6 @@ def start_bot():
                 handle_support_video_note,
             )
         )
-
-        user_audio_filter = (
-            Filters.audio | Filters.voice | Filters.document.audio | Filters.document
-        ) & Filters.chat_type.private
 
         dispatcher.add_handler(
             MessageHandler(
