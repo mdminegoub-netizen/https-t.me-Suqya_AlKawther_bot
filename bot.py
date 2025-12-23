@@ -1381,9 +1381,9 @@ def _is_audio_document(document) -> bool:
 
 
 def _extract_audio_metadata(message) -> Dict:
-    meta = {}
-    audio_kind = "audio"
+    meta: Dict = {}
     audio_obj = None
+    audio_kind = None
 
     if message.voice:
         audio_kind = "voice"
@@ -1391,7 +1391,7 @@ def _extract_audio_metadata(message) -> Dict:
     elif message.audio:
         audio_kind = "audio"
         audio_obj = message.audio
-    elif message.document:
+    elif message.document and _is_audio_document(message.document):
         audio_kind = "document_audio"
         audio_obj = message.document
 
@@ -11160,6 +11160,13 @@ def start_bot():
             Filters.audio | Filters.voice | Filters.document.audio
         )
 
+        class _BookMediaUserMembership:
+            def __contains__(self, user_id):
+                return user_id in WAITING_BOOK_ADD_COVER or user_id in WAITING_BOOK_EDIT_COVER or user_id in WAITING_BOOK_ADD_PDF or user_id in WAITING_BOOK_EDIT_PDF
+
+        support_session_filter = Filters.user(WAITING_SUPPORT)
+        book_media_user_filter = Filters.user(_BookMediaUserMembership())
+
         reply_support_filter = (
             Filters.reply
             & (
@@ -11177,11 +11184,11 @@ def start_bot():
             Filters.photo
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
-        ) & ~Filters.chat_type.channel
-        support_photo_filter = Filters.photo & ~Filters.chat_type.channel
-        support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel
-        support_video_filter = Filters.video & ~Filters.chat_type.channel
-        support_video_note_filter = Filters.video_note & ~Filters.chat_type.channel
+        ) & book_media_user_filter & ~Filters.chat_type.channel
+        support_photo_filter = Filters.photo & ~Filters.chat_type.channel & support_session_filter
+        support_audio_filter = (Filters.audio | Filters.voice) & ~Filters.chat_type.channel & support_session_filter
+        support_video_filter = Filters.video & ~Filters.chat_type.channel & support_session_filter
+        support_video_note_filter = Filters.video_note & ~Filters.chat_type.channel & support_session_filter
 
         dispatcher.add_handler(
             MessageHandler(
@@ -13123,24 +13130,6 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
         gender_label = "ذكر" if gender_val == "male" else "أنثى" if gender_val == "female" else "غير محدد"
         username = data.get("username") or user_record.get("username")
 
-        enrolled_courses = []
-        seen_courses = set()
-        try:
-            other_subs = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION).where("user_id", "==", int(target_user_id)).stream()
-            for sub in other_subs:
-                sub_data = sub.to_dict()
-                sub_course_id = sub_data.get("course_id")
-                course_doc = _course_document(sub_course_id)
-                course_name = course_doc.get("name", "دورة") if course_doc else "دورة"
-                if not course_name or _is_back_placeholder_course(course_name):
-                    continue
-                if course_name in seen_courses:
-                    continue
-                seen_courses.add(course_name)
-                enrolled_courses.append(course_name)
-        except Exception as e:
-            logger.error(f"خطأ في جلب دورات المستخدم: {e}")
-
         username_line = f"اسم المستخدم: @{username}" if username else None
         lines = [
             "📌 بيانات الطالب",
@@ -13156,12 +13145,6 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
             f"الاختبارات: {quizzes_count}",
             f"مجموع النقاط: {points}",
         ]
-
-        if enrolled_courses:
-            lines.append("")
-            lines.append("📒 الدورات المسجل فيها:")
-            for course_name in enrolled_courses:
-                lines.append(f"• {course_name}")
 
         text = "\n".join([ln for ln in lines if ln is not None])
 
