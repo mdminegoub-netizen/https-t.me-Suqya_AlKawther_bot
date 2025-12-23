@@ -34,6 +34,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     DispatcherHandlerStop,
+    MessageFilter,
 )
 
 # =================== إعدادات أساسية ===================
@@ -1178,6 +1179,13 @@ SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_i
 # فلاتر مساعدة
 def _user_in_support_session(user) -> bool:
     return bool(user and user.id in WAITING_SUPPORT)
+
+
+class SupportSessionFilter(MessageFilter):
+    name = "support_session_filter"
+
+    def filter(self, message):
+        return _user_in_support_session(getattr(message, "from_user", None))
 
 
 def _user_waiting_book_media(user) -> bool:
@@ -8027,6 +8035,11 @@ def _send_support_session_opened_message(reply_func, gender: Optional[str] = Non
     reply_func(text, reply_markup=SUPPORT_SESSION_KB)
 
 
+def _close_support_session(user_id: int):
+    WAITING_SUPPORT.discard(user_id)
+    WAITING_SUPPORT_GENDER.discard(user_id)
+
+
 def _open_support_session(update: Update, user_id: int, gender: Optional[str]):
     WAITING_SUPPORT.add(user_id)
     _send_support_session_opened_message(update.message.reply_text, gender)
@@ -8595,8 +8608,8 @@ def _is_reply_to_support_message(msg, bot_id: int) -> bool:
 
 
 def handle_support_photo(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not _user_in_support_session(user):
+    if not _user_in_support_session(update.effective_user):
+        user = update.effective_user
         user_id = user.id if user else None
         is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
@@ -8606,6 +8619,7 @@ def handle_support_photo(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
+    user = update.effective_user
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
@@ -8640,8 +8654,8 @@ def handle_support_photo(update: Update, context: CallbackContext):
 
 
 def handle_support_audio(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not _user_in_support_session(user):
+    if not _user_in_support_session(update.effective_user):
+        user = update.effective_user
         user_id = user.id if user else None
         is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
@@ -8651,6 +8665,7 @@ def handle_support_audio(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
+    user = update.effective_user
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
@@ -8687,8 +8702,8 @@ def handle_support_audio(update: Update, context: CallbackContext):
 
 
 def handle_support_video(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not _user_in_support_session(user):
+    if not _user_in_support_session(update.effective_user):
+        user = update.effective_user
         user_id = user.id if user else None
         is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
@@ -8698,6 +8713,7 @@ def handle_support_video(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
+    user = update.effective_user
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
@@ -8735,8 +8751,8 @@ def handle_support_video(update: Update, context: CallbackContext):
 
 
 def handle_support_video_note(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not _user_in_support_session(user):
+    if not _user_in_support_session(update.effective_user):
+        user = update.effective_user
         user_id = user.id if user else None
         is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
@@ -8746,6 +8762,7 @@ def handle_support_video_note(update: Update, context: CallbackContext):
             )
         return
 
+    user = update.effective_user
     user_id = user.id
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
@@ -9348,8 +9365,7 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_SUPPORT_END:
         if user_id in WAITING_SUPPORT:
-            WAITING_SUPPORT.discard(user_id)
-            WAITING_SUPPORT_GENDER.discard(user_id)
+            _close_support_session(user_id)
             msg.reply_text(
                 "تم إنهاء التواصل مع الدعم ✅",
                 reply_markup=main_kb,
@@ -9778,6 +9794,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_STATS_BACK_MAIN:
+        _close_support_session(user_id)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=user_main_keyboard(user_id),
@@ -9825,6 +9842,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_BACK_MAIN:
+        _close_support_session(user_id)
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
@@ -11227,12 +11245,31 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
-        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private & Filters.user(
-            WAITING_SUPPORT
+        support_session_filter = SupportSessionFilter()
+        support_photo_filter = (
+            Filters.photo
+            & Filters.chat_type.private
+            & Filters.user(WAITING_SUPPORT)
+            & support_session_filter
         )
-        support_video_filter = Filters.video & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
-        support_video_note_filter = Filters.video_note & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_audio_filter = (
+            (Filters.audio | Filters.voice)
+            & Filters.chat_type.private
+            & Filters.user(WAITING_SUPPORT)
+            & support_session_filter
+        )
+        support_video_filter = (
+            Filters.video
+            & Filters.chat_type.private
+            & Filters.user(WAITING_SUPPORT)
+            & support_session_filter
+        )
+        support_video_note_filter = (
+            Filters.video_note
+            & Filters.chat_type.private
+            & Filters.user(WAITING_SUPPORT)
+            & support_session_filter
+        )
 
         dispatcher.add_handler(
             MessageHandler(
