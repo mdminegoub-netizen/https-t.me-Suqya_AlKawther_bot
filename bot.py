@@ -1180,18 +1180,6 @@ SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_i
 def _user_in_support_session(user) -> bool:
     return bool(user and user.id in WAITING_SUPPORT)
 
-
-class SupportSessionFilter(BaseFilter):
-    def __call__(self, message):
-        return self.filter(message)
-
-    def filter(self, message):
-        try:
-            return _user_in_support_session(getattr(message, "from_user", None))
-        except Exception:
-            return False
-
-
 def _user_waiting_book_media(user) -> bool:
     if not user:
         return False
@@ -11253,7 +11241,12 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_session_filter = SupportSessionFilter()
+        support_session_filter = Filters.create(
+            lambda m: bool(
+                m and getattr(m, "from_user", None) and m.from_user.id in WAITING_SUPPORT
+            ),
+            name="support_session_filter",
+        )
         support_photo_filter = (
             Filters.photo
             & Filters.chat_type.private
