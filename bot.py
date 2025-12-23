@@ -11228,9 +11228,11 @@ def start_bot():
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
         support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
-        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
-        support_video_filter = Filters.video & Filters.chat_type.private
-        support_video_note_filter = Filters.video_note & Filters.chat_type.private
+        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private & Filters.user(
+            WAITING_SUPPORT
+        )
+        support_video_filter = Filters.video & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_video_note_filter = Filters.video_note & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
 
         dispatcher.add_handler(
             MessageHandler(
