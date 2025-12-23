@@ -11268,6 +11268,9 @@ def start_bot():
 
         dispatcher.add_handler(
             MessageHandler(
+                support_photo_filter,
+                handle_support_photo,
+                block=False,
                 lesson_audio_filter,
                 handle_audio_message,
             )
