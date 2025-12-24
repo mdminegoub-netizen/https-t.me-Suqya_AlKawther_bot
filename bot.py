@@ -87,6 +87,7 @@ updater = None
 dispatcher = None
 job_queue = None
 IS_RUNNING = True
+JOB_QUEUE_STARTED = False
 
 @app.route("/")
 def index():
@@ -97,6 +98,8 @@ def webhook_handler():
     """معالجة تحديثات الـ Webhook من Telegram"""
     if request.method == "POST":
         try:
+            initialize_telegram_bot(start_jobs=True)
+
             payload = request.get_json(force=True)
             update = Update.de_json(payload, dispatcher.bot)
             update_type = (
@@ -11394,6 +11397,52 @@ def start_bot():
         raise
 
 
+# =================== تهيئة تلقائية للبوت ===================
+
+
+def initialize_telegram_bot(start_jobs: bool = False):
+    """
+    تهيئة Updater/Dispatcher وتشغيل start_bot عند الحاجة.
+    مفيدة في بيئات الويب هوك التي تستورد التطبيق مباشرةً دون تنفيذ البلوك الرئيسي.
+    """
+
+    global updater, dispatcher, job_queue, JOB_QUEUE_STARTED
+
+    if updater is not None and dispatcher is not None:
+        if start_jobs and WEBHOOK_URL and job_queue and not JOB_QUEUE_STARTED:
+            try:
+                job_queue.start()
+                JOB_QUEUE_STARTED = True
+                logger.info("✅ تم تشغيل JobQueue في وضع Webhook (تهيئة تلقائية)")
+            except Exception as e:
+                logger.error(
+                    "❌ خطأ في تشغيل JobQueue أثناء التهيئة التلقائية: %s", e, exc_info=True
+                )
+        return
+
+    logger.info("⚙️ تهيئة البوت تلقائيًا...")
+    try:
+        updater = Updater(BOT_TOKEN, use_context=True, request_kwargs=REQUEST_KWARGS)
+        dispatcher = updater.dispatcher
+        job_queue = updater.job_queue
+
+        start_bot()
+
+        if start_jobs and WEBHOOK_URL and job_queue:
+            try:
+                job_queue.start()
+                JOB_QUEUE_STARTED = True
+                logger.info("✅ تم تشغيل JobQueue بعد التهيئة التلقائية")
+            except Exception as e:
+                logger.error(
+                    "❌ خطأ في تشغيل JobQueue بعد التهيئة التلقائية: %s", e, exc_info=True
+                )
+
+    except Exception as e:
+        logger.error(f"❌ خطأ في التهيئة التلقائية للبوت: {e}", exc_info=True)
+        raise
+
+
 # =================== قسم الدورات - Handlers الفعلية ===================
 
 # ثوابت Firestore
@@ -13643,30 +13692,16 @@ if __name__ == "__main__":
     # تهيئة Firebase/Firestore مرة واحدة
     initialize_firebase()
     
-    # تهيئة Updater و Dispatcher و job_queue مرة واحدة
     try:
-        updater = Updater(BOT_TOKEN, use_context=True, request_kwargs=REQUEST_KWARGS)
-        dispatcher = updater.dispatcher
-        job_queue = updater.job_queue
-    except Exception as e:
-        logger.error(f"❌ خطأ في تهيئة Updater: {e}", exc_info=True)
-        exit(1)
-        
-    try:
+        # تهيئة البوت (مهمة في بيئات الاستضافة التي لا تنفذ البلوك الرئيسي تلقائيًا)
+        initialize_telegram_bot()
+
         if WEBHOOK_URL:
             # وضع Webhook
             logger.info("🌐 تشغيل البوت في وضع Webhook...")
 
-            # تهيئة البوت (تسجيل handlers والمهام اليومية)
-            start_bot()
-
-            # JobQueue لا يعمل تلقائيًا في وضع Webhook المخصّص
-            try:
-                if job_queue:
-                    job_queue.start()
-                    logger.info("✅ تم تشغيل JobQueue في وضع Webhook")
-            except Exception as e:
-                logger.error(f"❌ خطأ في تشغيل JobQueue: {e}", exc_info=True)
+            # تهيئة البوت وتشغيل JobQueue إذا لم يكن مفعلاً
+            initialize_telegram_bot(start_jobs=True)
 
             # إعداد Webhook
             updater.bot.set_webhook(
@@ -13690,9 +13725,9 @@ if __name__ == "__main__":
                 logger.info("✅ تم حذف الويب هوك القديم")
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في حذف الويب هوك: {e}")
-            
-            # تهيئة البوت
-            start_bot()
+
+            # التأكد من تهيئة البوت (Polling يشغّل JobQueue تلقائيًا)
+            initialize_telegram_bot()
 
             # بدء Polling
             updater.start_polling(allowed_updates=ALLOWED_UPDATES)
