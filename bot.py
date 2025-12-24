@@ -3660,16 +3660,23 @@ def _finalize_book_creation(update: Update, context: CallbackContext, ctx: Dict)
         update.message.reply_text("تعذر حفظ الكتاب حالياً.", reply_markup=BOOKS_ADMIN_MENU_KB)
 
 
+def _get_admin_route(context: CallbackContext) -> str:
+    return context.user_data.get("admin_last_route", "admin_all:none:0")
+
+
+def _set_admin_route(context: CallbackContext, route: str):
+    try:
+        context.user_data["admin_last_route"] = route
+    except Exception:
+        pass
+
+
 def _admin_books_keyboard(
     items: List[Dict],
     page: int,
     total_pages: int,
-    source: str,
-    category_id: str = None,
-    search_token: str = None,
 ) -> InlineKeyboardMarkup:
     rows = []
-    route = _encode_route(source, category_id, search_token, page)
     for book in items:
         book_id = book.get("id")
         title = book.get("title", "كتاب")
@@ -3677,24 +3684,18 @@ def _admin_books_keyboard(
             [
                 InlineKeyboardButton(
                     f"✏️ {title}",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}:{route}",
+                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}",
                 )
             ]
         )
     nav_row = []
     if page > 0:
         nav_row.append(
-            InlineKeyboardButton(
-                "⬅️ السابق",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{_encode_route(source, category_id, search_token, page - 1)}",
-            )
+            InlineKeyboardButton("⬅️ السابق", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list_prev")
         )
     if page < total_pages - 1:
         nav_row.append(
-            InlineKeyboardButton(
-                "التالي ➡️",
-                callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{_encode_route(source, category_id, search_token, page + 1)}",
-            )
+            InlineKeyboardButton("التالي ➡️", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list_next")
         )
     if nav_row:
         rows.append(nav_row)
@@ -3713,10 +3714,12 @@ def _send_admin_books_list(
     search_token: str = None,
     page: int = 0,
     from_callback: bool = False,
-): 
+):
     page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
     start_index = safe_page * BOOKS_PAGE_SIZE
     text_lines = [title, f"الصفحة {safe_page + 1} من {total_pages}", ""]
+    route = _encode_route(source, category_id, search_token, safe_page)
+    _set_admin_route(context, route)
     if not books:
         text_lines.append("لا توجد كتب متاحة.")
     else:
@@ -3726,7 +3729,7 @@ def _send_admin_books_list(
             else:
                 status_label = "✅" if book.get("is_active", True) else "⛔️ مخفي"
             text_lines.append(f"{idx}. {book.get('title', 'كتاب')} — {book.get('author', 'مؤلف')} ({status_label})")
-    kb = _admin_books_keyboard(page_items if books else [], safe_page, total_pages, source, category_id, search_token)
+    kb = _admin_books_keyboard(page_items if books else [], safe_page, total_pages)
     # إبقاء وضع الإدارة مفعّل فقط لمنع تداخل الراوترات النصية، بدون التأثير على الـ callbacks
     context.user_data["books_admin_mode"] = True
     text = "\n".join(text_lines)
@@ -3776,26 +3779,26 @@ def open_books_admin_list(update_or_query, context: CallbackContext, category_id
     _send_admin_books_list(update_or_query, context, books, title, source="admin_cat" if category_id else "admin_all", category_id=category_id, page=page, from_callback=from_callback)
 
 
-def _book_admin_detail_keyboard(book_id: str, route: str, is_active: bool, is_deleted: bool) -> InlineKeyboardMarkup:
+def _book_admin_detail_keyboard(book_id: str, is_active: bool, is_deleted: bool) -> InlineKeyboardMarkup:
     toggle_text = "👁️ إخفاء" if is_active else "✅ تفعيل"
     delete_text = "🗑 حذف منطقي" if not is_deleted else "♻️ استرجاع"
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("✏️ تعديل العنوان", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:title:{book_id}:{route}")],
-            [InlineKeyboardButton("✍️ تعديل المؤلف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:author:{book_id}:{route}")],
-            [InlineKeyboardButton("📝 تعديل الوصف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:description:{book_id}:{route}")],
-            [InlineKeyboardButton("🏷️ تعديل الكلمات المفتاحية", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:tags:{book_id}:{route}")],
-            [InlineKeyboardButton("🗂 تغيير التصنيف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:category:{book_id}:{route}")],
-            [InlineKeyboardButton("🖼 تغيير الغلاف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:cover:{book_id}:{route}")],
-            [InlineKeyboardButton("📄 تغيير ملف PDF", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:pdf:{book_id}:{route}")],
-            [InlineKeyboardButton(toggle_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_toggle:{book_id}:{route}")],
-            [InlineKeyboardButton(delete_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_delete:{book_id}:{route}")],
-            [InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list:{route}")],
+            [InlineKeyboardButton("✏️ تعديل العنوان", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:title:{book_id}")],
+            [InlineKeyboardButton("✍️ تعديل المؤلف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:author:{book_id}")],
+            [InlineKeyboardButton("📝 تعديل الوصف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:description:{book_id}")],
+            [InlineKeyboardButton("🏷️ تعديل الكلمات المفتاحية", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:tags:{book_id}")],
+            [InlineKeyboardButton("🗂 تغيير التصنيف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:category:{book_id}")],
+            [InlineKeyboardButton("🖼 تغيير الغلاف", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:cover:{book_id}")],
+            [InlineKeyboardButton("📄 تغيير ملف PDF", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:pdf:{book_id}")],
+            [InlineKeyboardButton(toggle_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_toggle:{book_id}")],
+            [InlineKeyboardButton(delete_text, callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_delete:{book_id}")],
+            [InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_list_back")],
         ]
     )
 
 
-def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: str, route: str):
+def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: str, route: str = None):
     book = get_book_by_id(book_id)
     if not book:
         q = getattr(update, "callback_query", None)
@@ -3811,7 +3814,9 @@ def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: s
         cat = get_book_category(book.get("category_id"))
         category_name = cat.get("name") if cat else book.get("category_name_snapshot")
     caption = _book_caption(book, category_name=category_name)
-    kb = _book_admin_detail_keyboard(book_id, route, book.get("is_active", True), book.get("is_deleted", False))
+    active_route = route or _get_admin_route(context)
+    _set_admin_route(context, active_route)
+    kb = _book_admin_detail_keyboard(book_id, book.get("is_active", True), book.get("is_deleted", False))
     q = getattr(update, "callback_query", None)
 
     # 1) لو جاء من Inline button
@@ -3856,19 +3861,25 @@ def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: s
         return
 
 
-def _admin_set_book_category(update: Update, context: CallbackContext, book_id: str, category_id: str, route: str):
+def _admin_set_book_category(update: Update, context: CallbackContext, book_id: str, category_id: str, route: str = None):
     cat = get_book_category(category_id)
     if not cat or not cat.get("is_active", True):
         update.callback_query.answer("التصنيف غير متاح.", show_alert=True)
         return
     update_book_record(book_id, category_id=category_id, category_name_snapshot=cat.get("name"))
     update.callback_query.answer("تم تحديث التصنيف.")
-    _send_admin_book_detail(update, context, book_id, route)
+    _send_admin_book_detail(update, context, book_id, route or _get_admin_route(context))
 
 
-def _start_book_field_edit(query: Update.callback_query, field: str, book_id: str, route: str):
+def _start_book_field_edit(
+    query: Update.callback_query, context: CallbackContext, field: str, book_id: str, route: str = None
+):
     user_id = query.from_user.id
-    BOOK_EDIT_CONTEXT[user_id] = {"book_id": book_id, "field": field, "route": route}
+    BOOK_EDIT_CONTEXT[user_id] = {
+        "book_id": book_id,
+        "field": field,
+        "route": route or _get_admin_route(context),
+    }
     if field in {"title", "author", "description", "tags"}:
         WAITING_BOOK_EDIT_FIELD.add(user_id)
         prompt = {
@@ -3889,12 +3900,12 @@ def _start_book_field_edit(query: Update.callback_query, field: str, book_id: st
             [
                 InlineKeyboardButton(
                     cat.get("name", "تصنيف"),
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_category:{book_id}:{cat.get('id')}:{route}",
+                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book_category:{book_id}:{cat.get('id')}",
                 )
             ]
             for cat in categories
         ]
-        buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}:{route}")])
+        buttons.append([InlineKeyboardButton("🔙 رجوع", callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}")])
         query.message.reply_text("اختر التصنيف الجديد:", reply_markup=InlineKeyboardMarkup(buttons))
     elif field == "cover":
         query.answer()
@@ -4100,8 +4111,57 @@ def handle_books_callback(update: Update, context: CallbackContext):
         query.message.reply_text("تم إلغاء إضافة الكتاب.", reply_markup=BOOKS_ADMIN_MENU_KB)
         return
 
+    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_list_prev":
+        route_info = _parse_route(_get_admin_route(context))
+        new_page = max(route_info.get("page", 0) - 1, 0)
+        category_id = route_info.get("category_id")
+        search_token = route_info.get("search_token")
+        source = route_info.get("source")
+        open_books_admin_list(
+            update,
+            context,
+            category_id=category_id if source == "admin_cat" else None,
+            page=new_page,
+            search_token=search_token if source == "admin_search" else None,
+            from_callback=True,
+        )
+        return
+
+    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_list_next":
+        route_info = _parse_route(_get_admin_route(context))
+        new_page = route_info.get("page", 0) + 1
+        category_id = route_info.get("category_id")
+        search_token = route_info.get("search_token")
+        source = route_info.get("source")
+        open_books_admin_list(
+            update,
+            context,
+            category_id=category_id if source == "admin_cat" else None,
+            page=new_page,
+            search_token=search_token if source == "admin_search" else None,
+            from_callback=True,
+        )
+        return
+
+    if data == f"{BOOKS_CALLBACK_PREFIX}:admin_list_back":
+        route_info = _parse_route(_get_admin_route(context))
+        source = route_info.get("source")
+        page = route_info.get("page", 0)
+        category_id = route_info.get("category_id")
+        search_token = route_info.get("search_token")
+        open_books_admin_list(
+            update,
+            context,
+            category_id=category_id if source == "admin_cat" else None,
+            page=page,
+            search_token=search_token if source == "admin_search" else None,
+            from_callback=True,
+        )
+        return
+
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_list:"):
         route = data.split(":", 2)[2]
+        _set_admin_route(context, route)
         route_info = _parse_route(route)
         source = route_info.get("source")
         page = route_info.get("page", 0)
@@ -4112,10 +4172,10 @@ def handle_books_callback(update: Update, context: CallbackContext):
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book:"):
         parts = data.split(":", 3)
-        if len(parts) < 4:
+        if len(parts) < 3:
             return
         book_id = parts[2]
-        route = parts[3]
+        route = parts[3] if len(parts) > 3 else _get_admin_route(context)
         query.answer()
         try:
             _send_admin_book_detail(update, context, book_id, route)
@@ -4137,18 +4197,18 @@ def handle_books_callback(update: Update, context: CallbackContext):
             return
         field = parts[2]
         book_id = parts[3]
-        route = ":".join(parts[4:]) if len(parts) > 4 else "admin_all:none:0"
+        route = ":".join(parts[4:]) if len(parts) > 4 else _get_admin_route(context)
         logger.info("[BOOKS][FIELD] field=%s book_id=%s route=%s", field, book_id, route)
-        _start_book_field_edit(query, field, book_id, route)
+        _start_book_field_edit(query, context, field, book_id, route)
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_category:"):
         parts = data.split(":")
-        if len(parts) < 6:
+        if len(parts) < 4:
             return
-        book_id = parts[3]
-        category_id = parts[4]
-        route = ":".join(parts[5:])
+        book_id = parts[2]
+        category_id = parts[3]
+        route = ":".join(parts[4:]) if len(parts) > 4 else _get_admin_route(context)
         _admin_set_book_category(update, context, book_id, category_id, route)
         return
 
@@ -4157,7 +4217,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
         if len(parts) < 3:
             return
         book_id = parts[2]
-        route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
+        route = ":".join(parts[3:]) if len(parts) > 3 else _get_admin_route(context)
         logger.info("[BOOKS][TOGGLE] book_id=%s route=%s", book_id, route)
         _handle_admin_book_toggle(update, context, book_id, route)
         return
@@ -4167,7 +4227,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
         if len(parts) < 3:
             return
         book_id = parts[2]
-        route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
+        route = ":".join(parts[3:]) if len(parts) > 3 else _get_admin_route(context)
         logger.info("[BOOKS][DELETE] book_id=%s route=%s", book_id, route)
         _handle_admin_book_delete(update, context, book_id, route)
         return
