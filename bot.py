@@ -8610,6 +8610,37 @@ def handle_support_photo(update: Update, context: CallbackContext):
     is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     photos = update.message.photo or []
+
+    # ✅ إذا ما كانت Photo، جرّب Document (صورة بدون ضغط)
+    doc = getattr(update.message, "document", None)
+    if (not photos) and doc and (doc.mime_type or "").startswith("image/"):
+        # نعاملها كصورة/ملف صورة
+        best_file_id = doc.file_id
+        caption = update.message.caption or ""
+        text = _support_header(user) + (f"\n\n📝 تعليق المستخدم:\n{caption}" if caption else "")
+
+        record = data.get(str(user_id), {})
+        gender = record.get("gender")
+
+        if gender == "female":
+            targets = [admin_id for admin_id in [SUPERVISOR_ID, ADMIN_ID] if admin_id]
+        else:
+            targets = [ADMIN_ID] if ADMIN_ID else []
+
+        for admin_id in targets:
+            try:
+                sent = context.bot.send_document(chat_id=admin_id, document=best_file_id, caption=text)
+                _remember_support_message(admin_id, sent, user_id)
+            except Exception as e:
+                logger.exception("Support image-document forward failed", exc_info=e)
+
+        update.message.reply_text(
+            _support_confirmation_text(record.get("gender"), True),
+            reply_markup=SUPPORT_SESSION_KB,
+        )
+        raise DispatcherHandlerStop()
+
+    # ✅ المسار العادي للـ Photo
     if not photos:
         return
 
@@ -11227,7 +11258,15 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private
+        support_photo_filter = (
+            (
+                Filters.photo
+                | Filters.document.mime_type("image/jpeg")
+                | Filters.document.mime_type("image/png")
+                | Filters.document.mime_type("image/webp")
+            )
+            & Filters.chat_type.private
+        )
         support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
         support_video_filter = Filters.video & Filters.chat_type.private
         support_video_note_filter = Filters.video_note & Filters.chat_type.private
@@ -11261,7 +11300,6 @@ def start_bot():
             MessageHandler(
                 support_photo_filter,
                 handle_support_photo,
-                run_async=True,
             ),
             group=0,
         )
