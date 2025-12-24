@@ -3247,8 +3247,11 @@ def _mark_admin_books_mode(context: CallbackContext, active: bool):
 
     if active:
         context.user_data["books_admin_mode"] = True
+        # تأكد من إزالة أي لوحة رد سابقة مرة واحدة فقط في جلسة الإدارة
+        context.user_data.pop("admin_books_reply_kb_removed", None)
     else:
         context.user_data.pop("books_admin_mode", None)
+        context.user_data.pop("admin_books_reply_kb_removed", None)
 
 
 def books_search_text_router(update: Update, context: CallbackContext):
@@ -3668,11 +3671,13 @@ def _admin_books_keyboard(
     rows = []
     route = _encode_route(source, category_id, search_token, page)
     for book in items:
+        book_id = book.get("id")
+        title = book.get("title", "كتاب")
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"✏️ {book.get('title', 'كتاب')}",
-                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book.get('id')}:{route}",
+                    f"✏️ {title}",
+                    callback_data=f"{BOOKS_CALLBACK_PREFIX}:admin_book:{book_id}:{route}",
                 )
             ]
         )
@@ -3698,20 +3703,6 @@ def _admin_books_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def _admin_books_reply_keyboard(page_items, start_index: int):
-    rows = []
-    pick = {}
-    for i, b in enumerate(page_items, start=1 + start_index):
-        title = (b.get("title") or "كتاب").strip()
-        # نخلي الزر يحمل رقم + عنوان عشان نتجنب التكرار
-        label = f"{i}. {title} ✏️"
-        rows.append([KeyboardButton(label)])
-        pick[label] = b.get("id")
-    rows.append([KeyboardButton("🔎 بحث إداري")])
-    rows.append([KeyboardButton("🔙 رجوع")])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True), pick
-
-
 def _send_admin_books_list(
     update_or_query,
     context: CallbackContext,
@@ -3722,7 +3713,7 @@ def _send_admin_books_list(
     search_token: str = None,
     page: int = 0,
     from_callback: bool = False,
-):
+): 
     page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
     start_index = safe_page * BOOKS_PAGE_SIZE
     text_lines = [title, f"الصفحة {safe_page + 1} من {total_pages}", ""]
@@ -3736,25 +3727,28 @@ def _send_admin_books_list(
                 status_label = "✅" if book.get("is_active", True) else "⛔️ مخفي"
             text_lines.append(f"{idx}. {book.get('title', 'كتاب')} — {book.get('author', 'مؤلف')} ({status_label})")
     kb = _admin_books_keyboard(page_items if books else [], safe_page, total_pages, source, category_id, search_token)
-    reply_kb, pick_map = _admin_books_reply_keyboard(page_items, start_index)
-    # نخزنها لكل مستخدم أدمن فقط
-    context.user_data["admin_books_pick_map"] = pick_map
-    context.user_data["admin_books_last_route"] = _encode_route(source, category_id, search_token, safe_page)
-    # تفعيل وضع إدارة الكتب
+    # إبقاء وضع الإدارة مفعّل فقط لمنع تداخل الراوترات النصية، بدون التأثير على الـ callbacks
     context.user_data["books_admin_mode"] = True
     text = "\n".join(text_lines)
     query = getattr(update_or_query, "callback_query", None)
     message_obj = getattr(update_or_query, "message", None) or getattr(query, "message", None)
+    if message_obj and not from_callback:
+        # تأكد من إزالة أي ReplyKeyboard قديم قبل عرض لوحة Inline الحالية مرة واحدة فقط
+        kb_removed = context.user_data.get("admin_books_reply_kb_removed")
+        if not kb_removed:
+            try:
+                message_obj.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
+                context.user_data["admin_books_reply_kb_removed"] = True
+            except Exception:
+                pass
     if from_callback and query:
         try:
             query.edit_message_text(text, reply_markup=kb)
-            query.message.reply_text("اختر كتابًا:", reply_markup=reply_kb)
             return
         except Exception:
             pass
     if message_obj:
         message_obj.reply_text(text, reply_markup=kb)
-        message_obj.reply_text("اختر كتابًا:", reply_markup=reply_kb)
 
 
 def open_books_admin_list(update_or_query, context: CallbackContext, category_id: str = None, page: int = 0, search_token: str = None, from_callback: bool = False):
@@ -4009,6 +4003,8 @@ def handle_books_callback(update: Update, context: CallbackContext):
     user_id = query.from_user.id
     is_privileged = _ensure_is_admin_or_supervisor(user_id)
 
+    logger.info("[BOOKS][CB] data=%s user=%s", data, user_id)
+
     # إدارة المكتبة للأدمن/المشرفة
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin"):
         if not is_privileged:
@@ -4097,6 +4093,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
             return
         book_id = parts[2]
         route = parts[3]
+        query.answer()
         _send_admin_book_detail(update, context, book_id, route)
         return
 
@@ -4107,6 +4104,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
         field = parts[2]
         book_id = parts[3]
         route = ":".join(parts[4:]) if len(parts) > 4 else "admin_all:none:0"
+        logger.info("[BOOKS][FIELD] field=%s book_id=%s route=%s", field, book_id, route)
         _start_book_field_edit(query, field, book_id, route)
         return
 
@@ -4126,6 +4124,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
             return
         book_id = parts[2]
         route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
+        logger.info("[BOOKS][TOGGLE] book_id=%s route=%s", book_id, route)
         _handle_admin_book_toggle(update, context, book_id, route)
         return
 
@@ -4135,6 +4134,7 @@ def handle_books_callback(update: Update, context: CallbackContext):
             return
         book_id = parts[2]
         route = ":".join(parts[3:]) if len(parts) > 3 else "admin_all:none:0"
+        logger.info("[BOOKS][DELETE] book_id=%s route=%s", book_id, route)
         _handle_admin_book_delete(update, context, book_id, route)
         return
 
@@ -8947,18 +8947,36 @@ def handle_text(update: Update, context: CallbackContext):
     fresh_record = get_user_record_by_id(user_id) or record
     in_admin_books_mode = _ensure_is_admin_or_supervisor(user_id) and context.user_data.get("books_admin_mode")
 
+    if user_id in WAITING_BOOK_EDIT_FIELD:
+        ctx = BOOK_EDIT_CONTEXT.get(user_id, {})
+        book_id = ctx.get("book_id")
+        field = ctx.get("field")
+        route = ctx.get("route")
+        if not book_id or not field:
+            WAITING_BOOK_EDIT_FIELD.discard(user_id)
+            BOOK_EDIT_CONTEXT.pop(user_id, None)
+            msg.reply_text("حدث خطأ أثناء التعديل.", reply_markup=BOOKS_ADMIN_MENU_KB)
+            return
+        update_data = {}
+        if field == "tags":
+            update_data["tags"] = _parse_tags_input(text)
+        elif field == "description" and text.strip().lower() in {"تخطي", "skip"}:
+            update_data["description"] = ""
+        else:
+            update_data[field] = text
+        update_book_record(book_id, **update_data)
+        WAITING_BOOK_EDIT_FIELD.discard(user_id)
+        BOOK_EDIT_CONTEXT.pop(user_id, None)
+        msg.reply_text("تم تحديث البيانات.", reply_markup=BOOKS_ADMIN_MENU_KB)
+        try:
+            _send_admin_book_detail(update, context, book_id, route)
+        except Exception:
+            pass
+        return
+
     if in_admin_books_mode:
         if text == "🔎 بحث إداري":
             prompt_admin_books_search_text(update, context)
-            return
-
-        pick = context.user_data.get("admin_books_pick_map") or {}
-        if text in pick:
-            book_id = pick[text]
-            # افتح تفاصيل الكتاب (ابحث عن هذه الدالة عندكم)
-            # غالباً اسمها: _send_admin_book_detail أو open_admin_book_detail
-            route = context.user_data.get("admin_books_last_route") or "admin_all"
-            _send_admin_book_detail(update, context, book_id, route=route)
             return
 
         if text == "🔙 رجوع":
@@ -9751,33 +9769,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if user_id in WAITING_BOOK_ADD_PDF:
         msg.reply_text("أرسل ملف الـ PDF للكتاب.", reply_markup=CANCEL_KB)
-        return
-
-    if user_id in WAITING_BOOK_EDIT_FIELD:
-        ctx = BOOK_EDIT_CONTEXT.get(user_id, {})
-        book_id = ctx.get("book_id")
-        field = ctx.get("field")
-        route = ctx.get("route")
-        if not book_id or not field:
-            WAITING_BOOK_EDIT_FIELD.discard(user_id)
-            BOOK_EDIT_CONTEXT.pop(user_id, None)
-            msg.reply_text("حدث خطأ أثناء التعديل.", reply_markup=BOOKS_ADMIN_MENU_KB)
-            return
-        update_data = {}
-        if field == "tags":
-            update_data["tags"] = _parse_tags_input(text)
-        elif field == "description" and text.strip().lower() in {"تخطي", "skip"}:
-            update_data["description"] = ""
-        else:
-            update_data[field] = text
-        update_book_record(book_id, **update_data)
-        WAITING_BOOK_EDIT_FIELD.discard(user_id)
-        BOOK_EDIT_CONTEXT.pop(user_id, None)
-        msg.reply_text("تم تحديث البيانات.", reply_markup=BOOKS_ADMIN_MENU_KB)
-        try:
-            _send_admin_book_detail(update, context, book_id, route)
-        except Exception:
-            pass
         return
 
     # إدارة الجرعة التحفيزية
@@ -11250,6 +11241,12 @@ def _ensure_storage_channel_admin(bot):
         logger.warning("⚠️ تعذر التحقق من صلاحيات قناة التخزين: %s", e)
 
 
+def error_handler(update: Update, context: CallbackContext):
+    """Log unexpected errors to help diagnose callback issues."""
+
+    logger.exception("Unhandled error: %s", context.error, exc_info=context.error)
+
+
 def start_bot():
     """بدء البوت"""
     global IS_RUNNING, job_queue, dispatcher
@@ -11307,8 +11304,13 @@ def start_bot():
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_confirm_callback, pattern=r"^confirm_delete_benefit_\d+$|^cancel_delete_benefit$|^confirm_admin_delete_benefit_\d+$|^cancel_admin_delete_benefit$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_courses_callback, pattern=r"^COURSES:"))
         dispatcher.add_handler(CallbackQueryHandler(handle_audio_callback, pattern=r"^audio_"))
-        dispatcher.add_handler(CallbackQueryHandler(handle_books_callback, pattern=r"^BOOKS:"))
+        dispatcher.add_handler(
+            CallbackQueryHandler(
+                handle_books_callback, pattern=rf"^{BOOKS_CALLBACK_PREFIX}:"
+            )
+        )
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^support_open$"))
+        dispatcher.add_error_handler(error_handler)
 
         audio_document_filter = (
             Filters.document.audio
