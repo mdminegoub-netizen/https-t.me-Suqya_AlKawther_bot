@@ -11227,12 +11227,10 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
-        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private & Filters.user(
-            WAITING_SUPPORT
-        )
-        support_video_filter = Filters.video & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
-        support_video_note_filter = Filters.video_note & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_photo_filter = Filters.photo & Filters.chat_type.private
+        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
+        support_video_filter = Filters.video & Filters.chat_type.private
+        support_video_note_filter = Filters.video_note & Filters.chat_type.private
 
         dispatcher.add_handler(
             MessageHandler(
@@ -11264,32 +11262,38 @@ def start_bot():
                 support_photo_filter,
                 handle_support_photo,
                 run_async=True,
-            )
+            ),
+            group=0,
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                support_audio_filter,
+                handle_support_audio,
+            ),
+            group=0,
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_filter,
+                handle_support_video,
+            ),
+            group=0,
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_note_filter,
+                handle_support_video_note,
+            ),
+            group=0,
         )
 
         dispatcher.add_handler(
             MessageHandler(
                 book_media_filter,
                 handle_book_media_message,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_audio_filter,
-                handle_support_audio,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_filter,
-                handle_support_video,
-            )
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_note_filter,
-                handle_support_video_note,
-            )
+            ),
+            group=1,
         )
 
         dispatcher.add_handler(
