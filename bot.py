@@ -3698,6 +3698,20 @@ def _admin_books_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
+def _admin_books_reply_keyboard(page_items, start_index: int):
+    rows = []
+    pick = {}
+    for i, b in enumerate(page_items, start=1 + start_index):
+        title = (b.get("title") or "كتاب").strip()
+        # نخلي الزر يحمل رقم + عنوان عشان نتجنب التكرار
+        label = f"{i}. {title} ✏️"
+        rows.append([KeyboardButton(label)])
+        pick[label] = b.get("id")
+    rows.append([KeyboardButton("🔎 بحث إداري")])
+    rows.append([KeyboardButton("🔙 رجوع")])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True), pick
+
+
 def _send_admin_books_list(
     update_or_query,
     context: CallbackContext,
@@ -3710,11 +3724,11 @@ def _send_admin_books_list(
     from_callback: bool = False,
 ):
     page_items, safe_page, total_pages = _paginate_items(books, page, BOOKS_PAGE_SIZE)
+    start_index = safe_page * BOOKS_PAGE_SIZE
     text_lines = [title, f"الصفحة {safe_page + 1} من {total_pages}", ""]
     if not books:
         text_lines.append("لا توجد كتب متاحة.")
     else:
-        start_index = safe_page * BOOKS_PAGE_SIZE
         for idx, book in enumerate(page_items, start=1 + start_index):
             if book.get("is_deleted"):
                 status_label = "🗑 محذوف"
@@ -3722,17 +3736,23 @@ def _send_admin_books_list(
                 status_label = "✅" if book.get("is_active", True) else "⛔️ مخفي"
             text_lines.append(f"{idx}. {book.get('title', 'كتاب')} — {book.get('author', 'مؤلف')} ({status_label})")
     kb = _admin_books_keyboard(page_items if books else [], safe_page, total_pages, source, category_id, search_token)
+    reply_kb, pick_map = _admin_books_reply_keyboard(page_items, start_index)
+    # نخزنها لكل مستخدم أدمن فقط
+    context.user_data["admin_books_pick_map"] = pick_map
+    # تفعيل وضع إدارة الكتب
+    context.user_data["books_admin_mode"] = True
     text = "\n".join(text_lines)
     query = getattr(update_or_query, "callback_query", None)
     message_obj = getattr(update_or_query, "message", None) or getattr(query, "message", None)
     if from_callback and query:
         try:
             query.edit_message_text(text, reply_markup=kb)
+            query.message.reply_text("اختر كتابًا:", reply_markup=reply_kb)
             return
         except Exception:
             pass
     if message_obj:
-        message_obj.reply_text(text, reply_markup=kb)
+        message_obj.reply_text(text, reply_markup=reply_kb)
 
 
 def open_books_admin_list(update_or_query, context: CallbackContext, category_id: str = None, page: int = 0, search_token: str = None, from_callback: bool = False):
@@ -3873,6 +3893,12 @@ def start_admin_book_search_prompt(query: Update.callback_query):
     WAITING_BOOK_ADMIN_SEARCH.add(user_id)
     query.answer()
     query.message.reply_text("أرسل الآن عبارة البحث للبحث الإداري:", reply_markup=CANCEL_KB)
+
+
+def prompt_admin_books_search_text(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    WAITING_BOOK_ADMIN_SEARCH.add(user_id)
+    update.message.reply_text("أرسل الآن عبارة البحث للبحث الإداري:", reply_markup=CANCEL_KB)
 
 
 def handle_admin_book_search_input(update: Update, context: CallbackContext):
@@ -8897,6 +8923,24 @@ def handle_text(update: Update, context: CallbackContext):
     record = get_user_record(user) or {}
     fresh_record = get_user_record_by_id(user_id) or record
     in_admin_books_mode = _ensure_is_admin_or_supervisor(user_id) and context.user_data.get("books_admin_mode")
+
+    if in_admin_books_mode:
+        if text == "🔎 بحث إداري":
+            prompt_admin_books_search_text(update, context)
+            return
+
+        pick = context.user_data.get("admin_books_pick_map") or {}
+        if text in pick:
+            book_id = pick[text]
+            # افتح تفاصيل الكتاب (ابحث عن هذه الدالة عندكم)
+            # غالباً اسمها: _send_admin_book_detail أو open_admin_book_detail
+            _send_admin_book_detail(update, context, book_id, route="admin_all")
+            return
+
+        if text == "🔙 رجوع":
+            # رجوع لقائمة إدارة الكتب
+            open_books_admin_menu(update, context)
+            return
 
     # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
     if not in_admin_books_mode and (user_id in WAITING_BOOK_SEARCH or fresh_record.get("book_search_waiting", False)):
