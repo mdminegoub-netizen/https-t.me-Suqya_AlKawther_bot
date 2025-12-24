@@ -3819,17 +3819,40 @@ def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: s
         try:
             q.edit_message_text(caption, reply_markup=kb, parse_mode="HTML")
         except Exception:
+            logger.exception(
+                "[BOOKS][ADMIN_BOOK] Failed to edit message for book_id=%s route=%s",
+                book_id,
+                route,
+            )
             # fallback
             try:
                 q.message.reply_text(caption, reply_markup=kb, parse_mode="HTML")
             except Exception:
-                pass
+                try:
+                    # جرب مرة بدون parse_mode لو كان التنسيق هو المشكلة
+                    q.message.reply_text(caption, reply_markup=kb)
+                except Exception:
+                    logger.exception(
+                        "[BOOKS][ADMIN_BOOK] Fallback send failed for book_id=%s route=%s",
+                        book_id,
+                        route,
+                    )
         return
 
     # 2) لو جاء من ReplyKeyboard / رسالة نصية
     msg = getattr(update, "message", None)
     if msg:
-        msg.reply_text(caption, reply_markup=kb, parse_mode="HTML")
+        try:
+            msg.reply_text(caption, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            try:
+                msg.reply_text(caption, reply_markup=kb)
+            except Exception:
+                logger.exception(
+                    "[BOOKS][ADMIN_BOOK] Failed to send detail via message for book_id=%s route=%s",
+                    book_id,
+                    route,
+                )
         return
 
 
@@ -4094,7 +4117,18 @@ def handle_books_callback(update: Update, context: CallbackContext):
         book_id = parts[2]
         route = parts[3]
         query.answer()
-        _send_admin_book_detail(update, context, book_id, route)
+        try:
+            _send_admin_book_detail(update, context, book_id, route)
+        except Exception:
+            logger.exception(
+                "[BOOKS][ADMIN_BOOK] Failed to render book detail | book_id=%s route=%s",
+                book_id,
+                route,
+            )
+            try:
+                query.message.reply_text("تعذر فتح تفاصيل الكتاب حاليًا.")
+            except Exception:
+                pass
         return
 
     if data.startswith(f"{BOOKS_CALLBACK_PREFIX}:admin_book_field:"):
