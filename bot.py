@@ -3739,6 +3739,7 @@ def _send_admin_books_list(
     reply_kb, pick_map = _admin_books_reply_keyboard(page_items, start_index)
     # نخزنها لكل مستخدم أدمن فقط
     context.user_data["admin_books_pick_map"] = pick_map
+    context.user_data["admin_books_last_route"] = _encode_route(source, category_id, search_token, safe_page)
     # تفعيل وضع إدارة الكتب
     context.user_data["books_admin_mode"] = True
     text = "\n".join(text_lines)
@@ -3752,7 +3753,8 @@ def _send_admin_books_list(
         except Exception:
             pass
     if message_obj:
-        message_obj.reply_text(text, reply_markup=reply_kb)
+        message_obj.reply_text(text, reply_markup=kb)
+        message_obj.reply_text("اختر كتابًا:", reply_markup=reply_kb)
 
 
 def open_books_admin_list(update_or_query, context: CallbackContext, category_id: str = None, page: int = 0, search_token: str = None, from_callback: bool = False):
@@ -3802,7 +3804,13 @@ def _book_admin_detail_keyboard(book_id: str, route: str, is_active: bool, is_de
 def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: str, route: str):
     book = get_book_by_id(book_id)
     if not book:
-        update.callback_query.answer("الكتاب غير موجود.", show_alert=True)
+        q = getattr(update, "callback_query", None)
+        if q:
+            q.answer("الكتاب غير موجود.", show_alert=True)
+        else:
+            msg = getattr(update, "message", None)
+            if msg:
+                msg.reply_text("الكتاب غير موجود.")
         return
     category_name = None
     if book.get("category_id"):
@@ -3810,10 +3818,25 @@ def _send_admin_book_detail(update: Update, context: CallbackContext, book_id: s
         category_name = cat.get("name") if cat else book.get("category_name_snapshot")
     caption = _book_caption(book, category_name=category_name)
     kb = _book_admin_detail_keyboard(book_id, route, book.get("is_active", True), book.get("is_deleted", False))
-    try:
-        update.callback_query.edit_message_text(caption, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        update.callback_query.message.reply_text(caption, reply_markup=kb, parse_mode="HTML")
+    q = getattr(update, "callback_query", None)
+
+    # 1) لو جاء من Inline button
+    if q:
+        try:
+            q.edit_message_text(caption, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            # fallback
+            try:
+                q.message.reply_text(caption, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                pass
+        return
+
+    # 2) لو جاء من ReplyKeyboard / رسالة نصية
+    msg = getattr(update, "message", None)
+    if msg:
+        msg.reply_text(caption, reply_markup=kb, parse_mode="HTML")
+        return
 
 
 def _admin_set_book_category(update: Update, context: CallbackContext, book_id: str, category_id: str, route: str):
@@ -8934,7 +8957,8 @@ def handle_text(update: Update, context: CallbackContext):
             book_id = pick[text]
             # افتح تفاصيل الكتاب (ابحث عن هذه الدالة عندكم)
             # غالباً اسمها: _send_admin_book_detail أو open_admin_book_detail
-            _send_admin_book_detail(update, context, book_id, route="admin_all")
+            route = context.user_data.get("admin_books_last_route") or "admin_all"
+            _send_admin_book_detail(update, context, book_id, route=route)
             return
 
         if text == "🔙 رجوع":
