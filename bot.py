@@ -11226,7 +11226,12 @@ def start_bot():
 
         audio_document_filter = (
             Filters.document.audio
-            | Filters.document.mime_type("audio/")
+            | Filters.document.mime_type("audio/mpeg")
+            | Filters.document.mime_type("audio/mp4")
+            | Filters.document.mime_type("audio/ogg")
+            | Filters.document.mime_type("audio/opus")
+            | Filters.document.mime_type("audio/x-m4a")
+            | Filters.document.mime_type("application/octet-stream")
             | Filters.document.file_extension("mp3")
             | Filters.document.file_extension("wav")
             | Filters.document.file_extension("ogg")
@@ -11237,6 +11242,11 @@ def start_bot():
             | Filters.document.file_extension("aac")
         )
 
+        lesson_audio_filter = (
+            (Filters.voice | Filters.audio | Filters.document)
+            & Filters.chat_type.private
+            & Filters.user(WAITING_LESSON_AUDIO)
+        )
         user_audio_filter = (Filters.audio | Filters.voice | audio_document_filter) & Filters.chat_type.private
         channel_audio_filter = Filters.chat_type.channel & (Filters.audio | Filters.voice | audio_document_filter)
 
@@ -11336,9 +11346,18 @@ def start_bot():
 
         dispatcher.add_handler(
             MessageHandler(
+                lesson_audio_filter,
+                handle_audio_message,
+            ),
+            group=0,
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
                 user_audio_filter,
                 handle_audio_message,
-            )
+            ),
+            group=1,
         )
         dispatcher.add_handler(
             MessageHandler(Filters.text & ~Filters.command, books_search_text_router),
