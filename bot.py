@@ -87,7 +87,6 @@ updater = None
 dispatcher = None
 job_queue = None
 IS_RUNNING = True
-JOB_QUEUE_STARTED = False
 
 @app.route("/")
 def index():
@@ -98,8 +97,6 @@ def webhook_handler():
     """معالجة تحديثات الـ Webhook من Telegram"""
     if request.method == "POST":
         try:
-            initialize_telegram_bot(start_jobs=True)
-
             payload = request.get_json(force=True)
             update = Update.de_json(payload, dispatcher.bot)
             update_type = (
@@ -1182,6 +1179,7 @@ SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_i
 def _user_in_support_session(user) -> bool:
     return bool(user and user.id in WAITING_SUPPORT)
 
+
 def _user_waiting_book_media(user) -> bool:
     if not user:
         return False
@@ -1676,13 +1674,6 @@ BTN_COURSES_SECTION = "قسم الدورات 🧩"
 BTN_MANAGE_COURSES = "إدارة الدورات 📋"
 BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 
-
-def normalize_button_text(text: str) -> str:
-    """تطبيع نص الأزرار بإزالة الإيموجي والفواصل والمسافات الزائدة."""
-
-    return re.sub(r"[^\w\s\u0600-\u06FF]+", "", text or "").strip()
-
-
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
@@ -1741,25 +1732,6 @@ BTN_BENEFIT_TOP100 = "🏆 أفضل 100 فائدة"
 BTN_MY_BENEFITS = "فوائدي (تعديل/حذف) 📝"
 BTN_BENEFIT_EDIT = "تعديل الفائدة ✏️"
 BTN_BENEFIT_DELETE = "حذف الفائدة 🗑️"
-
-BUTTON_NORMALIZATION_MAP = {
-    normalize_button_text(btn): btn
-    for btn in [
-        BTN_ADHKAR_MAIN,
-        BTN_QURAN_MAIN,
-        BTN_TASBIH_MAIN,
-        BTN_MEMOS_MAIN,
-        BTN_WATER_MAIN,
-        BTN_STATS,
-        BTN_NOTIFICATIONS_MAIN,
-        BTN_SUPPORT,
-        BTN_BOOKS_MAIN,
-        BTN_COURSES_SECTION,
-        BTN_AUDIO_LIBRARY,
-        BTN_BENEFITS_MAIN,
-        BTN_COMP_MAIN,
-    ]
-}
 
 # لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
@@ -8055,11 +8027,6 @@ def _send_support_session_opened_message(reply_func, gender: Optional[str] = Non
     reply_func(text, reply_markup=SUPPORT_SESSION_KB)
 
 
-def _close_support_session(user_id: int):
-    WAITING_SUPPORT.discard(user_id)
-    WAITING_SUPPORT_GENDER.discard(user_id)
-
-
 def _open_support_session(update: Update, user_id: int, gender: Optional[str]):
     WAITING_SUPPORT.add(user_id)
     _send_support_session_opened_message(update.message.reply_text, gender)
@@ -8629,10 +8596,9 @@ def _is_reply_to_support_message(msg, bot_id: int) -> bool:
 
 def handle_support_photo(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id if user else None
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-
-    if not user_id or user_id not in WAITING_SUPPORT:
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
@@ -8640,7 +8606,8 @@ def handle_support_photo(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
-    logger.info(f"[SUPPORT_MEDIA] photo from {user_id}")
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     photos = update.message.photo or []
     if not photos:
@@ -8658,30 +8625,25 @@ def handle_support_photo(update: Update, context: CallbackContext):
     else:
         targets = [ADMIN_ID] if ADMIN_ID else []
 
-    forwarded = False
-    logger.info("[SUPPORT_MEDIA] forwarding photo to admins: %s", targets)
     for admin_id in targets:
         try:
             sent = context.bot.send_photo(chat_id=admin_id, photo=best_photo.file_id, caption=text)
             _remember_support_message(admin_id, sent, user_id)
-            forwarded = True
         except Exception as e:
-            logger.exception("Support photo forward failed", exc_info=e)
+            logger.warning(f"Support photo forward failed to {admin_id}: {e}")
 
-    if forwarded:
-        update.message.reply_text(
-            _support_confirmation_text(record.get("gender"), True),
-            reply_markup=SUPPORT_SESSION_KB,
-        )
-        raise DispatcherHandlerStop()
+    update.message.reply_text(
+        _support_confirmation_text(record.get("gender"), True),
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_audio(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id if user else None
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-
-    if not user_id or user_id not in WAITING_SUPPORT:
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
@@ -8689,7 +8651,8 @@ def handle_support_audio(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
-    logger.info(f"[SUPPORT_MEDIA] audio from {user_id}")
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     audio = update.message.audio or update.message.voice
     if not audio:
@@ -8706,8 +8669,6 @@ def handle_support_audio(update: Update, context: CallbackContext):
     else:
         targets = [ADMIN_ID] if ADMIN_ID else []
 
-    forwarded = False
-    logger.info("[SUPPORT_MEDIA] forwarding audio to admins: %s", targets)
     for admin_id in targets:
         try:
             if update.message.voice:
@@ -8715,24 +8676,21 @@ def handle_support_audio(update: Update, context: CallbackContext):
             else:
                 sent = context.bot.send_audio(chat_id=admin_id, audio=audio.file_id, caption=text)
             _remember_support_message(admin_id, sent, user_id)
-            forwarded = True
         except Exception as e:
-            logger.exception("Support audio forward failed", exc_info=e)
+            logger.warning(f"Support audio forward failed to {admin_id}: {e}")
 
-    if forwarded:
-        update.message.reply_text(
-            _support_confirmation_text(record.get("gender"), True),
-            reply_markup=SUPPORT_SESSION_KB,
-        )
-        raise DispatcherHandlerStop()
+    update.message.reply_text(
+        _support_confirmation_text(record.get("gender"), True),
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_video(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id if user else None
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-
-    if not user_id or user_id not in WAITING_SUPPORT:
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
@@ -8740,7 +8698,8 @@ def handle_support_video(update: Update, context: CallbackContext):
             )
         return  # لا تمس أي مسار آخر
 
-    logger.info(f"[SUPPORT_MEDIA] video from {user_id}")
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     video = update.message.video
     if not video:
@@ -8757,8 +8716,6 @@ def handle_support_video(update: Update, context: CallbackContext):
     else:
         targets = [ADMIN_ID] if ADMIN_ID else []
 
-    forwarded = False
-    logger.info("[SUPPORT_MEDIA] forwarding video to admins: %s", targets)
     for admin_id in targets:
         try:
             sent = context.bot.send_video(
@@ -8767,24 +8724,21 @@ def handle_support_video(update: Update, context: CallbackContext):
                 caption=text
             )
             _remember_support_message(admin_id, sent, user_id)
-            forwarded = True
         except Exception as e:
-            logger.exception("Support video forward failed", exc_info=e)
+            logger.warning(f"Support video forward failed to {admin_id}: {e}")
 
-    if forwarded:
-        update.message.reply_text(
-            _support_confirmation_text(record.get("gender"), True),
-            reply_markup=SUPPORT_SESSION_KB,
-        )
-        raise DispatcherHandlerStop()
+    update.message.reply_text(
+        _support_confirmation_text(record.get("gender"), True),
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+    raise DispatcherHandlerStop()
 
 
 def handle_support_video_note(update: Update, context: CallbackContext):
     user = update.effective_user
-    user_id = user.id if user else None
-    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
-
-    if not user_id or user_id not in WAITING_SUPPORT:
+    if not _user_in_support_session(user):
+        user_id = user.id if user else None
+        is_reply = _is_reply_to_support_message(update.message, context.bot.id)
         if user_id and is_reply and not (is_admin(user_id) or is_supervisor(user_id)):
             update.message.reply_text(
                 "للتواصل مع الدعم اضغط على زر التواصل مع الدعم فقط.",
@@ -8792,7 +8746,8 @@ def handle_support_video_note(update: Update, context: CallbackContext):
             )
         return
 
-    logger.info(f"[SUPPORT_MEDIA] vnote from {user_id}")
+    user_id = user.id
+    is_reply = _is_reply_to_support_message(update.message, context.bot.id)
 
     video_note = update.message.video_note
     if not video_note:
@@ -8808,22 +8763,18 @@ def handle_support_video_note(update: Update, context: CallbackContext):
     else:
         targets = [ADMIN_ID] if ADMIN_ID else []
 
-    forwarded = False
-    logger.info("[SUPPORT_MEDIA] forwarding video note to admins: %s", targets)
     for admin_id in targets:
         try:
             context.bot.send_message(chat_id=admin_id, text=text)
             context.bot.send_video_note(chat_id=admin_id, video_note=video_note.file_id)
-            forwarded = True
         except Exception as e:
-            logger.exception("Support video note forward failed", exc_info=e)
+            logger.warning(f"Support video note forward failed to {admin_id}: {e}")
 
-    if forwarded:
-        update.message.reply_text(
-            _support_confirmation_text(record.get("gender"), True),
-            reply_markup=SUPPORT_SESSION_KB,
-        )
-        raise DispatcherHandlerStop()
+    update.message.reply_text(
+        _support_confirmation_text(record.get("gender"), True),
+        reply_markup=SUPPORT_SESSION_KB,
+    )
+    raise DispatcherHandlerStop()
 
 # =================== دوال جديدة للميزات المطلوبة ===================
 
@@ -8896,8 +8847,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     msg = update.message
     text = (msg.text or "").strip()
-    normalized_text = normalize_button_text(text)
-    text = BUTTON_NORMALIZATION_MAP.get(normalized_text, text)
 
     record = get_user_record(user) or {}
     fresh_record = get_user_record_by_id(user_id) or record
@@ -9399,7 +9348,8 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_SUPPORT_END:
         if user_id in WAITING_SUPPORT:
-            _close_support_session(user_id)
+            WAITING_SUPPORT.discard(user_id)
+            WAITING_SUPPORT_GENDER.discard(user_id)
             msg.reply_text(
                 "تم إنهاء التواصل مع الدعم ✅",
                 reply_markup=main_kb,
@@ -9828,7 +9778,6 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_STATS_BACK_MAIN:
-        _close_support_session(user_id)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
             reply_markup=user_main_keyboard(user_id),
@@ -9876,7 +9825,6 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_BACK_MAIN:
-        _close_support_session(user_id)
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
@@ -11279,10 +11227,12 @@ def start_bot():
             | Filters.document.mime_type("application/pdf")
             | Filters.document.file_extension("pdf")
         ) & Filters.chat_type.private
-        support_photo_filter = Filters.photo & Filters.chat_type.private
-        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private
-        support_video_filter = Filters.video & Filters.chat_type.private
-        support_video_note_filter = Filters.video_note & Filters.chat_type.private
+        support_photo_filter = Filters.photo & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_audio_filter = (Filters.audio | Filters.voice) & Filters.chat_type.private & Filters.user(
+            WAITING_SUPPORT
+        )
+        support_video_filter = Filters.video & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
+        support_video_note_filter = Filters.video_note & Filters.chat_type.private & Filters.user(WAITING_SUPPORT)
 
         dispatcher.add_handler(
             MessageHandler(
@@ -11314,38 +11264,32 @@ def start_bot():
                 support_photo_filter,
                 handle_support_photo,
                 run_async=True,
-            ),
-            group=0,
-        )
-
-        dispatcher.add_handler(
-            MessageHandler(
-                support_audio_filter,
-                handle_support_audio,
-            ),
-            group=0,
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_filter,
-                handle_support_video,
-            ),
-            group=0,
-        )
-        dispatcher.add_handler(
-            MessageHandler(
-                support_video_note_filter,
-                handle_support_video_note,
-            ),
-            group=0,
+            )
         )
 
         dispatcher.add_handler(
             MessageHandler(
                 book_media_filter,
                 handle_book_media_message,
-            ),
-            group=1,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_audio_filter,
+                handle_support_audio,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_filter,
+                handle_support_video,
+            )
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                support_video_note_filter,
+                handle_support_video_note,
+            )
         )
 
         dispatcher.add_handler(
@@ -11356,7 +11300,7 @@ def start_bot():
         )
         dispatcher.add_handler(
             MessageHandler(Filters.text & ~Filters.command, books_search_text_router),
-            group=1,
+            group=0,
         )
         dispatcher.add_handler(
             MessageHandler(Filters.text & ~Filters.command, handle_text),
@@ -11422,52 +11366,6 @@ def start_bot():
         
     except Exception as e:
         logger.error(f"❌ خطأ في البوت: {e}", exc_info=True)
-        raise
-
-
-# =================== تهيئة تلقائية للبوت ===================
-
-
-def initialize_telegram_bot(start_jobs: bool = False):
-    """
-    تهيئة Updater/Dispatcher وتشغيل start_bot عند الحاجة.
-    مفيدة في بيئات الويب هوك التي تستورد التطبيق مباشرةً دون تنفيذ البلوك الرئيسي.
-    """
-
-    global updater, dispatcher, job_queue, JOB_QUEUE_STARTED
-
-    if updater is not None and dispatcher is not None:
-        if start_jobs and WEBHOOK_URL and job_queue and not JOB_QUEUE_STARTED:
-            try:
-                job_queue.start()
-                JOB_QUEUE_STARTED = True
-                logger.info("✅ تم تشغيل JobQueue في وضع Webhook (تهيئة تلقائية)")
-            except Exception as e:
-                logger.error(
-                    "❌ خطأ في تشغيل JobQueue أثناء التهيئة التلقائية: %s", e, exc_info=True
-                )
-        return
-
-    logger.info("⚙️ تهيئة البوت تلقائيًا...")
-    try:
-        updater = Updater(BOT_TOKEN, use_context=True, request_kwargs=REQUEST_KWARGS)
-        dispatcher = updater.dispatcher
-        job_queue = updater.job_queue
-
-        start_bot()
-
-        if start_jobs and WEBHOOK_URL and job_queue:
-            try:
-                job_queue.start()
-                JOB_QUEUE_STARTED = True
-                logger.info("✅ تم تشغيل JobQueue بعد التهيئة التلقائية")
-            except Exception as e:
-                logger.error(
-                    "❌ خطأ في تشغيل JobQueue بعد التهيئة التلقائية: %s", e, exc_info=True
-                )
-
-    except Exception as e:
-        logger.error(f"❌ خطأ في التهيئة التلقائية للبوت: {e}", exc_info=True)
         raise
 
 
@@ -13720,16 +13618,30 @@ if __name__ == "__main__":
     # تهيئة Firebase/Firestore مرة واحدة
     initialize_firebase()
     
+    # تهيئة Updater و Dispatcher و job_queue مرة واحدة
     try:
-        # تهيئة البوت (مهمة في بيئات الاستضافة التي لا تنفذ البلوك الرئيسي تلقائيًا)
-        initialize_telegram_bot()
-
+        updater = Updater(BOT_TOKEN, use_context=True, request_kwargs=REQUEST_KWARGS)
+        dispatcher = updater.dispatcher
+        job_queue = updater.job_queue
+    except Exception as e:
+        logger.error(f"❌ خطأ في تهيئة Updater: {e}", exc_info=True)
+        exit(1)
+        
+    try:
         if WEBHOOK_URL:
             # وضع Webhook
             logger.info("🌐 تشغيل البوت في وضع Webhook...")
 
-            # تهيئة البوت وتشغيل JobQueue إذا لم يكن مفعلاً
-            initialize_telegram_bot(start_jobs=True)
+            # تهيئة البوت (تسجيل handlers والمهام اليومية)
+            start_bot()
+
+            # JobQueue لا يعمل تلقائيًا في وضع Webhook المخصّص
+            try:
+                if job_queue:
+                    job_queue.start()
+                    logger.info("✅ تم تشغيل JobQueue في وضع Webhook")
+            except Exception as e:
+                logger.error(f"❌ خطأ في تشغيل JobQueue: {e}", exc_info=True)
 
             # إعداد Webhook
             updater.bot.set_webhook(
@@ -13753,9 +13665,9 @@ if __name__ == "__main__":
                 logger.info("✅ تم حذف الويب هوك القديم")
             except Exception as e:
                 logger.warning(f"⚠️ خطأ في حذف الويب هوك: {e}")
-
-            # التأكد من تهيئة البوت (Polling يشغّل JobQueue تلقائيًا)
-            initialize_telegram_bot()
+            
+            # تهيئة البوت
+            start_bot()
 
             # بدء Polling
             updater.start_polling(allowed_updates=ALLOWED_UPDATES)
