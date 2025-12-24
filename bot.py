@@ -3242,6 +3242,15 @@ def handle_book_search_input(update: Update, context: CallbackContext):
     _render_search_results(update, context, token, page=0, from_callback=False)
 
 
+def _mark_admin_books_mode(context: CallbackContext, active: bool):
+    """تخزين حالة تواجد الأدمن داخل إدارة الكتب لمنع تداخل الراوترات."""
+
+    if active:
+        context.user_data["books_admin_mode"] = True
+    else:
+        context.user_data.pop("books_admin_mode", None)
+
+
 def books_search_text_router(update: Update, context: CallbackContext):
     if not update.message or not update.message.text:
         return
@@ -3251,6 +3260,10 @@ def books_search_text_router(update: Update, context: CallbackContext):
 
     # اقرأ الحالة من Firestore مباشرة (بدون كاش)
     rec = get_user_record_by_id(user_id) or {}
+
+    # تجاهل نصوص الأدمن أثناء وجوده في وضع إدارة الكتب حتى لا تُعامل كبحث عام
+    if _ensure_is_admin_or_supervisor(user_id) and context.user_data.get("books_admin_mode"):
+        return
 
     if rec.get("book_search_waiting", False):
         logger.info("[BOOKS][ROUTER] user=%s text=%r", user_id, text)
@@ -3420,6 +3433,7 @@ def open_books_admin_menu(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     if not _ensure_is_admin_or_supervisor(user_id):
         return
+    _mark_admin_books_mode(context, True)
     update.message.reply_text(
         "📚 إدارة مكتبة الكتب\nاختر العملية المطلوبة:",
         reply_markup=BOOKS_ADMIN_MENU_KB,
@@ -3726,6 +3740,7 @@ def open_books_admin_list(update_or_query, context: CallbackContext, category_id
     user_id = getattr(user_obj, "id", None)
     if user_id and not _ensure_is_admin_or_supervisor(user_id):
         return
+    _mark_admin_books_mode(context, True)
     if not firestore_available():
         target = getattr(update_or_query, "message", None) or getattr(getattr(update_or_query, "callback_query", None), "message", None)
         if target:
@@ -8881,9 +8896,10 @@ def handle_text(update: Update, context: CallbackContext):
 
     record = get_user_record(user) or {}
     fresh_record = get_user_record_by_id(user_id) or record
+    in_admin_books_mode = _ensure_is_admin_or_supervisor(user_id) and context.user_data.get("books_admin_mode")
 
     # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
-    if user_id in WAITING_BOOK_SEARCH or fresh_record.get("book_search_waiting", False):
+    if not in_admin_books_mode and (user_id in WAITING_BOOK_SEARCH or fresh_record.get("book_search_waiting", False)):
         WAITING_BOOK_SEARCH.discard(user_id)
         logger.info("[BOOKS][SEARCH_ROUTE] user=%s text=%r", user_id, text)
         handle_book_search_input(update, context)
@@ -9781,6 +9797,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_BOOKS_MAIN:
+        _mark_admin_books_mode(context, False)
         open_books_home(update, context)
         return
 
@@ -9856,6 +9873,7 @@ def handle_text(update: Update, context: CallbackContext):
         return
 
     if text == BTN_BACK_MAIN:
+        _mark_admin_books_mode(context, False)
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         msg.reply_text(
             "عدنا إلى القائمة الرئيسية.",
