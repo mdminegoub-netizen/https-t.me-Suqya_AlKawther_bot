@@ -1676,6 +1676,13 @@ BTN_COURSES_SECTION = "قسم الدورات 🧩"
 BTN_MANAGE_COURSES = "إدارة الدورات 📋"
 BTN_AUDIO_LIBRARY = "مكتبة صوتية 🎧"
 
+
+def normalize_button_text(text: str) -> str:
+    """تطبيع نص الأزرار بإزالة الإيموجي والفواصل والمسافات الزائدة."""
+
+    return re.sub(r"[^\w\s\u0600-\u06FF]+", "", text or "").strip()
+
+
 BTN_CANCEL = "إلغاء ❌"
 BTN_BACK_MAIN = "رجوع للقائمة الرئيسية ⬅️"
 BTN_SLEEP_ADHKAR_BACK = "⬅️ رجوع للقائمة الرئيسية"
@@ -1734,6 +1741,25 @@ BTN_BENEFIT_TOP100 = "🏆 أفضل 100 فائدة"
 BTN_MY_BENEFITS = "فوائدي (تعديل/حذف) 📝"
 BTN_BENEFIT_EDIT = "تعديل الفائدة ✏️"
 BTN_BENEFIT_DELETE = "حذف الفائدة 🗑️"
+
+BUTTON_NORMALIZATION_MAP = {
+    normalize_button_text(btn): btn
+    for btn in [
+        BTN_ADHKAR_MAIN,
+        BTN_QURAN_MAIN,
+        BTN_TASBIH_MAIN,
+        BTN_MEMOS_MAIN,
+        BTN_WATER_MAIN,
+        BTN_STATS,
+        BTN_NOTIFICATIONS_MAIN,
+        BTN_SUPPORT,
+        BTN_BOOKS_MAIN,
+        BTN_COURSES_SECTION,
+        BTN_AUDIO_LIBRARY,
+        BTN_BENEFITS_MAIN,
+        BTN_COMP_MAIN,
+    ]
+}
 
 # لوحة المدير
 BTN_ADMIN_PANEL = "لوحة التحكم 🛠"
@@ -8870,6 +8896,8 @@ def handle_text(update: Update, context: CallbackContext):
 
     msg = update.message
     text = (msg.text or "").strip()
+    normalized_text = normalize_button_text(text)
+    text = BUTTON_NORMALIZATION_MAP.get(normalized_text, text)
 
     record = get_user_record(user) or {}
     fresh_record = get_user_record_by_id(user_id) or record
