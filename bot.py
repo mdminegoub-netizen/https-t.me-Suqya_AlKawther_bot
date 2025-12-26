@@ -25,6 +25,7 @@ from telegram import (
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.api_core.exceptions import FailedPrecondition
 
 from telegram.ext import (
     Updater,
@@ -1241,7 +1242,9 @@ PRESENTATION_MEDIA_TIMEOUTS: Dict[int, object] = {}
 PRESENTATION_REPLY_TIMEOUTS: Dict[int, object] = {}
 # نظام الفائدة داخل الدورات (معزول عن العرض والدعم)
 WAITING_COURSE_BENEFIT_MEDIA: Dict[int, Dict] = {}
+WAITING_COURSE_BENEFIT_REPLY: Dict[int, str] = {}
 COURSE_BENEFIT_TIMEOUTS: Dict[int, object] = {}
+BENEFIT_REPLY_TIMEOUTS: Dict[int, object] = {}
 
 
 def _lessons_back_keyboard(course_id: str):
@@ -9489,8 +9492,17 @@ def handle_text(update: Update, context: CallbackContext):
                 }
             )
             msg.reply_text(
-                "✅ تم حفظ قالب باب المقدمة لهذا الدرس.",
-                reply_markup=_lessons_back_keyboard(course_id),
+                "✅ تم حفظ قالب المقدمة.",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "🔧 فتح إعدادات الدرس",
+                                callback_data=f"COURSES:lesson_edit_{lesson_id}",
+                            )
+                        ]
+                    ]
+                ),
             )
         except Exception as e:
             logger.error(f"خطأ في حفظ قالب باب المقدمة: {e}")
@@ -11529,7 +11541,7 @@ def start_bot():
             user = getattr(message, "from_user", None)
             if not user:
                 return False
-            return user.id in WAITING_COURSE_BENEFIT_MEDIA
+            return user.id in WAITING_COURSE_BENEFIT_MEDIA or user.id in WAITING_COURSE_BENEFIT_REPLY
 
         book_media_filter = (
             Filters.photo
@@ -11581,7 +11593,7 @@ def start_bot():
         benefit_media_filter = (
             Filters.chat_type.private
             & FuncMessageFilter(_in_benefit_mode)
-            & Filters.photo
+            & (Filters.photo | (Filters.text & ~Filters.command))
         )
 
         dispatcher.add_handler(
@@ -11679,11 +11691,23 @@ def start_bot():
             group=1,
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, books_search_text_router),
+            MessageHandler(
+                Filters.text
+                & ~Filters.command
+                & ~FuncMessageFilter(_in_presentation_mode)
+                & ~FuncMessageFilter(_in_benefit_mode),
+                books_search_text_router,
+            ),
             group=0,
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, handle_text),
+            MessageHandler(
+                Filters.text
+                & ~Filters.command
+                & ~FuncMessageFilter(_in_presentation_mode)
+                & ~FuncMessageFilter(_in_benefit_mode),
+                handle_text,
+            ),
             group=1,
         )
         
@@ -11759,8 +11783,10 @@ COURSE_SUBSCRIPTIONS_COLLECTION = "course_subscriptions"
 COURSE_PRESENTATIONS_THREADS_COLLECTION = "course_presentations_threads"
 COURSE_PRESENTATION_MESSAGES_COLLECTION = "course_presentation_messages"
 COURSE_PRESENTATION_CONTEXT_TYPE = "course_presentation"
-COURSE_BENEFITS_COLLECTION = "course_benefits"
+COURSE_BENEFITS_COLLECTION = "course_benefits"  # بيانات سابقة محفوظة للأرشفة فقط
 COURSE_BENEFIT_CONTEXT_TYPE = "course_benefit"
+COURSE_BENEFIT_THREADS_COLLECTION = "course_benefit_threads"
+COURSE_BENEFIT_MESSAGES_COLLECTION = "course_benefit_messages"
 
 COURSE_NAME_MIN_LENGTH = 3
 COURSE_NAME_MAX_LENGTH = 60
@@ -11883,6 +11909,23 @@ def _presentation_reply_keyboard(thread_id: str) -> InlineKeyboardMarkup:
     )
 
 
+def _benefit_reply_keyboard(thread_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "💬 رد على الفائدة", callback_data=f"COURSE:BEN:REPLY:{thread_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "❌ إلغاء الرد", callback_data=f"COURSE:BEN:REPLY_CANCEL:{thread_id}"
+                )
+            ],
+        ]
+    )
+
+
 def _cancel_presentation_media_timeout(user_id: int):
     job = PRESENTATION_MEDIA_TIMEOUTS.pop(user_id, None)
     if job:
@@ -11974,8 +12017,16 @@ def _course_benefit_timeout(context: CallbackContext):
     data = context.job.context or {}
     user_id = data.get("user_id")
     chat_id = data.get("chat_id")
+    thread_id = data.get("thread_id") or data.get("session_id")
     WAITING_COURSE_BENEFIT_MEDIA.pop(user_id, None)
     COURSE_BENEFIT_TIMEOUTS.pop(user_id, None)
+    if thread_id:
+        try:
+            db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).update(
+                {"status": "closed", "last_message_at": firestore.SERVER_TIMESTAMP}
+            )
+        except Exception as e:
+            logger.debug("[BENEFIT] Failed to mark thread timeout %s: %s", thread_id, e)
     if chat_id:
         try:
             context.bot.send_message(
@@ -11993,14 +12044,55 @@ def _schedule_course_benefit_timeout(user_id: int, chat_id: int, session_id: str
     job = job_queue.run_once(
         _course_benefit_timeout,
         when=timedelta(minutes=10),
-        context={"user_id": user_id, "chat_id": chat_id, "session_id": session_id},
+        context={
+            "user_id": user_id,
+            "chat_id": chat_id,
+            "session_id": session_id,
+            "thread_id": session_id,
+        },
     )
     COURSE_BENEFIT_TIMEOUTS[user_id] = job
 
 
 def _clear_benefit_states(user_id: int):
     WAITING_COURSE_BENEFIT_MEDIA.pop(user_id, None)
+    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
     _cancel_course_benefit_timeout(user_id)
+    _cancel_benefit_reply_timeout(user_id)
+
+
+def _cancel_benefit_reply_timeout(user_id: int):
+    job = BENEFIT_REPLY_TIMEOUTS.pop(user_id, None)
+    if job:
+        try:
+            job.schedule_removal()
+        except Exception:
+            pass
+
+
+def _benefit_reply_timeout(context: CallbackContext):
+    data = context.job.context or {}
+    user_id = data.get("user_id")
+    chat_id = data.get("chat_id")
+    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
+    BENEFIT_REPLY_TIMEOUTS.pop(user_id, None)
+    if chat_id:
+        try:
+            context.bot.send_message(chat_id=chat_id, text="⏳ انتهت مهلة الرد على الفائدة.")
+        except Exception as e:
+            logger.debug("[BENEFIT] Failed to send reply timeout notice: %s", e)
+
+
+def _schedule_benefit_reply_timeout(user_id: int, chat_id: int, thread_id: str):
+    if not job_queue:
+        return
+    _cancel_benefit_reply_timeout(user_id)
+    job = job_queue.run_once(
+        _benefit_reply_timeout,
+        when=timedelta(minutes=10),
+        context={"user_id": user_id, "chat_id": chat_id, "thread_id": thread_id},
+    )
+    BENEFIT_REPLY_TIMEOUTS[user_id] = job
 
 
 def _format_gender_label(gender: Optional[str]) -> str:
@@ -12722,7 +12814,7 @@ def _lesson_view_keyboard(
     lesson_id: str,
     show_presentation: bool = False,
     presentation_thread_id: Optional[str] = None,
-    benefit_session_id: Optional[str] = None,
+    benefit_thread_id: Optional[str] = None,
 ) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:user_lessons_{course_id}")],
@@ -12761,12 +12853,12 @@ def _lesson_view_keyboard(
         ]
     )
 
-    if benefit_session_id:
+    if benefit_thread_id:
         keyboard.append(
             [
                 InlineKeyboardButton(
                     "🚪 خروج من الفائدة",
-                    callback_data=f"COURSE:BEN:CLOSE:{benefit_session_id}",
+                    callback_data=f"COURSE:BEN:CLOSE:{benefit_thread_id}",
                 )
             ]
         )
@@ -12786,7 +12878,7 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
     has_presentation = lesson.get("has_presentation", False)
     show_presentation = has_presentation
     presentation_thread_id = None
-    benefit_session_id = None
+    benefit_thread_id = None
     if has_presentation:
         waiting_thread_id = WAITING_COURSE_PRESENTATION_MEDIA.get(user_id)
         if waiting_thread_id:
@@ -12804,14 +12896,14 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
 
     benefit_ctx = WAITING_COURSE_BENEFIT_MEDIA.get(user_id)
     if benefit_ctx and benefit_ctx.get("lesson_id") == lesson_id:
-        benefit_session_id = benefit_ctx.get("session_id")
+        benefit_thread_id = benefit_ctx.get("thread_id") or benefit_ctx.get("session_id")
 
     view_keyboard = _lesson_view_keyboard(
         course_id,
         lesson_id,
         show_presentation,
         presentation_thread_id=presentation_thread_id,
-        benefit_session_id=benefit_session_id,
+        benefit_thread_id=benefit_thread_id,
     )
 
     content_type = lesson.get("content_type", "text")
@@ -13132,28 +13224,29 @@ def _store_presentation_message(
         logger.error(f"Error storing presentation message: {e}")
 
 
-def _build_benefit_header(context: Dict) -> str:
-    username = context.get("user_username")
+def _build_benefit_header(thread: Dict, thread_id: str) -> str:
+    username = thread.get("user_username")
     username_part = f" @{username}" if username else ""
     section_line = (
-        f"📘 باب المقرر: {context.get('curriculum_section')}\n"
-        if context.get("curriculum_section")
+        f"📘 باب المقرر: {thread.get('curriculum_section')}\n"
+        if thread.get("curriculum_section")
         else ""
     )
     return (
         "📸 فائدة درس\n"
-        f"👤 المتعلم: {context.get('user_name', 'متعلم')}{username_part}\n"
-        f"🧕 الجنس: {_format_gender_label(context.get('user_gender'))}\n"
-        f"📚 الدورة: {context.get('course_title', 'دورة')}\n"
-        f"📖 الدرس: {context.get('lesson_title', 'درس')}\n"
-        f"🆔 Session: {context.get('session_id')}\n"
+        f"👤 المتعلم: {thread.get('user_name', 'متعلم')}{username_part}\n"
+        f"🧕 الجنس: {_format_gender_label(thread.get('user_gender'))}\n"
+        f"📚 الدورة: {thread.get('course_title', 'دورة')}\n"
+        f"📖 الدرس: {thread.get('lesson_title', 'درس')}\n"
+        f"🆔 Thread: {thread_id}\n"
         f"{section_line}"
     ).rstrip()
 
 
-def _store_course_benefit(context: Dict, message_id: int, file_id: str):
-    payload = {
+def _store_course_benefit(context: Dict, message_id: int, incoming_payload: Dict):
+    doc_payload = {
         "session_id": context.get("session_id"),
+        "thread_id": context.get("thread_id"),
         "user_id": context.get("user_id"),
         "user_name": context.get("user_name"),
         "user_username": context.get("user_username"),
@@ -13163,16 +13256,81 @@ def _store_course_benefit(context: Dict, message_id: int, file_id: str):
         "lesson_id": context.get("lesson_id"),
         "lesson_title": context.get("lesson_title"),
         "curriculum_section": context.get("curriculum_section"),
-        "message_type": "photo",
-        "file_id": file_id,
+        "message_type": incoming_payload.get("type"),
+        "file_id": incoming_payload.get("file_id"),
+        "text": incoming_payload.get("text"),
+        "caption": incoming_payload.get("caption"),
         "telegram_message_id": message_id,
         "context_type": COURSE_BENEFIT_CONTEXT_TYPE,
         "created_at": firestore.SERVER_TIMESTAMP,
     }
     try:
-        db.collection(COURSE_BENEFITS_COLLECTION).add(payload)
+        db.collection(COURSE_BENEFITS_COLLECTION).add(doc_payload)
     except Exception as e:
         logger.error(f"Error storing course benefit: {e}")
+
+
+def _store_benefit_message(
+    thread_id: str,
+    sender_type: str,
+    payload: Dict,
+    telegram_message_id: int,
+    sender_id: Optional[int] = None,
+):
+    message_payload = {
+        "thread_id": thread_id,
+        "sender_type": sender_type,
+        "sender_id": sender_id,
+        "message_type": payload.get("type"),
+        "text": payload.get("text"),
+        "file_id": payload.get("file_id"),
+        "caption": payload.get("caption"),
+        "telegram_message_id": telegram_message_id,
+        "context_type": COURSE_BENEFIT_CONTEXT_TYPE,
+        "created_at": firestore.SERVER_TIMESTAMP,
+    }
+    try:
+        db.collection(COURSE_BENEFIT_MESSAGES_COLLECTION).add(message_payload)
+        db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).update(
+            {"last_message_at": firestore.SERVER_TIMESTAMP}
+        )
+    except Exception as e:
+        logger.error(f"Error storing benefit message: {e}")
+
+
+def _extract_benefit_payload(message) -> Optional[Dict]:
+    if getattr(message, "text", None):
+        return {"type": "text", "text": message.text}
+    if message.photo:
+        return {
+            "type": "photo",
+            "file_id": message.photo[-1].file_id,
+            "caption": message.caption,
+            "text": message.caption,
+        }
+    return None
+
+
+def _send_benefit_payload(bot, chat_id: int, header: Optional[str], payload: Dict, reply_markup=None):
+    if header:
+        try:
+            bot.send_message(chat_id=chat_id, text=header)
+        except Exception as e:
+            logger.error(f"Error sending benefit header to {chat_id}: {e}")
+    try:
+        msg_type = payload.get("type")
+        caption = payload.get("caption")
+        if msg_type == "text":
+            bot.send_message(chat_id=chat_id, text=payload.get("text", ""), reply_markup=reply_markup)
+        elif msg_type == "photo":
+            bot.send_photo(
+                chat_id=chat_id,
+                photo=payload.get("file_id"),
+                caption=payload.get("text") or caption,
+                reply_markup=reply_markup,
+            )
+    except Exception as e:
+        logger.error(f"Error sending benefit payload to {chat_id}: {e}")
 
 
 def handle_course_presentation_open(
@@ -13270,6 +13428,22 @@ def handle_course_presentation_open(
         _schedule_presentation_media_timeout(user_id, query.message.chat_id, thread_id)
     target_label = "للأدمن" if (record.get("gender") == "male") else "للمشرفة"
     prompt_suffix = f"\n\n{prompt_text}" if prompt_text else ""
+    try:
+        context.bot.send_message(
+            chat_id=user_id,
+            text=f"تم فتح العَرْض {target_label}. أرسل/أرسلي تسميعك هنا.",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🚪 إغلاق العَرْض", callback_data=f"COURSE:PRES:CLOSE:{thread_id}"
+                        )
+                    ]
+                ]
+            ),
+        )
+    except Exception as e:
+        logger.debug("[PRES] Failed to send chat-style open message: %s", e)
     safe_edit_message_text(
         query,
         f"تم فتح العَرْض {target_label}\nأرسل/أرسلي تسميعك الآن{prompt_suffix}",
@@ -13283,6 +13457,7 @@ def handle_course_presentation_open(
 
 
 def handle_course_presentation_close(query: Update.callback_query, thread_id: str):
+    """إنهاء جلسة العرض وإرجاع المستخدم مباشرةً لقائمة الدروس كخيار UX معتمد."""
     user_id = query.from_user.id
     if not firestore_available():
         query.answer("❌ لا يمكن إنهاء العَرْض حالياً.", show_alert=True)
@@ -13311,11 +13486,19 @@ def handle_course_presentation_close(query: Update.callback_query, thread_id: st
 
     course_id = thread.get("course_id")
     lesson_id = thread.get("lesson_id")
+    # الإغلاق يعيد المستخدم مباشرةً لقائمة دروس الدورة لضمان وضوح المسار.
     safe_edit_message_text(
         query,
-        "✅ تم إنهاء العَرْض. يمكنك إعادة فتحه من الدرس عند الحاجة.",
-        reply_markup=_lesson_view_keyboard(
-            course_id, lesson_id, show_presentation=True, presentation_thread_id=None
+        "✅ تم إغلاق العرض.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📚 الرجوع لقائمة الدروس",
+                        callback_data=f"COURSES:user_lessons_{course_id}",
+                    )
+                ]
+            ]
         ),
     )
 
@@ -13513,45 +13696,129 @@ def handle_course_benefit_open(
     lesson = lesson_doc.to_dict() or {}
     course = _course_document(course_id) or {}
     prompt_text = _curriculum_prompt_text(lesson)
-    session_id = str(uuid4())
 
     record = get_user_record_by_id(user_id) or {}
+    _clear_presentation_states(user_id)
+    _clear_benefit_states(user_id)
+
+    callback_message = query.message
+    callback_chat_id = callback_message.chat_id if callback_message else None
+
+    thread_doc = None
+    try:
+        # 🔎 Firestore composite index required: user_id + lesson_id + status on
+        # course_benefit_threads to keep this open-thread lookup efficient and
+        # avoid the fallback scan below.
+        existing_threads = list(
+            db.collection(COURSE_BENEFIT_THREADS_COLLECTION)
+            .where("user_id", "==", user_id)
+            .where("lesson_id", "==", lesson_id)
+            .where("status", "==", "open")
+            .stream()
+        )
+        if existing_threads:
+            thread_doc = existing_threads[0]
+    except FailedPrecondition as e:
+        logger.error(
+            "[BENEFIT] Composite index missing for open-thread lookup: %s", e
+        )
+        try:
+            fallback_stream = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).where(
+                "user_id", "==", user_id
+            ).stream()
+            existing_threads = []
+            for doc in fallback_stream:
+                doc_data = doc.to_dict() or {}
+                if (
+                    doc_data.get("lesson_id") == lesson_id
+                    and doc_data.get("status") == "open"
+                ):
+                    existing_threads.append(doc)
+            if existing_threads:
+                thread_doc = existing_threads[0]
+        except Exception as fallback_error:
+            logger.error(
+                "[BENEFIT] Fallback open-thread lookup failed: %s", fallback_error
+            )
+    except Exception as e:
+        logger.error(f"Error checking existing benefit threads: {e}")
+
+    if thread_doc:
+        thread_id = thread_doc.id
+        thread_data = thread_doc.to_dict() or {}
+        if callback_chat_id and not thread_data.get("user_chat_id"):
+            try:
+                thread_doc.reference.update({"user_chat_id": callback_chat_id})
+            except Exception as e:
+                logger.debug("[BENEFIT] Failed to update user_chat_id: %s", e)
+    else:
+        thread_payload = {
+            "user_id": user_id,
+            "user_name": query.from_user.full_name,
+            "user_username": query.from_user.username,
+            "user_gender": record.get("gender"),
+            "course_id": course_id,
+            "course_title": course.get("name"),
+            "lesson_id": lesson_id,
+            "lesson_title": lesson.get("title"),
+            "curriculum_section": lesson.get("curriculum_section"),
+            "status": "open",
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "last_message_at": firestore.SERVER_TIMESTAMP,
+            "context_type": COURSE_BENEFIT_CONTEXT_TYPE,
+            "user_chat_id": callback_chat_id if callback_chat_id is not None else user_id,
+        }
+        try:
+            doc_ref = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document()
+            doc_ref.set(thread_payload)
+            thread_id = doc_ref.id
+            thread_data = thread_payload
+        except Exception as e:
+            logger.error(f"Error creating benefit thread: {e}")
+            safe_edit_message_text(
+                query,
+                "❌ لا يمكن فتح الفائدة حالياً.",
+                reply_markup=_lesson_view_keyboard(course_id, lesson_id),
+            )
+            return
+
     WAITING_COURSE_BENEFIT_MEDIA[user_id] = {
-        "session_id": session_id,
+        "session_id": thread_id,
+        "thread_id": thread_id,
         "user_id": user_id,
-        "user_name": query.from_user.full_name,
-        "user_username": query.from_user.username,
-        "user_gender": record.get("gender"),
+        "user_name": thread_data.get("user_name"),
+        "user_username": thread_data.get("user_username"),
+        "user_gender": thread_data.get("user_gender"),
         "course_id": course_id,
-        "course_title": course.get("name"),
+        "course_title": thread_data.get("course_title"),
         "lesson_id": lesson_id,
-        "lesson_title": lesson.get("title"),
-        "curriculum_section": lesson.get("curriculum_section"),
+        "lesson_title": thread_data.get("lesson_title"),
+        "curriculum_section": thread_data.get("curriculum_section"),
     }
 
-    _clear_presentation_states(user_id)
-    _schedule_course_benefit_timeout(user_id, query.message.chat_id, session_id)
+    if callback_chat_id is not None:
+        _schedule_course_benefit_timeout(user_id, callback_chat_id, thread_id)
     safe_edit_message_text(
         query,
-        "📸 أرسِل صورة الفائدة الآن (صور فقط).",
+        "📸 أرسِل صورة أو نص الفائدة الآن.",
         reply_markup=_lesson_view_keyboard(
             course_id,
             lesson_id,
             show_presentation=lesson.get("has_presentation", False),
             presentation_thread_id=None,
-            benefit_session_id=session_id,
+            benefit_thread_id=thread_id,
         ),
     )
     try:
         context.bot.send_message(
             chat_id=user_id,
-            text="تم فتح وضع الفائدة. أرسل صورة واحدة في هذه الجلسة أو اضغط خروج لإلغاء.",
+            text="تم فتح وضع الفائدة. أرسل/ي الصورة أو النص هنا.",
             reply_markup=InlineKeyboardMarkup(
                 [
                     [
                         InlineKeyboardButton(
                             "🚪 خروج من الفائدة",
-                            callback_data=f"COURSE:BEN:CLOSE:{session_id}",
+                            callback_data=f"COURSE:BEN:CLOSE:{thread_id}",
                         )
                     ]
                 ]
@@ -13565,55 +13832,123 @@ def handle_course_benefit_open(
 
 def handle_course_benefit_close(query: Update.callback_query, session_id: str):
     user_id = query.from_user.id
+    thread_id = session_id
     active = WAITING_COURSE_BENEFIT_MEDIA.get(user_id)
     if not active or active.get("session_id") != session_id:
         query.answer("⚠️ لا توجد فائدة مفتوحة الآن.", show_alert=True)
         return
+    try:
+        db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).update(
+            {"status": "closed", "last_message_at": firestore.SERVER_TIMESTAMP}
+        )
+    except Exception as e:
+        logger.debug("[BENEFIT] Failed to close thread %s: %s", session_id, e)
     _clear_benefit_states(user_id)
     query.answer("✅ تم إغلاق وضع الفائدة.", show_alert=True)
-    try:
-        query.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
+    course_id = active.get("course_id")
+    safe_edit_message_text(
+        query,
+        "✅ تم إغلاق وضع الفائدة.",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📚 الرجوع لقائمة الدروس",
+                        callback_data=f"COURSES:user_lessons_{course_id}",
+                    )
+                ]
+            ]
+        ),
+    )
 
 
-def handle_course_benefit_photo(update: Update, context: CallbackContext):
+def handle_course_benefit_reply_callback(query: Update.callback_query, thread_id: str):
+    user_id = query.from_user.id
+    if not (is_supervisor(user_id) or is_admin(user_id)):
+        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
+        return
+
+    thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
+    if not thread_doc.exists:
+        query.answer("⚠️ هذه الفائدة غير متاحة.", show_alert=True)
+        return
+
+    WAITING_COURSE_BENEFIT_REPLY[user_id] = thread_id
+    if query.message:
+        _schedule_benefit_reply_timeout(user_id, query.message.chat_id, thread_id)
+    query.answer("📨 أرسل/أرسلي ردك الآن ليصل للمتعلم.", show_alert=True)
+
+
+def handle_course_benefit_cancel_reply(query: Update.callback_query, thread_id: str):
+    user_id = query.from_user.id
+    if not (is_supervisor(user_id) or is_admin(user_id)):
+        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
+        return
+
+    stored_id = WAITING_COURSE_BENEFIT_REPLY.get(user_id)
+    if stored_id != thread_id:
+        query.answer("⚠️ لا يوجد رد نشط لهذه الفائدة.", show_alert=True)
+        return
+
+    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
+    _cancel_benefit_reply_timeout(user_id)
+    query.answer("تم إلغاء وضع الرد.")
+
+
+def handle_course_benefit_user_message(update: Update, context: CallbackContext):
     user = update.effective_user
     if not user or user.id not in WAITING_COURSE_BENEFIT_MEDIA:
         return
 
     ctx = WAITING_COURSE_BENEFIT_MEDIA.get(user.id) or {}
-    session_id = ctx.get("session_id")
-    if not session_id:
+    thread_id = ctx.get("thread_id") or ctx.get("session_id")
+    if not thread_id:
         _clear_benefit_states(user.id)
         return
 
-    photo = update.message.photo[-1] if update.message.photo else None
-    if not photo:
-        update.message.reply_text("⚠️ الفائدة تقبل الصور فقط. أرسل صورة لدفترك.")
+    payload = _extract_benefit_payload(update.message)
+    if not payload:
+        update.message.reply_text("⚠️ الفائدة تقبل الصور أو النص فقط.")
         return
+
+    thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
+    if not thread_doc.exists:
+        update.message.reply_text("❌ جلسة الفائدة غير متاحة. افتحها من الدرس مرة أخرى.")
+        _clear_benefit_states(user.id)
+        return
+
+    thread_data = thread_doc.to_dict() or {}
 
     _cancel_course_benefit_timeout(user.id)
 
-    _store_course_benefit(ctx, update.message.message_id, photo.file_id)
+    _store_course_benefit(ctx, update.message.message_id, payload)
+    _store_benefit_message(thread_id, "user", payload, update.message.message_id, sender_id=user.id)
 
     user_gender = ctx.get("user_gender")
-    header = _build_benefit_header(ctx)
+    header = _build_benefit_header(thread_data, thread_id)
 
-    if user_gender != "male" and SUPERVISOR_ID:
+    send_to_supervisor = user_gender != "male" and SUPERVISOR_ID
+    if send_to_supervisor:
         try:
-            context.bot.send_message(
-                chat_id=SUPERVISOR_ID,
-                text=header,
+            _send_benefit_payload(
+                context.bot,
+                SUPERVISOR_ID,
+                header,
+                payload,
+                reply_markup=_benefit_reply_keyboard(thread_id),
             )
-            context.bot.send_photo(chat_id=SUPERVISOR_ID, photo=photo.file_id)
         except Exception as e:
             logger.error(f"Error sending benefit to supervisor: {e}")
 
     if ADMIN_ID:
         try:
-            context.bot.send_message(chat_id=ADMIN_ID, text=header)
-            context.bot.send_photo(chat_id=ADMIN_ID, photo=photo.file_id)
+            _send_benefit_payload(
+                context.bot,
+                ADMIN_ID,
+                header,
+                payload,
+                reply_markup=_benefit_reply_keyboard(thread_id),
+            )
         except Exception as e:
             logger.error(f"Error sending benefit to admin: {e}")
 
@@ -13636,19 +13971,96 @@ def handle_course_benefit_photo(update: Update, context: CallbackContext):
         logger.error(f"Error incrementing points for benefit: {e}")
 
     update.message.reply_text(
-        "✅ تم استلام الفائدة. يمكنك إرسال صورة أخرى أو الخروج.",
+        "✅ تم استلام الفائدة. يمكنك إرسال فائدة أخرى أو الخروج.",
         reply_markup=InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        "🚪 خروج من الفائدة", callback_data=f"COURSE:BEN:CLOSE:{session_id}"
+                        "🚪 خروج من الفائدة", callback_data=f"COURSE:BEN:CLOSE:{thread_id}"
                     )
                 ]
             ]
         ),
     )
 
-    _schedule_course_benefit_timeout(user.id, update.message.chat_id, session_id)
+    _schedule_course_benefit_timeout(user.id, update.message.chat_id, thread_id)
+
+
+def handle_course_benefit_supervisor_reply(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if not user:
+        return
+
+    thread_id = WAITING_COURSE_BENEFIT_REPLY.get(user.id)
+    if not thread_id:
+        return
+
+    thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
+    if not thread_doc.exists:
+        update.message.reply_text("❌ جلسة الفائدة غير متاحة الآن.")
+        WAITING_COURSE_BENEFIT_REPLY.pop(user.id, None)
+        _cancel_benefit_reply_timeout(user.id)
+        return
+
+    payload = _extract_benefit_payload(update.message)
+    if not payload:
+        update.message.reply_text("⚠️ يمكن إرسال نص أو صورة فقط داخل الرد على الفائدة.")
+        return
+
+    _cancel_benefit_reply_timeout(user.id)
+    WAITING_COURSE_BENEFIT_REPLY.pop(user.id, None)
+
+    thread = thread_doc.to_dict() or {}
+    _store_benefit_message(thread_id, "staff", payload, update.message.message_id, sender_id=user.id)
+
+    course_id = thread.get("course_id")
+    lesson_id = thread.get("lesson_id")
+    target_user_id = thread.get("user_id")
+    target_chat_id = thread.get("user_chat_id") or target_user_id
+
+    reply_buttons = [
+        [
+            InlineKeyboardButton(
+                "💬 رد", callback_data=f"COURSE:BEN:OPEN:{course_id}:{lesson_id}"
+            )
+        ]
+    ]
+    if course_id:
+        reply_buttons.append(
+            [
+                InlineKeyboardButton(
+                    "📚 الرجوع لقائمة الدروس",
+                    callback_data=f"COURSES:user_lessons_{course_id}",
+                )
+            ]
+        )
+
+    reply_keyboard = InlineKeyboardMarkup(reply_buttons)
+
+    header = (
+        f"💬 رد على فائدة الدرس «{thread.get('lesson_title', 'درس')}»\n"
+        f"الدورة: {thread.get('course_title', 'دورة')}"
+    )
+
+    _send_benefit_payload(
+        context.bot,
+        target_chat_id,
+        header,
+        payload,
+        reply_markup=reply_keyboard,
+    )
+
+    if is_supervisor(user.id) and ADMIN_ID and ADMIN_ID != user.id:
+        mirror_header = _build_benefit_header(thread, thread_id)
+        _send_benefit_payload(
+            context.bot,
+            ADMIN_ID,
+            mirror_header,
+            payload,
+            reply_markup=_benefit_reply_keyboard(thread_id),
+        )
+
+    update.message.reply_text("✅ تم إرسال ردك.")
 
 
 def course_benefit_router(update: Update, context: CallbackContext):
@@ -13656,8 +14068,12 @@ def course_benefit_router(update: Update, context: CallbackContext):
     if not user:
         return
 
+    if user.id in WAITING_COURSE_BENEFIT_REPLY:
+        handle_course_benefit_supervisor_reply(update, context)
+        return
+
     if user.id in WAITING_COURSE_BENEFIT_MEDIA:
-        handle_course_benefit_photo(update, context)
+        handle_course_benefit_user_message(update, context)
 
 
 def user_quizzes_list(query: Update.callback_query, context: CallbackContext, course_id: str):
@@ -14213,11 +14629,11 @@ def _admin_toggle_curriculum_prompt(query: Update.callback_query, lesson_id: str
             }
         )
         status_label = "✅ تم تفعيل قالب المقدمة." if not enabled else "✅ تم تعطيل قالب المقدمة."
-        safe_edit_message_text(
-            query,
-            status_label,
-            reply_markup=_lessons_back_keyboard(course_id),
-        )
+        try:
+            query.answer(status_label, show_alert=False)
+        except Exception:
+            pass
+        _admin_open_lesson_edit_menu(query, lesson_id)
     except Exception as e:
         logger.error(f"خطأ في تبديل حالة قالب المقدمة: {e}")
         safe_edit_message_text(query, "❌ تعذر تحديث الإعداد حالياً.", reply_markup=_lessons_back_keyboard(course_id))
@@ -14246,7 +14662,16 @@ def _admin_request_curriculum_prompt_template(query: Update.callback_query, less
     safe_edit_message_text(
         query,
         "✏️ أرسل نص قالب باب المقدمة لهذا الدرس.",
-        reply_markup=_lessons_back_keyboard(course_id),
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "🔧 فتح إعدادات الدرس",
+                        callback_data=f"COURSES:lesson_edit_{lesson_id}",
+                    )
+                ]
+            ]
+        ),
     )
 
 
@@ -14945,6 +15370,12 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSE:BEN:CLOSE:"):
             session_id = data.replace("COURSE:BEN:CLOSE:", "")
             handle_course_benefit_close(query, session_id)
+        elif data.startswith("COURSE:BEN:REPLY:"):
+            thread_id = data.replace("COURSE:BEN:REPLY:", "")
+            handle_course_benefit_reply_callback(query, thread_id)
+        elif data.startswith("COURSE:BEN:REPLY_CANCEL:"):
+            thread_id = data.replace("COURSE:BEN:REPLY_CANCEL:", "")
+            handle_course_benefit_cancel_reply(query, thread_id)
         elif data.startswith("COURSE:PRES:OPEN:"):
             parts = data.split(":", 4)
             if len(parts) == 5:
