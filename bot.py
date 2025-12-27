@@ -1235,16 +1235,15 @@ WAITING_PROFILE_EDIT_NAME = set()
 WAITING_PROFILE_EDIT_AGE = set()
 WAITING_PROFILE_EDIT_COUNTRY = set()
 PROFILE_EDIT_CONTEXT: Dict[int, Dict] = {}
+# Staff Reply bridge: staff_received_message_id -> routing info
+# IMPORTANT: key must be (chat_id, message_id) لأن message_id مو عالمي
+STAFF_REPLY_BRIDGE: Dict[Tuple[int, int], Dict] = {}
 # نظام العرض داخل الدورات (معزول عن الدعم)
 WAITING_COURSE_PRESENTATION_MEDIA: Dict[int, str] = {}
-WAITING_COURSE_PRESENTATION_REPLY: Dict[int, str] = {}
 PRESENTATION_MEDIA_TIMEOUTS: Dict[int, object] = {}
-PRESENTATION_REPLY_TIMEOUTS: Dict[int, object] = {}
 # نظام الفائدة داخل الدورات (معزول عن العرض والدعم)
 WAITING_COURSE_BENEFIT_MEDIA: Dict[int, Dict] = {}
-WAITING_COURSE_BENEFIT_REPLY: Dict[int, str] = {}
 COURSE_BENEFIT_TIMEOUTS: Dict[int, object] = {}
-BENEFIT_REPLY_TIMEOUTS: Dict[int, object] = {}
 
 
 def _lessons_back_keyboard(course_id: str):
@@ -8636,14 +8635,123 @@ def handle_support_open_callback(update: Update, context: CallbackContext):
 
 
 def handle_support_admin_reply_any(update: Update, context: CallbackContext):
-    user = update.effective_user
     msg = update.message
-
-    if not user or not msg or not (is_admin(user.id) or is_supervisor(user.id)):
+    if not msg or not msg.reply_to_message:
         return
 
-    if not msg.reply_to_message:
+    sender = msg.from_user
+    sender_id = sender.id if sender else None
+    if not sender_id:
         return
+
+    if not (is_admin(sender_id) or is_supervisor(sender_id)):
+        return
+
+    replied_id = msg.reply_to_message.message_id
+    replied_chat_id = getattr(msg.reply_to_message, "chat_id", None)
+    if replied_chat_id is None:
+        return
+    bridge = STAFF_REPLY_BRIDGE.get((replied_chat_id, replied_id))
+    if bridge:
+        target_chat_id = bridge.get("user_chat_id")
+        target_user_id = bridge.get("user_id")
+        thread_id = bridge.get("thread_id")
+        kind = bridge.get("kind")
+        if not target_chat_id:
+            return
+
+        # 🔁 جهّز “فتح الشات” للمستخدم بعد الرد (عرض/فائدة)
+        def _reopen_user_mode_after_staff_reply():
+            try:
+                if not target_user_id or not thread_id:
+                    return
+                if kind == "presentation":
+                    WAITING_COURSE_PRESENTATION_MEDIA[target_user_id] = thread_id
+                    if job_queue:
+                        _schedule_presentation_media_timeout(
+                            user_id=target_user_id,
+                            chat_id=target_chat_id,
+                            thread_id=thread_id,
+                        )
+                elif kind == "benefit":
+                    # نعيد بناء سياق الفائدة من Firestore لضمان نفس سلوك المستخدم
+                    if firestore_available():
+                        tdoc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
+                        if tdoc.exists:
+                            t = tdoc.to_dict() or {}
+                            WAITING_COURSE_BENEFIT_MEDIA[target_user_id] = {
+                                "session_id": thread_id,
+                                "thread_id": thread_id,
+                                "user_id": t.get("user_id", target_user_id),
+                                "user_name": t.get("user_name"),
+                                "user_username": t.get("user_username"),
+                                "user_gender": t.get("user_gender"),
+                                "course_id": t.get("course_id"),
+                                "course_title": t.get("course_title"),
+                                "lesson_id": t.get("lesson_id"),
+                                "lesson_title": t.get("lesson_title"),
+                                "curriculum_section": t.get("curriculum_section"),
+                            }
+                            if job_queue:
+                                _schedule_course_benefit_timeout(
+                                    user_id=target_user_id,
+                                    chat_id=target_chat_id,
+                                    session_id=thread_id,
+                                )
+            except Exception as e:
+                logger.debug("[STAFF_REPLY_BRIDGE] reopen mode failed: %s", e)
+
+        # 🧾 عنوان بسيط يوصل للمستخدم قبل الرد (حسب النوع)
+        prefix = "💬 رد من المشرفة/الأدمن"
+        if kind == "presentation":
+            prefix = "💬 رد على العرض من المشرفة/الأدمن"
+        elif kind == "benefit":
+            prefix = "💬 رد على الفائدة من المشرفة/الأدمن"
+
+        if msg.text:
+            context.bot.send_message(chat_id=target_chat_id, text=f"{prefix}:\n\n{msg.text}")
+        elif msg.photo:
+            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            context.bot.send_photo(
+                chat_id=target_chat_id,
+                photo=msg.photo[-1].file_id,
+                caption=msg.caption,
+            )
+        elif msg.voice:
+            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            context.bot.send_voice(
+                chat_id=target_chat_id,
+                voice=msg.voice.file_id,
+                caption=msg.caption,
+            )
+        elif msg.audio:
+            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            context.bot.send_audio(
+                chat_id=target_chat_id,
+                audio=msg.audio.file_id,
+                caption=msg.caption,
+            )
+        elif msg.document:
+            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            context.bot.send_document(
+                chat_id=target_chat_id,
+                document=msg.document.file_id,
+                caption=msg.caption,
+            )
+        elif msg.video_note:
+            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            context.bot.send_video_note(
+                chat_id=target_chat_id, video_note=msg.video_note.file_id
+            )
+        else:
+            msg.reply_text("⚠️ نوع الرسالة غير مدعوم.")
+            return
+
+        _reopen_user_mode_after_staff_reply()
+        msg.reply_text("✅ تم إرسال الرد للمتعلم.")
+        return
+
+    user = sender
 
     target_id = _extract_target_id_from_support_message(msg.reply_to_message)
     if not target_id:
@@ -11532,16 +11640,13 @@ def start_bot():
             user = getattr(message, "from_user", None)
             if not user:
                 return False
-            return (
-                user.id in WAITING_COURSE_PRESENTATION_MEDIA
-                or user.id in WAITING_COURSE_PRESENTATION_REPLY
-            )
+            return user.id in WAITING_COURSE_PRESENTATION_MEDIA
 
         def _in_benefit_mode(message) -> bool:
             user = getattr(message, "from_user", None)
             if not user:
                 return False
-            return user.id in WAITING_COURSE_BENEFIT_MEDIA or user.id in WAITING_COURSE_BENEFIT_REPLY
+            return user.id in WAITING_COURSE_BENEFIT_MEDIA
 
         book_media_filter = (
             Filters.photo
@@ -11892,51 +11997,8 @@ def _user_attended_lesson(user_id: int, course_id: str, lesson_id: str) -> bool:
     return lesson_id in attended_lessons
 
 
-def _presentation_reply_keyboard(thread_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "💬 رد على العرض", callback_data=f"COURSE:PRES:REPLY:{thread_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "❌ إلغاء الرد", callback_data=f"COURSE:PRES:REPLY_CANCEL:{thread_id}"
-                )
-            ],
-        ]
-    )
-
-
-def _benefit_reply_keyboard(thread_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "💬 رد على الفائدة", callback_data=f"COURSE:BEN:REPLY:{thread_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "❌ إلغاء الرد", callback_data=f"COURSE:BEN:REPLY_CANCEL:{thread_id}"
-                )
-            ],
-        ]
-    )
-
-
 def _cancel_presentation_media_timeout(user_id: int):
     job = PRESENTATION_MEDIA_TIMEOUTS.pop(user_id, None)
-    if job:
-        try:
-            job.schedule_removal()
-        except Exception:
-            pass
-
-
-def _cancel_presentation_reply_timeout(user_id: int):
-    job = PRESENTATION_REPLY_TIMEOUTS.pop(user_id, None)
     if job:
         try:
             job.schedule_removal()
@@ -11960,19 +12022,6 @@ def _presentation_media_timeout(context: CallbackContext):
             logger.debug("[PRES] Failed to send media timeout notice: %s", e)
 
 
-def _presentation_reply_timeout(context: CallbackContext):
-    data = context.job.context or {}
-    user_id = data.get("user_id")
-    chat_id = data.get("chat_id")
-    WAITING_COURSE_PRESENTATION_REPLY.pop(user_id, None)
-    PRESENTATION_REPLY_TIMEOUTS.pop(user_id, None)
-    if chat_id:
-        try:
-            context.bot.send_message(chat_id=chat_id, text="⏳ انتهت مهلة الرد.")
-        except Exception as e:
-            logger.debug("[PRES] Failed to send reply timeout notice: %s", e)
-
-
 def _schedule_presentation_media_timeout(user_id: int, chat_id: int, thread_id: str):
     if not job_queue:
         return
@@ -11985,24 +12034,9 @@ def _schedule_presentation_media_timeout(user_id: int, chat_id: int, thread_id: 
     PRESENTATION_MEDIA_TIMEOUTS[user_id] = job
 
 
-def _schedule_presentation_reply_timeout(user_id: int, chat_id: int, thread_id: str):
-    if not job_queue:
-        return
-    _cancel_presentation_reply_timeout(user_id)
-    job = job_queue.run_once(
-        _presentation_reply_timeout,
-        when=timedelta(minutes=10),
-        context={"user_id": user_id, "chat_id": chat_id, "thread_id": thread_id},
-    )
-    PRESENTATION_REPLY_TIMEOUTS[user_id] = job
-
-
 def _clear_presentation_states(user_id: int):
     WAITING_COURSE_PRESENTATION_MEDIA.pop(user_id, None)
-    WAITING_COURSE_PRESENTATION_REPLY.pop(user_id, None)
     _cancel_presentation_media_timeout(user_id)
-    _cancel_presentation_reply_timeout(user_id)
-
 
 def _cancel_course_benefit_timeout(user_id: int):
     job = COURSE_BENEFIT_TIMEOUTS.pop(user_id, None)
@@ -12056,44 +12090,7 @@ def _schedule_course_benefit_timeout(user_id: int, chat_id: int, session_id: str
 
 def _clear_benefit_states(user_id: int):
     WAITING_COURSE_BENEFIT_MEDIA.pop(user_id, None)
-    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
     _cancel_course_benefit_timeout(user_id)
-    _cancel_benefit_reply_timeout(user_id)
-
-
-def _cancel_benefit_reply_timeout(user_id: int):
-    job = BENEFIT_REPLY_TIMEOUTS.pop(user_id, None)
-    if job:
-        try:
-            job.schedule_removal()
-        except Exception:
-            pass
-
-
-def _benefit_reply_timeout(context: CallbackContext):
-    data = context.job.context or {}
-    user_id = data.get("user_id")
-    chat_id = data.get("chat_id")
-    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
-    BENEFIT_REPLY_TIMEOUTS.pop(user_id, None)
-    if chat_id:
-        try:
-            context.bot.send_message(chat_id=chat_id, text="⏳ انتهت مهلة الرد على الفائدة.")
-        except Exception as e:
-            logger.debug("[BENEFIT] Failed to send reply timeout notice: %s", e)
-
-
-def _schedule_benefit_reply_timeout(user_id: int, chat_id: int, thread_id: str):
-    if not job_queue:
-        return
-    _cancel_benefit_reply_timeout(user_id)
-    job = job_queue.run_once(
-        _benefit_reply_timeout,
-        when=timedelta(minutes=10),
-        context={"user_id": user_id, "chat_id": chat_id, "thread_id": thread_id},
-    )
-    BENEFIT_REPLY_TIMEOUTS[user_id] = job
-
 
 def _format_gender_label(gender: Optional[str]) -> str:
     if gender == "male":
@@ -13113,20 +13110,6 @@ def _build_presentation_header(thread: Dict, thread_id: str) -> str:
         f"🆔 Thread: {thread_id}"
     )
 
-
-def _build_presentation_reply_header(thread: Dict, thread_id: str) -> str:
-    username = thread.get("user_username")
-    username_part = f" @{username}" if username else ""
-    return (
-        "🎓 رد على العرض\n"
-        f"👤 المتعلم: {thread.get('user_name', 'متعلم')}{username_part}\n"
-        f"🧕 الجنس: {_format_gender_label(thread.get('user_gender'))}\n"
-        f"📚 الدورة: {thread.get('course_title', 'دورة')}\n"
-        f"📘 الدرس: {thread.get('lesson_title', 'درس')}\n"
-        f"🆔 Thread: {thread_id}"
-    )
-
-
 def _extract_presentation_payload(message) -> Optional[Dict]:
     if not message:
         return None
@@ -13166,33 +13149,6 @@ def _extract_presentation_payload(message) -> Optional[Dict]:
             "caption": message.caption,
         }
     return None
-
-
-def _send_presentation_bundle(bot, chat_id: int, header: Optional[str], payload: Dict, reply_markup=None):
-    if header:
-        try:
-            bot.send_message(chat_id=chat_id, text=header, reply_markup=reply_markup)
-        except Exception as e:
-            logger.error(f"Error sending presentation header to {chat_id}: {e}")
-            return
-
-    try:
-        msg_type = payload.get("type")
-        caption = payload.get("caption")
-        if msg_type == "text":
-            bot.send_message(chat_id=chat_id, text=payload.get("text", ""))
-        elif msg_type == "voice":
-            bot.send_voice(chat_id=chat_id, voice=payload.get("file_id"), caption=caption)
-        elif msg_type == "audio":
-            bot.send_audio(chat_id=chat_id, audio=payload.get("file_id"), caption=caption)
-        elif msg_type == "photo":
-            bot.send_photo(chat_id=chat_id, photo=payload.get("file_id"), caption=caption)
-        elif msg_type == "video_note":
-            bot.send_video_note(chat_id=chat_id, video_note=payload.get("file_id"))
-        elif msg_type == "document":
-            bot.send_document(chat_id=chat_id, document=payload.get("file_id"), caption=caption)
-    except Exception as e:
-        logger.error(f"Error sending presentation payload to {chat_id}: {e}")
 
 
 def _store_presentation_message(
@@ -13309,28 +13265,6 @@ def _extract_benefit_payload(message) -> Optional[Dict]:
             "text": message.caption,
         }
     return None
-
-
-def _send_benefit_payload(bot, chat_id: int, header: Optional[str], payload: Dict, reply_markup=None):
-    if header:
-        try:
-            bot.send_message(chat_id=chat_id, text=header)
-        except Exception as e:
-            logger.error(f"Error sending benefit header to {chat_id}: {e}")
-    try:
-        msg_type = payload.get("type")
-        caption = payload.get("caption")
-        if msg_type == "text":
-            bot.send_message(chat_id=chat_id, text=payload.get("text", ""), reply_markup=reply_markup)
-        elif msg_type == "photo":
-            bot.send_photo(
-                chat_id=chat_id,
-                photo=payload.get("file_id"),
-                caption=payload.get("text") or caption,
-                reply_markup=reply_markup,
-            )
-    except Exception as e:
-        logger.error(f"Error sending benefit payload to {chat_id}: {e}")
 
 
 def handle_course_presentation_open(
@@ -13539,24 +13473,70 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
         user_gender == "male" or thread.get("admin_mirror_enabled", True)
     )
 
-    supervisor_markup = _presentation_reply_keyboard(thread_id)
+    def _send_presentation_to_staff(target_id: int):
+        sent_header = None
+        sent_payload = None
+        caption = payload.get("caption")
+        msg_type = payload.get("type")
+        try:
+            sent_header = context.bot.send_message(chat_id=target_id, text=header)
+            if msg_type == "text":
+                sent_payload = context.bot.send_message(
+                    chat_id=target_id, text=payload.get("text", "")
+                )
+            elif msg_type == "voice":
+                sent_payload = context.bot.send_voice(
+                    chat_id=target_id,
+                    voice=payload.get("file_id"),
+                    caption=caption,
+                )
+            elif msg_type == "audio":
+                sent_payload = context.bot.send_audio(
+                    chat_id=target_id,
+                    audio=payload.get("file_id"),
+                    caption=caption,
+                )
+            elif msg_type == "photo":
+                sent_payload = context.bot.send_photo(
+                    chat_id=target_id,
+                    photo=payload.get("file_id"),
+                    caption=caption,
+                )
+            elif msg_type == "video_note":
+                sent_payload = context.bot.send_video_note(
+                    chat_id=target_id, video_note=payload.get("file_id")
+                )
+            elif msg_type == "document":
+                sent_payload = context.bot.send_document(
+                    chat_id=target_id,
+                    document=payload.get("file_id"),
+                    caption=caption,
+                )
+        except Exception as e:
+            logger.error(f"Error sending presentation to staff {target_id}: {e}")
+            return
+
+        # ✅ لازم نخزن على الهيدر + على المحتوى (لأن المشرفة ممكن تعمل Reply على أي واحد)
+        def _bridge_store(m):
+            if not m:
+                return
+            STAFF_REPLY_BRIDGE[(target_id, m.message_id)] = {
+                "kind": "presentation",
+                "thread_id": thread_id,
+                "user_chat_id": thread.get("user_chat_id") or user.id,
+                "user_id": thread.get("user_id") or user.id,
+                "course_id": thread.get("course_id"),
+                "lesson_id": thread.get("lesson_id"),
+            }
+
+        _bridge_store(sent_header)
+        _bridge_store(sent_payload)
+
     if send_to_supervisor:
-        _send_presentation_bundle(
-            context.bot,
-            SUPERVISOR_ID,
-            header,
-            payload,
-            supervisor_markup,
-        )
+        _send_presentation_to_staff(SUPERVISOR_ID)
 
     if mirror_to_admin:
-        _send_presentation_bundle(
-            context.bot,
-            admin_target,
-            header,
-            payload,
-            _presentation_reply_keyboard(thread_id),
-        )
+        _send_presentation_to_staff(admin_target)
 
     target_label = "الأدمن" if user_gender == "male" else "المشرفة"
     update.message.reply_text(
@@ -13575,100 +13555,12 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
     _schedule_presentation_media_timeout(user.id, update.message.chat_id, thread_id)
 
 
-def handle_course_presentation_reply_callback(query: Update.callback_query, thread_id: str):
-    user_id = query.from_user.id
-    if not (is_supervisor(user_id) or is_admin(user_id)):
-        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
-        return
-
-    WAITING_COURSE_PRESENTATION_REPLY[user_id] = thread_id
-    if query.message:
-        _schedule_presentation_reply_timeout(user_id, query.message.chat_id, thread_id)
-    query.answer("📨 أرسل/أرسلي ردك الآن ليصل للمتعلم.", show_alert=True)
-
-
-def handle_course_presentation_cancel_reply(query: Update.callback_query, thread_id: str):
-    user_id = query.from_user.id
-    if not (is_supervisor(user_id) or is_admin(user_id)):
-        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
-        return
-
-    stored_thread_id = WAITING_COURSE_PRESENTATION_REPLY.pop(user_id, None)
-    if stored_thread_id and stored_thread_id != thread_id:
-        logger.debug(
-            "[PRES] تم مسح وضع الرد المختلف | user_id=%s | stored_thread=%s | requested=%s",
-            user_id,
-            stored_thread_id,
-            thread_id,
-        )
-    _cancel_presentation_reply_timeout(user_id)
-    query.answer("✅ تم إلغاء وضع الرد.", show_alert=True)
-
-
-def handle_course_presentation_supervisor_reply(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not user or user.id not in WAITING_COURSE_PRESENTATION_REPLY:
-        return
-
-    thread_id = WAITING_COURSE_PRESENTATION_REPLY.pop(user.id, None)
-    if not thread_id:
-        return
-    _cancel_presentation_reply_timeout(user.id)
-
-    if not firestore_available():
-        update.message.reply_text("❌ لا يمكن إرسال الرد حالياً.")
-        return
-
-    payload = _extract_presentation_payload(update.message)
-    if not payload:
-        update.message.reply_text("⚠️ أرسلي نصاً أو وسائط مسموحة للرد على العَرْض.")
-        return
-
-    thread_doc = db.collection(COURSE_PRESENTATIONS_THREADS_COLLECTION).document(thread_id).get()
-    if not thread_doc.exists:
-        update.message.reply_text("❌ هذه الجلسة غير متاحة الآن.")
-        return
-
-    thread = thread_doc.to_dict() or {}
-    target_user_id = thread.get("user_id")
-    target_chat_id = thread.get("user_chat_id") or target_user_id
-
-    _store_presentation_message(
-        thread_id, "supervisor", payload, update.message.message_id, sender_id=user.id
-    )
-
-    try:
-        context.bot.send_message(
-            chat_id=target_chat_id,
-            text="✅ وصل رد المشرف/المسؤولة على عرضك\n🎧 يمكنك الاستماع والرد داخل العَرْض",
-        )
-        _send_presentation_bundle(context.bot, target_chat_id, None, payload)
-    except Exception as e:
-        logger.error(f"Error delivering presentation reply to user {target_user_id}: {e}")
-    else:
-        _schedule_presentation_media_timeout(
-            user_id=target_user_id,
-            chat_id=target_chat_id,
-            thread_id=thread_id,
-        )
-
-    if thread.get("admin_mirror_enabled", True) and ADMIN_ID and ADMIN_ID != user.id:
-        header = _build_presentation_reply_header(thread, thread_id)
-        _send_presentation_bundle(context.bot, ADMIN_ID, header, payload)
-
-    update.message.reply_text("✅ تم إرسال ردك.")
-
-
 def course_presentation_router(update: Update, context: CallbackContext):
     user = update.effective_user
     if not user:
         return
 
     user_id = user.id
-    if user_id in WAITING_COURSE_PRESENTATION_REPLY:
-        handle_course_presentation_supervisor_reply(update, context)
-        return
-
     if user_id in WAITING_COURSE_PRESENTATION_MEDIA:
         handle_course_presentation_user_media(update, context)
 
@@ -13862,39 +13754,6 @@ def handle_course_benefit_close(query: Update.callback_query, session_id: str):
     )
 
 
-def handle_course_benefit_reply_callback(query: Update.callback_query, thread_id: str):
-    user_id = query.from_user.id
-    if not (is_supervisor(user_id) or is_admin(user_id)):
-        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
-        return
-
-    thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
-    if not thread_doc.exists:
-        query.answer("⚠️ هذه الفائدة غير متاحة.", show_alert=True)
-        return
-
-    WAITING_COURSE_BENEFIT_REPLY[user_id] = thread_id
-    if query.message:
-        _schedule_benefit_reply_timeout(user_id, query.message.chat_id, thread_id)
-    query.answer("📨 أرسل/أرسلي ردك الآن ليصل للمتعلم.", show_alert=True)
-
-
-def handle_course_benefit_cancel_reply(query: Update.callback_query, thread_id: str):
-    user_id = query.from_user.id
-    if not (is_supervisor(user_id) or is_admin(user_id)):
-        query.answer("❌ هذا الزر مخصص للمشرفة أو الأدمن فقط.", show_alert=True)
-        return
-
-    stored_id = WAITING_COURSE_BENEFIT_REPLY.get(user_id)
-    if stored_id != thread_id:
-        query.answer("⚠️ لا يوجد رد نشط لهذه الفائدة.", show_alert=True)
-        return
-
-    WAITING_COURSE_BENEFIT_REPLY.pop(user_id, None)
-    _cancel_benefit_reply_timeout(user_id)
-    query.answer("تم إلغاء وضع الرد.")
-
-
 def handle_course_benefit_user_message(update: Update, context: CallbackContext):
     user = update.effective_user
     if not user or user.id not in WAITING_COURSE_BENEFIT_MEDIA:
@@ -13927,30 +13786,48 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
     user_gender = ctx.get("user_gender")
     header = _build_benefit_header(thread_data, thread_id)
 
+    def _send_benefit_to_staff(target_id: int):
+        sent_header = None
+        sent_payload = None
+        try:
+            sent_header = context.bot.send_message(chat_id=target_id, text=header)
+            if payload.get("type") == "photo":
+                sent_payload = context.bot.send_photo(
+                    chat_id=target_id,
+                    photo=payload.get("file_id"),
+                    caption=payload.get("caption") or payload.get("text"),
+                )
+            elif payload.get("type") == "text":
+                sent_payload = context.bot.send_message(
+                    chat_id=target_id, text=payload.get("text", "")
+                )
+        except Exception as e:
+            logger.error(f"Error sending benefit to staff {target_id}: {e}")
+            return
+
+        # ✅ نفس الشيء: نخزن للهيدر + للرسالة نفسها
+        def _bridge_store(m):
+            if not m:
+                return
+            STAFF_REPLY_BRIDGE[(target_id, m.message_id)] = {
+                "kind": "benefit",
+                "thread_id": thread_id,
+                "user_chat_id": thread_data.get("user_chat_id")
+                or ctx.get("user_id"),
+                "user_id": thread_data.get("user_id") or ctx.get("user_id"),
+                "course_id": ctx.get("course_id"),
+                "lesson_id": ctx.get("lesson_id"),
+            }
+
+        _bridge_store(sent_header)
+        _bridge_store(sent_payload)
+
     send_to_supervisor = user_gender != "male" and SUPERVISOR_ID
     if send_to_supervisor:
-        try:
-            _send_benefit_payload(
-                context.bot,
-                SUPERVISOR_ID,
-                header,
-                payload,
-                reply_markup=_benefit_reply_keyboard(thread_id),
-            )
-        except Exception as e:
-            logger.error(f"Error sending benefit to supervisor: {e}")
+        _send_benefit_to_staff(SUPERVISOR_ID)
 
     if ADMIN_ID:
-        try:
-            _send_benefit_payload(
-                context.bot,
-                ADMIN_ID,
-                header,
-                payload,
-                reply_markup=_benefit_reply_keyboard(thread_id),
-            )
-        except Exception as e:
-            logger.error(f"Error sending benefit to admin: {e}")
+        _send_benefit_to_staff(ADMIN_ID)
 
     try:
         sub, sub_ref = _ensure_subscription(user.id, ctx.get("course_id"))
@@ -13986,90 +13863,9 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
     _schedule_course_benefit_timeout(user.id, update.message.chat_id, thread_id)
 
 
-def handle_course_benefit_supervisor_reply(update: Update, context: CallbackContext):
-    user = update.effective_user
-    if not user:
-        return
-
-    thread_id = WAITING_COURSE_BENEFIT_REPLY.get(user.id)
-    if not thread_id:
-        return
-
-    thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
-    if not thread_doc.exists:
-        update.message.reply_text("❌ جلسة الفائدة غير متاحة الآن.")
-        WAITING_COURSE_BENEFIT_REPLY.pop(user.id, None)
-        _cancel_benefit_reply_timeout(user.id)
-        return
-
-    payload = _extract_benefit_payload(update.message)
-    if not payload:
-        update.message.reply_text("⚠️ يمكن إرسال نص أو صورة فقط داخل الرد على الفائدة.")
-        return
-
-    _cancel_benefit_reply_timeout(user.id)
-    WAITING_COURSE_BENEFIT_REPLY.pop(user.id, None)
-
-    thread = thread_doc.to_dict() or {}
-    _store_benefit_message(thread_id, "staff", payload, update.message.message_id, sender_id=user.id)
-
-    course_id = thread.get("course_id")
-    lesson_id = thread.get("lesson_id")
-    target_user_id = thread.get("user_id")
-    target_chat_id = thread.get("user_chat_id") or target_user_id
-
-    reply_buttons = [
-        [
-            InlineKeyboardButton(
-                "💬 رد", callback_data=f"COURSE:BEN:OPEN:{course_id}:{lesson_id}"
-            )
-        ]
-    ]
-    if course_id:
-        reply_buttons.append(
-            [
-                InlineKeyboardButton(
-                    "📚 الرجوع لقائمة الدروس",
-                    callback_data=f"COURSES:user_lessons_{course_id}",
-                )
-            ]
-        )
-
-    reply_keyboard = InlineKeyboardMarkup(reply_buttons)
-
-    header = (
-        f"💬 رد على فائدة الدرس «{thread.get('lesson_title', 'درس')}»\n"
-        f"الدورة: {thread.get('course_title', 'دورة')}"
-    )
-
-    _send_benefit_payload(
-        context.bot,
-        target_chat_id,
-        header,
-        payload,
-        reply_markup=reply_keyboard,
-    )
-
-    if is_supervisor(user.id) and ADMIN_ID and ADMIN_ID != user.id:
-        mirror_header = _build_benefit_header(thread, thread_id)
-        _send_benefit_payload(
-            context.bot,
-            ADMIN_ID,
-            mirror_header,
-            payload,
-            reply_markup=_benefit_reply_keyboard(thread_id),
-        )
-
-    update.message.reply_text("✅ تم إرسال ردك.")
-
-
 def course_benefit_router(update: Update, context: CallbackContext):
     user = update.effective_user
     if not user:
-        return
-
-    if user.id in WAITING_COURSE_BENEFIT_REPLY:
-        handle_course_benefit_supervisor_reply(update, context)
         return
 
     if user.id in WAITING_COURSE_BENEFIT_MEDIA:
@@ -14658,6 +14454,8 @@ def _admin_request_curriculum_prompt_template(query: Update.callback_query, less
         "lesson_id": lesson_id,
         "edit_action": "edit_curriculum_prompt",
     }
+    _clear_presentation_states(user_id)
+    _clear_benefit_states(user_id)
     WAITING_LESSON_CURRICULUM_PROMPT.add(user_id)
     safe_edit_message_text(
         query,
@@ -15370,12 +15168,6 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSE:BEN:CLOSE:"):
             session_id = data.replace("COURSE:BEN:CLOSE:", "")
             handle_course_benefit_close(query, session_id)
-        elif data.startswith("COURSE:BEN:REPLY:"):
-            thread_id = data.replace("COURSE:BEN:REPLY:", "")
-            handle_course_benefit_reply_callback(query, thread_id)
-        elif data.startswith("COURSE:BEN:REPLY_CANCEL:"):
-            thread_id = data.replace("COURSE:BEN:REPLY_CANCEL:", "")
-            handle_course_benefit_cancel_reply(query, thread_id)
         elif data.startswith("COURSE:PRES:OPEN:"):
             parts = data.split(":", 4)
             if len(parts) == 5:
@@ -15384,12 +15176,20 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSE:PRES:CLOSE:"):
             thread_id = data.replace("COURSE:PRES:CLOSE:", "")
             handle_course_presentation_close(query, thread_id)
-        elif data.startswith("COURSE:PRES:REPLY:"):
-            thread_id = data.replace("COURSE:PRES:REPLY:", "")
-            handle_course_presentation_reply_callback(query, thread_id)
-        elif data.startswith("COURSE:PRES:REPLY_CANCEL:"):
-            thread_id = data.replace("COURSE:PRES:REPLY_CANCEL:", "")
-            handle_course_presentation_cancel_reply(query, thread_id)
+
+        # ✅ تأكيد تشغيل تحرير قالب المقدمة + التبديل (بغض النظر عن اسم callback اللي عندك)
+        elif data.startswith("COURSES:lesson_edit_curriculum_prompt_"):
+            lesson_id = data.replace("COURSES:lesson_edit_curriculum_prompt_", "")
+            _admin_request_curriculum_prompt_template(query, lesson_id)
+        elif data.startswith("COURSES:lesson_curriculum_prompt_"):
+            lesson_id = data.replace("COURSES:lesson_curriculum_prompt_", "")
+            _admin_request_curriculum_prompt_template(query, lesson_id)
+        elif data.startswith("COURSES:lesson_toggle_curriculum_prompt_"):
+            lesson_id = data.replace("COURSES:lesson_toggle_curriculum_prompt_", "")
+            _admin_toggle_curriculum_prompt(query, lesson_id)
+        elif data.startswith("COURSES:lesson_curriculum_prompt_toggle_"):
+            lesson_id = data.replace("COURSES:lesson_curriculum_prompt_toggle_", "")
+            _admin_toggle_curriculum_prompt(query, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
             show_course_details(query, context, user_id, course_id)
