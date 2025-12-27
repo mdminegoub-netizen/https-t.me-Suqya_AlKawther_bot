@@ -1221,7 +1221,6 @@ WAITING_LESSON_TITLE = set()
 WAITING_LESSON_CONTENT = set()
 WAITING_LESSON_AUDIO = set()
 WAITING_LESSON_CURRICULUM_NAME = set()
-WAITING_LESSON_CURRICULUM_PROMPT = set()
 WAITING_QUIZ_TITLE = set()
 WAITING_QUIZ_QUESTION = set()
 WAITING_QUIZ_ANSWER_TEXT = set()
@@ -1268,7 +1267,6 @@ def _reset_lesson_creation(user_id: int):
     WAITING_LESSON_CONTENT.discard(user_id)
     WAITING_LESSON_AUDIO.discard(user_id)
     WAITING_LESSON_CURRICULUM_NAME.discard(user_id)
-    WAITING_LESSON_CURRICULUM_PROMPT.discard(user_id)
     LESSON_CREATION_CONTEXT.pop(user_id, None)
 
 
@@ -8657,6 +8655,7 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
         target_user_id = bridge.get("user_id")
         thread_id = bridge.get("thread_id")
         kind = bridge.get("kind")
+        user_gender = bridge.get("user_gender")
         if not target_chat_id:
             return
 
@@ -8707,39 +8706,85 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
             prefix = "💬 رد على العرض من المشرفة/الأدمن"
         elif kind == "benefit":
             prefix = "💬 رد على الفائدة من المشرفة/الأدمن"
+        if not user_gender and thread_id and kind in {"presentation", "benefit"}:
+            try:
+                collection = (
+                    COURSE_PRESENTATIONS_THREADS_COLLECTION
+                    if kind == "presentation"
+                    else COURSE_BENEFIT_THREADS_COLLECTION
+                )
+                thread_doc = db.collection(collection).document(thread_id).get()
+                if thread_doc.exists:
+                    user_gender = (thread_doc.to_dict() or {}).get("user_gender")
+            except Exception as e:
+                logger.debug("[STAFF_REPLY_BRIDGE] failed to load gender: %s", e)
+        if not user_gender and target_user_id:
+            user_gender = (get_user_record_by_id(target_user_id) or {}).get("gender")
 
+        reply_markup = None
+        if kind in {"presentation", "benefit"} and bridge.get("course_id") and bridge.get("lesson_id"):
+            button_label = "💬 اضغط للرد على المشرفة"
+            if user_gender == "male":
+                button_label = "💬 اضغط للرد على المشرف"
+            callback_prefix = "COURSE:PRES:OPEN" if kind == "presentation" else "COURSE:BEN:OPEN"
+            reply_markup = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            button_label,
+                            callback_data=f"{callback_prefix}:{bridge.get('course_id')}:{bridge.get('lesson_id')}",
+                        )
+                    ]
+                ]
+            )
+
+        sent_to_user = None
         if msg.text:
-            context.bot.send_message(chat_id=target_chat_id, text=f"{prefix}:\n\n{msg.text}")
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id,
+                text=f"{prefix}:\n\n{msg.text}",
+                reply_markup=reply_markup,
+            )
         elif msg.photo:
-            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id, text=prefix, reply_markup=reply_markup
+            )
             context.bot.send_photo(
                 chat_id=target_chat_id,
                 photo=msg.photo[-1].file_id,
                 caption=msg.caption,
             )
         elif msg.voice:
-            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id, text=prefix, reply_markup=reply_markup
+            )
             context.bot.send_voice(
                 chat_id=target_chat_id,
                 voice=msg.voice.file_id,
                 caption=msg.caption,
             )
         elif msg.audio:
-            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id, text=prefix, reply_markup=reply_markup
+            )
             context.bot.send_audio(
                 chat_id=target_chat_id,
                 audio=msg.audio.file_id,
                 caption=msg.caption,
             )
         elif msg.document:
-            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id, text=prefix, reply_markup=reply_markup
+            )
             context.bot.send_document(
                 chat_id=target_chat_id,
                 document=msg.document.file_id,
                 caption=msg.caption,
             )
         elif msg.video_note:
-            context.bot.send_message(chat_id=target_chat_id, text=prefix)
+            sent_to_user = context.bot.send_message(
+                chat_id=target_chat_id, text=prefix, reply_markup=reply_markup
+            )
             context.bot.send_video_note(
                 chat_id=target_chat_id, video_note=msg.video_note.file_id
             )
@@ -8749,6 +8794,53 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
 
         _reopen_user_mode_after_staff_reply()
         msg.reply_text("✅ تم إرسال الرد للمتعلم.")
+        if (
+            sent_to_user
+            and is_supervisor(sender_id)
+            and ADMIN_ID is not None
+            and ADMIN_ID != sender_id
+        ):
+            try:
+                if msg.text:
+                    context.bot.send_message(
+                        chat_id=ADMIN_ID,
+                        text=f"{prefix}:\n\n{msg.text}",
+                    )
+                elif msg.photo:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=prefix)
+                    context.bot.send_photo(
+                        chat_id=ADMIN_ID,
+                        photo=msg.photo[-1].file_id,
+                        caption=msg.caption,
+                    )
+                elif msg.voice:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=prefix)
+                    context.bot.send_voice(
+                        chat_id=ADMIN_ID,
+                        voice=msg.voice.file_id,
+                        caption=msg.caption,
+                    )
+                elif msg.audio:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=prefix)
+                    context.bot.send_audio(
+                        chat_id=ADMIN_ID,
+                        audio=msg.audio.file_id,
+                        caption=msg.caption,
+                    )
+                elif msg.document:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=prefix)
+                    context.bot.send_document(
+                        chat_id=ADMIN_ID,
+                        document=msg.document.file_id,
+                        caption=msg.caption,
+                    )
+                elif msg.video_note:
+                    context.bot.send_message(chat_id=ADMIN_ID, text=prefix)
+                    context.bot.send_video_note(
+                        chat_id=ADMIN_ID, video_note=msg.video_note.file_id
+                    )
+            except Exception as e:
+                logger.error("Error mirroring supervisor reply to admin: %s", e)
         return
 
     user = sender
@@ -9583,41 +9675,6 @@ def handle_text(update: Update, context: CallbackContext):
             _reset_lesson_creation(user_id)
         return
 
-    if user_id in WAITING_LESSON_CURRICULUM_PROMPT:
-        ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
-        course_id = ctx.get("course_id")
-        lesson_id = ctx.get("lesson_id")
-        if text == BTN_CANCEL:
-            _reset_lesson_creation(user_id)
-            msg.reply_text("تم الإلغاء.", reply_markup=_lessons_back_keyboard(course_id))
-            return
-        try:
-            db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).update(
-                {
-                    "curriculum_prompt_template": text,
-                    "enable_curriculum_prompt": True,
-                    "updated_at": firestore.SERVER_TIMESTAMP,
-                }
-            )
-            msg.reply_text(
-                "✅ تم حفظ قالب المقدمة.",
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                "🔧 فتح إعدادات الدرس",
-                                callback_data=f"COURSES:lesson_edit_{lesson_id}",
-                            )
-                        ]
-                    ]
-                ),
-            )
-        except Exception as e:
-            logger.error(f"خطأ في حفظ قالب باب المقدمة: {e}")
-            msg.reply_text("❌ تعذر الحفظ حالياً.", reply_markup=_lessons_back_keyboard(course_id))
-        finally:
-            _reset_lesson_creation(user_id)
-        return
     # إنشاء اختبار جديد
     if user_id in WAITING_QUIZ_TITLE:
         course_id = QUIZ_CREATION_CONTEXT.get(user_id, {}).get("course_id")
@@ -12100,15 +12157,6 @@ def _format_gender_label(gender: Optional[str]) -> str:
     return "غير محدد"
 
 
-def _curriculum_prompt_text(lesson: Optional[Dict]) -> Optional[str]:
-    if not lesson:
-        return None
-    if not lesson.get("enable_curriculum_prompt"):
-        return None
-    template = (lesson.get("curriculum_prompt_template") or "").strip()
-    return template or None
-
-
 # =================== Handlers للمستخدمين العاديين ===================
 
 
@@ -13288,7 +13336,6 @@ def handle_course_presentation_open(
         return
 
     lesson = lesson_doc.to_dict() or {}
-    prompt_text = _curriculum_prompt_text(lesson)
     if not lesson.get("has_presentation"):
         safe_edit_message_text(
             query,
@@ -13361,7 +13408,6 @@ def handle_course_presentation_open(
     if query.message:
         _schedule_presentation_media_timeout(user_id, query.message.chat_id, thread_id)
     target_label = "للأدمن" if (record.get("gender") == "male") else "للمشرفة"
-    prompt_suffix = f"\n\n{prompt_text}" if prompt_text else ""
     try:
         context.bot.send_message(
             chat_id=user_id,
@@ -13380,7 +13426,7 @@ def handle_course_presentation_open(
         logger.debug("[PRES] Failed to send chat-style open message: %s", e)
     safe_edit_message_text(
         query,
-        f"تم فتح العَرْض {target_label}\nأرسل/أرسلي تسميعك الآن{prompt_suffix}",
+        f"تم فتح العَرْض {target_label}\nأرسل/أرسلي تسميعك الآن",
         reply_markup=_lesson_view_keyboard(
             course_id,
             lesson_id,
@@ -13527,6 +13573,7 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
                 "user_id": thread.get("user_id") or user.id,
                 "course_id": thread.get("course_id"),
                 "lesson_id": thread.get("lesson_id"),
+                "user_gender": thread.get("user_gender"),
             }
 
         _bridge_store(sent_header)
@@ -13587,7 +13634,6 @@ def handle_course_benefit_open(
 
     lesson = lesson_doc.to_dict() or {}
     course = _course_document(course_id) or {}
-    prompt_text = _curriculum_prompt_text(lesson)
 
     record = get_user_record_by_id(user_id) or {}
     _clear_presentation_states(user_id)
@@ -13716,8 +13762,6 @@ def handle_course_benefit_open(
                 ]
             ),
         )
-        if prompt_text:
-            context.bot.send_message(chat_id=user_id, text=prompt_text)
     except Exception:
         pass
 
@@ -13817,6 +13861,7 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
                 "user_id": thread_data.get("user_id") or ctx.get("user_id"),
                 "course_id": ctx.get("course_id"),
                 "lesson_id": ctx.get("lesson_id"),
+                "user_gender": thread_data.get("user_gender") or ctx.get("user_gender"),
             }
 
         _bridge_store(sent_header)
@@ -14258,8 +14303,6 @@ def _admin_open_lesson_edit_menu(query: Update.callback_query, lesson_id: str):
     has_presentation = lesson.get("has_presentation", False)
     pres_label = "مفعّل" if has_presentation else "غير مفعّل"
     curriculum_section = lesson.get("curriculum_section") or "غير مفعّل"
-    prompt_enabled = lesson.get("enable_curriculum_prompt", False)
-    prompt_label = "مفعّل" if prompt_enabled else "غير مفعّل"
     keyboard = [
         [InlineKeyboardButton("✏️ تعديل العنوان", callback_data=f"COURSES:lesson_edit_title_{lesson_id}")],
         [InlineKeyboardButton("📝 تعديل المحتوى", callback_data=f"COURSES:lesson_edit_content_{lesson_id}")],
@@ -14273,18 +14316,6 @@ def _admin_open_lesson_edit_menu(query: Update.callback_query, lesson_id: str):
             InlineKeyboardButton(
                 f"📘 باب المقرر ({curriculum_section})",
                 callback_data=f"COURSES:lesson_toggle_curriculum_{lesson_id}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                f"✨ قالب المقدمة ({prompt_label})",
-                callback_data=f"COURSES:lesson_toggle_curriculum_prompt_{lesson_id}",
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                "✏️ تحرير قالب المقدمة",
-                callback_data=f"COURSES:lesson_edit_curriculum_prompt_{lesson_id}",
             )
         ],
         [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:lessons_{course_id}")],
@@ -14399,77 +14430,6 @@ def _admin_toggle_curriculum_section(query: Update.callback_query, lesson_id: st
         query,
         "✏️ أرسل اسم باب المقرر لهذا الدرس.",
         reply_markup=_lessons_back_keyboard(course_id),
-    )
-
-
-def _admin_toggle_curriculum_prompt(query: Update.callback_query, lesson_id: str):
-    user_id = query.from_user.id
-    if not (is_admin(user_id) or is_supervisor(user_id)):
-        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
-        return
-
-    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
-    if not lesson_doc.exists:
-        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
-        return
-
-    lesson = lesson_doc.to_dict()
-    course_id = lesson.get("course_id")
-    enabled = bool(lesson.get("enable_curriculum_prompt"))
-
-    try:
-        lesson_doc.reference.update(
-            {
-                "enable_curriculum_prompt": not enabled,
-                "updated_at": firestore.SERVER_TIMESTAMP,
-            }
-        )
-        status_label = "✅ تم تفعيل قالب المقدمة." if not enabled else "✅ تم تعطيل قالب المقدمة."
-        try:
-            query.answer(status_label, show_alert=False)
-        except Exception:
-            pass
-        _admin_open_lesson_edit_menu(query, lesson_id)
-    except Exception as e:
-        logger.error(f"خطأ في تبديل حالة قالب المقدمة: {e}")
-        safe_edit_message_text(query, "❌ تعذر تحديث الإعداد حالياً.", reply_markup=_lessons_back_keyboard(course_id))
-
-
-def _admin_request_curriculum_prompt_template(query: Update.callback_query, lesson_id: str):
-    user_id = query.from_user.id
-    if not (is_admin(user_id) or is_supervisor(user_id)):
-        safe_edit_message_text(query, "❌ ليس لديك صلاحية للقيام بهذا الإجراء.")
-        return
-
-    lesson_doc = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id).get()
-    if not lesson_doc.exists:
-        safe_edit_message_text(query, "❌ الدرس غير موجود.", reply_markup=COURSES_ADMIN_MENU_KB)
-        return
-
-    lesson = lesson_doc.to_dict()
-    course_id = lesson.get("course_id")
-    _reset_lesson_creation(user_id)
-    LESSON_CREATION_CONTEXT[user_id] = {
-        "course_id": course_id,
-        "lesson_id": lesson_id,
-        "edit_action": "edit_curriculum_prompt",
-    }
-    _clear_presentation_states(user_id)
-    _clear_benefit_states(user_id)
-    WAITING_LESSON_CURRICULUM_PROMPT.add(user_id)
-    safe_edit_message_text(
-        query,
-        "✏️ أرسل نص قالب باب المقدمة لهذا الدرس.",
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "🔧 فتح إعدادات الدرس",
-                        callback_data=f"COURSES:lesson_edit_{lesson_id}",
-                    )
-                ]
-            ]
-        ),
     )
 
 
@@ -15177,19 +15137,6 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             thread_id = data.replace("COURSE:PRES:CLOSE:", "")
             handle_course_presentation_close(query, thread_id)
 
-        # ✅ تأكيد تشغيل تحرير قالب المقدمة + التبديل (بغض النظر عن اسم callback اللي عندك)
-        elif data.startswith("COURSES:lesson_edit_curriculum_prompt_"):
-            lesson_id = data.replace("COURSES:lesson_edit_curriculum_prompt_", "")
-            _admin_request_curriculum_prompt_template(query, lesson_id)
-        elif data.startswith("COURSES:lesson_curriculum_prompt_"):
-            lesson_id = data.replace("COURSES:lesson_curriculum_prompt_", "")
-            _admin_request_curriculum_prompt_template(query, lesson_id)
-        elif data.startswith("COURSES:lesson_toggle_curriculum_prompt_"):
-            lesson_id = data.replace("COURSES:lesson_toggle_curriculum_prompt_", "")
-            _admin_toggle_curriculum_prompt(query, lesson_id)
-        elif data.startswith("COURSES:lesson_curriculum_prompt_toggle_"):
-            lesson_id = data.replace("COURSES:lesson_curriculum_prompt_toggle_", "")
-            _admin_toggle_curriculum_prompt(query, lesson_id)
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
             show_course_details(query, context, user_id, course_id)
@@ -15226,12 +15173,6 @@ def handle_courses_callback(update: Update, context: CallbackContext):
         elif data.startswith("COURSES:lesson_toggle_curriculum_"):
             lesson_id = data.replace("COURSES:lesson_toggle_curriculum_", "")
             _admin_toggle_curriculum_section(query, lesson_id)
-        elif data.startswith("COURSES:lesson_toggle_curriculum_prompt_"):
-            lesson_id = data.replace("COURSES:lesson_toggle_curriculum_prompt_", "")
-            _admin_toggle_curriculum_prompt(query, lesson_id)
-        elif data.startswith("COURSES:lesson_edit_curriculum_prompt_"):
-            lesson_id = data.replace("COURSES:lesson_edit_curriculum_prompt_", "")
-            _admin_request_curriculum_prompt_template(query, lesson_id)
         elif data.startswith("COURSES:lesson_delete_confirm_"):
             lesson_id = data.replace("COURSES:lesson_delete_confirm_", "")
             _admin_delete_lesson(query, lesson_id)
