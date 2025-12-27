@@ -13041,16 +13041,6 @@ def _lesson_view_keyboard(
             ]
         )
 
-    if presentation_thread_id:
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "🚪 خروج من العرض",
-                    callback_data=f"COURSE:PRES:CLOSE:{presentation_thread_id}",
-                )
-            ]
-        )
-
     keyboard.append(
         [
             InlineKeyboardButton(
@@ -13059,17 +13049,6 @@ def _lesson_view_keyboard(
             )
         ]
     )
-
-    if benefit_thread_id:
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    "🚪 خروج من الفائدة",
-                    callback_data=f"COURSE:BEN:CLOSE:{benefit_thread_id}",
-                )
-            ]
-        )
-
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -13679,7 +13658,10 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
 
     thread_id = WAITING_COURSE_PRESENTATION_MEDIA.get(user.id)
     if not firestore_available():
-        update.message.reply_text("❌ لا يمكن إرسال العرض حالياً. حاول لاحقاً.")
+        update.message.reply_text(
+            "❌ لا يمكن إرسال العرض حالياً. حاول لاحقاً.",
+            reply_markup=PRESENTATION_SESSION_KB,
+        )
         return
 
     message_text = update.message.text if update.message else None
@@ -13696,18 +13678,25 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
             return
         if normalized_text in MAIN_MENU_BUTTON_TEXTS:
             update.message.reply_text(
-                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة."
+                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة.",
+                reply_markup=PRESENTATION_SESSION_KB,
             )
             return
 
     payload = _extract_presentation_payload(update.message)
     if not payload:
-        update.message.reply_text("⚠️ يمكن إرسال نص، صوت، صورة، ملف أو فيديو دائري فقط داخل العَرْض.")
+        update.message.reply_text(
+            "⚠️ يمكن إرسال نص، صوت، صورة، ملف أو فيديو دائري فقط داخل العَرْض.",
+            reply_markup=PRESENTATION_SESSION_KB,
+        )
         return
 
     thread_doc = db.collection(COURSE_PRESENTATIONS_THREADS_COLLECTION).document(thread_id).get()
     if not thread_doc.exists:
-        update.message.reply_text("❌ لم يتم العثور على جلسة العَرْض. افتحها مجدداً من الدرس.")
+        update.message.reply_text(
+            "❌ لم يتم العثور على جلسة العَرْض. افتحها مجدداً من الدرس.",
+            reply_markup=PRESENTATION_SESSION_KB,
+        )
         WAITING_COURSE_PRESENTATION_MEDIA.pop(user.id, None)
         return
 
@@ -13795,16 +13784,7 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
     target_label = "الأدمن" if user_gender == "male" else "المشرفة"
     update.message.reply_text(
         f"✅ تم إرسال عرضك إلى {target_label}. يمكنك متابعة الإرسال هنا.",
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "🚪 خروج من العرض",
-                        callback_data=f"COURSE:PRES:CLOSE:{thread_id}",
-                    )
-                ]
-            ]
-        ),
+        reply_markup=PRESENTATION_SESSION_KB,
     )
     _schedule_presentation_media_timeout(user.id, update.message.chat_id, thread_id)
 
@@ -14049,18 +14029,25 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
             return
         if normalized_text in MAIN_MENU_BUTTON_TEXTS:
             update.message.reply_text(
-                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة."
+                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة.",
+                reply_markup=BENEFIT_SESSION_KB,
             )
             return
 
     payload = _extract_benefit_payload(update.message)
     if not payload:
-        update.message.reply_text("⚠️ الفائدة تقبل الصور أو النص فقط.")
+        update.message.reply_text(
+            "⚠️ الفائدة تقبل الصور أو النص فقط.",
+            reply_markup=BENEFIT_SESSION_KB,
+        )
         return
 
     thread_doc = db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).get()
     if not thread_doc.exists:
-        update.message.reply_text("❌ جلسة الفائدة غير متاحة. افتحها من الدرس مرة أخرى.")
+        update.message.reply_text(
+            "❌ جلسة الفائدة غير متاحة. افتحها من الدرس مرة أخرى.",
+            reply_markup=BENEFIT_SESSION_KB,
+        )
         _clear_benefit_states(user.id)
         return
 
@@ -14136,15 +14123,7 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
 
     update.message.reply_text(
         "✅ تم استلام الفائدة. يمكنك إرسال فائدة أخرى أو الخروج.",
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "🚪 خروج من الفائدة", callback_data=f"COURSE:BEN:CLOSE:{thread_id}"
-                    )
-                ]
-            ]
-        ),
+        reply_markup=BENEFIT_SESSION_KB,
     )
 
     _schedule_course_benefit_timeout(user.id, update.message.chat_id, thread_id)
