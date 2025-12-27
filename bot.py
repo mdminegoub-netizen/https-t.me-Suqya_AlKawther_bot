@@ -13675,7 +13675,7 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
                 user_id=user.id,
                 user_chat_id=update.message.chat_id,
             )
-            return
+            raise DispatcherHandlerStop()
         if normalized_text in MAIN_MENU_BUTTON_TEXTS:
             update.message.reply_text(
                 "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة.",
@@ -14026,7 +14026,7 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
                 user_id=user.id,
                 user_chat_id=update.message.chat_id,
             )
-            return
+            raise DispatcherHandlerStop()
         if normalized_text in MAIN_MENU_BUTTON_TEXTS:
             update.message.reply_text(
                 "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة.",
