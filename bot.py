@@ -167,6 +167,8 @@ def load_data():
 
             count = 0
             for doc in docs:
+                if str(doc.id) == str(GLOBAL_KEY):
+                    continue
                 user_data = doc.to_dict()
                 loaded_data[doc.id] = user_data
                 count += 1
@@ -446,6 +448,7 @@ def get_user_record_local(user: User) -> Dict:
             "water_liters": None,
             "cups_goal": None,
             "reminders_on": False,
+            "water_enabled": False,
             "today_date": None,
             "today_cups": 0,
             "quran_pages_goal": None,
@@ -485,6 +488,7 @@ def get_user_record_local(user: User) -> Dict:
             "water_liters": None,
             "cups_goal": None,
             "reminders_on": False,
+            "water_enabled": False,
             "today_date": None,
             "today_cups": 0,
             "quran_pages_goal": None,
@@ -988,6 +992,7 @@ def get_user_record(user):
         cached_record["last_active"] = now_iso
         _throttled_last_active_update(user_id, now_iso, now_dt)
         ensure_medal_defaults(cached_record)
+        ensure_water_defaults(cached_record)
         return cached_record
     
     if not firestore_available():
@@ -1001,6 +1006,7 @@ def get_user_record(user):
 
         if doc.exists:
             record = doc.to_dict()
+            ensure_water_defaults(record)
             # تحميل المذكرات من Subcollections إذا كانت غير موجودة في السجل
             try:
                 if not record.get("heart_memos"):
@@ -1042,6 +1048,7 @@ def get_user_record(user):
                 "water_liters": None,
                 "cups_goal": None,
                 "reminders_on": False,
+                "water_enabled": False,
                 "today_date": None,
                 "today_cups": 0,
                 "quran_pages_goal": None,
@@ -2192,7 +2199,7 @@ COMP_MENU_KB = ReplyKeyboardMarkup(
 # ---- الاشعارات / الجرعة التحفيزية (للمستخدم) ----
 def notifications_menu_keyboard(user_id: int, record: Dict = None) -> ReplyKeyboardMarkup:
     record = record or get_user_record_by_id(user_id) or {}
-    reminders_on = bool(record.get("reminders_on"))
+    reminders_on = bool(record.get("water_enabled", False))
     water_button = KeyboardButton(BTN_WATER_REM_OFF if reminders_on else BTN_WATER_REM_ON)
 
     rows = [
@@ -4402,6 +4409,60 @@ def ensure_today_water(record):
         save_data()
 
 
+def ensure_water_defaults(record: Dict):
+    """ضبط الإعدادات الافتراضية لتذكير الماء"""
+    if "water_enabled" not in record:
+        record["water_enabled"] = False
+    if "reminders_on" not in record:
+        record["reminders_on"] = False
+
+
+def perform_initial_water_cleanup():
+    """تعطيل تذكيرات الماء للمستخدمين الحاليين لمرة واحدة"""
+    cfg = get_global_config()
+    if cfg.get("water_cleanup_done"):
+        return
+
+    updated = 0
+    try:
+        if firestore_available():
+            batch = db.batch()
+            for doc in db.collection(USERS_COLLECTION).stream():
+                if str(doc.id) == str(GLOBAL_KEY):
+                    continue
+                doc_data = doc.to_dict() or {}
+                updates = {}
+
+                if doc_data.get("water_enabled") is not False:
+                    updates["water_enabled"] = False
+                if doc_data.get("reminders_on"):
+                    updates["reminders_on"] = False
+
+                if updates:
+                    batch.update(doc.reference, updates)
+                    updated += 1
+                    if updated % 400 == 0:
+                        batch.commit()
+                        batch = db.batch()
+
+            if updated % 400 != 0:
+                batch.commit()
+
+        for uid, rec in data.items():
+            if str(uid) == str(GLOBAL_KEY):
+                continue
+            if rec.get("water_enabled") or rec.get("reminders_on"):
+                rec["water_enabled"] = False
+                rec["reminders_on"] = False
+
+        logger.info(f"✅ تم تعطيل تذكيرات الماء افتراضيًا لـ {updated} مستخدم")
+    except Exception as e:
+        logger.error(f"❌ خطأ في تعطيل تذكيرات الماء: {e}")
+
+    cfg["water_cleanup_done"] = True
+    save_global_config(cfg)
+
+
 def ensure_today_quran(record):
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("quran_today_date") != today_str:
@@ -4515,6 +4576,8 @@ def get_users_sorted_by_points():
         
         users_list = []
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             users_list.append(doc.to_dict())
             
         # فرز القائمة
@@ -5300,11 +5363,18 @@ def handle_reminders_on(update: Update, context: CallbackContext):
         )
         return
 
+    record["water_enabled"] = True
     record["reminders_on"] = True
-    
+
     # حفظ في Firestore
-    update_user_record(user.id, reminders_on=record["reminders_on"])
+    update_user_record(
+        user.id,
+        reminders_on=record["reminders_on"],
+        water_enabled=record["water_enabled"],
+    )
     save_data()
+
+    refresh_water_jobs()
 
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
@@ -5322,11 +5392,18 @@ def handle_reminders_off(update: Update, context: CallbackContext):
         return
     
     record = get_user_record(user)
+    record["water_enabled"] = False
     record["reminders_on"] = False
-    
+
     # حفظ في Firestore
-    update_user_record(user.id, reminders_on=record["reminders_on"])
+    update_user_record(
+        user.id,
+        reminders_on=record["reminders_on"],
+        water_enabled=record["water_enabled"],
+    )
     save_data()
+
+    refresh_water_jobs()
 
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
@@ -7167,7 +7244,7 @@ def open_notifications_menu(update: Update, context: CallbackContext):
     kb = notifications_menu_keyboard(user.id, record)
 
     status = "مفعّلة ✅" if record.get("motivation_on", True) else "موقفة ⛔️"
-    water_status = "مفعّل ✅" if record.get("reminders_on") else "متوقف ⛔️"
+    water_status = "مفعّل ✅" if record.get("water_enabled") else "متوقف ⛔️"
 
     update.message.reply_text(
         "الاشعارات 🔔:\n"
@@ -7235,7 +7312,7 @@ def water_reminder_job(context: CallbackContext):
 
     for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
-        if not rec.get("reminders_on"):
+        if rec.get("water_enabled") is not True:
             continue
 
         user_hours = _normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC)
@@ -7281,6 +7358,8 @@ def daily_reset_water():
         
         reset_count = 0
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             user_data = doc.to_dict()
             today_cups = user_data.get("today_cups", 0)
             
@@ -7315,6 +7394,8 @@ def daily_reset_quran():
         
         reset_count = 0
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             user_data = doc.to_dict()
             quran_today = user_data.get("quran_pages_today", 0)
             
@@ -7349,6 +7430,8 @@ def daily_reset_competition():
         
         reset_count = 0
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             user_data = doc.to_dict()
             daily_points = user_data.get("daily_competition_points", 0)
             
@@ -7425,11 +7508,47 @@ def _all_water_hours() -> List[int]:
     hours = set()
     for uid in get_active_user_ids():
         rec = data.get(str(uid)) or {}
-        if not rec.get("reminders_on"):
+        if not rec.get("water_enabled"):
             continue
         hours.update(_normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC))
 
-    return sorted(hours) or REMINDER_HOURS_UTC
+    return sorted(hours)
+
+
+def refresh_water_jobs():
+    """إعادة مزامنة مهام تذكير الماء مع إعدادات المستخدمين"""
+    if not job_queue:
+        return
+
+    desired_hours = _all_water_hours()
+
+    current_jobs = [
+        job for job in job_queue.jobs() if job.name and job.name.startswith("water_reminder_")
+    ]
+    current_hours = set()
+
+    for job in current_jobs:
+        try:
+            hour = int(str(job.name).split("_")[-1])
+            current_hours.add(hour)
+            if hour not in desired_hours:
+                job.schedule_removal()
+        except Exception:
+            continue
+
+    for hour in desired_hours:
+        if hour in current_hours:
+            continue
+        try:
+            job_queue.run_daily(
+                water_reminder_job,
+                time=time(hour=hour, minute=0, second=random.randint(0, 45), tzinfo=pytz.UTC),
+                name=f"water_reminder_{hour}",
+                context=hour,
+                job_kwargs={"misfire_grace_time": 300, "coalesce": True},
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ خطأ في جدولة تذكير الماء للساعة {hour}: {e}")
 
 
 def motivation_job(context: CallbackContext):
@@ -8357,7 +8476,7 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
 
     lines = []
     for uid_str, rec in data.items():
-        if uid_str == GLOBAL_KEY:
+        if str(uid_str) == str(GLOBAL_KEY):
             continue
         
         name = rec.get("first_name") or "بدون اسم"
@@ -8700,12 +8819,6 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
             except Exception as e:
                 logger.debug("[STAFF_REPLY_BRIDGE] reopen mode failed: %s", e)
 
-        # 🧾 عنوان بسيط يوصل للمستخدم قبل الرد (حسب النوع)
-        prefix = "💬 رد من المشرفة/الأدمن"
-        if kind == "presentation":
-            prefix = "💬 رد على العرض من المشرفة/الأدمن"
-        elif kind == "benefit":
-            prefix = "💬 رد على الفائدة من المشرفة/الأدمن"
         if not user_gender and thread_id and kind in {"presentation", "benefit"}:
             try:
                 collection = (
@@ -8720,6 +8833,13 @@ def handle_support_admin_reply_any(update: Update, context: CallbackContext):
                 logger.debug("[STAFF_REPLY_BRIDGE] failed to load gender: %s", e)
         if not user_gender and target_user_id:
             user_gender = (get_user_record_by_id(target_user_id) or {}).get("gender")
+
+        staff_title = "المشرفة" if user_gender != "male" else "المشرف"
+        prefix = "💬 رد من المشرفة/الأدمن"
+        if kind == "presentation":
+            prefix = f"💬 رد على العرض من {staff_title}"
+        elif kind == "benefit":
+            prefix = f"💬 رد على الفائدة من {staff_title}"
 
         reply_markup = None
         if kind in {"presentation", "benefit"} and bridge.get("course_id") and bridge.get("lesson_id"):
@@ -9208,6 +9328,7 @@ def get_user_record_by_id(user_id: int) -> Dict:
         doc = doc_ref.get()
         if doc.exists:
             record = doc.to_dict()
+            ensure_water_defaults(record)
             data[user_id_str] = record
             ensure_medal_defaults(record)
             return record
@@ -10563,6 +10684,8 @@ def reset_competition_points():
         
         count = 0
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             # تصفير جميع النقاط والترتيب المتعلقة بالمنافسات والمجتمع
             batch.update(doc.reference, {
                 "daily_competition_points": 0,
@@ -10606,6 +10729,8 @@ def reset_competition_medals():
         
         count = 0
         for doc in docs:
+            if str(doc.id) == str(GLOBAL_KEY):
+                continue
             # تصفير فقط ميداليات المنافسات والمجتمع
             # الميداليات الأخرى (الإنجازات الدائمة) تبقى كما هي
             batch.update(doc.reference, {
@@ -11609,8 +11734,12 @@ def start_bot():
         # تمييز البيانات المحملة على أنها محدثة حديثًا لتجنب قراءات Firestore المكررة فور التشغيل
         preload_time = datetime.now(timezone.utc)
         for uid in data:
-            if uid != GLOBAL_KEY:
-                USER_CACHE_TIMESTAMPS[uid] = preload_time
+            if str(uid) == str(GLOBAL_KEY):
+                continue
+            ensure_water_defaults(data[uid])
+            USER_CACHE_TIMESTAMPS[uid] = preload_time
+
+        perform_initial_water_cleanup()
 
         # عدم ترحيل بيانات Firestore عند كل تشغيل لمنع الكتابة فوق البيانات الحالية
         if db is not None and not DATA_LOADED_FROM_FIRESTORE:
@@ -11888,17 +12017,7 @@ def start_bot():
             logger.warning(f"⚠️ خطأ في جدولة الميدالية: {e}")
         
         REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-        for h in _all_water_hours():
-            try:
-                job_queue.run_daily(
-                    water_reminder_job,
-                    time=time(hour=h, minute=0, second=random.randint(0, 45), tzinfo=pytz.UTC),
-                    name=f"water_reminder_{h}",
-                    context=h,
-                    job_kwargs={"misfire_grace_time": 300, "coalesce": True},
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ خطأ في جدولة التذكير: {e}")
+        refresh_water_jobs()
         
         try:
             first_run_delay = _seconds_until_next_minute() + random.uniform(0, 10)
@@ -13879,8 +13998,6 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
         if sub is not None:
             sub_ref.set(
                 {
-                    "points": firestore.Increment(1),
-                    "benefits_count": firestore.Increment(1),
                     "last_benefit": {
                         "lesson_id": ctx.get("lesson_id"),
                         "curriculum_section": ctx.get("curriculum_section"),
@@ -13890,7 +14007,7 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
                 merge=True,
             )
     except Exception as e:
-        logger.error(f"Error incrementing points for benefit: {e}")
+        logger.error(f"Error updating benefit metadata: {e}")
 
     update.message.reply_text(
         "✅ تم استلام الفائدة. يمكنك إرسال فائدة أخرى أو الخروج.",
@@ -13973,12 +14090,10 @@ def user_points(query: Update.callback_query, user_id: int, course_id: str):
     points = subscription.get("points", 0)
     completed = len(subscription.get("completed_quizzes", []))
     lessons_count = len(subscription.get("lessons_attended", []))
-    benefits_count = subscription.get("benefits_count", 0)
     text = (
         f"⭐️ نقاطك في الدورة: {points}"
         f"\n📚 حضور الدروس: {lessons_count}"
         f"\n📝 اختبارات مكتملة: {completed}"
-        f"\n📸 فوائد مرسلة: {benefits_count}"
     )
     safe_edit_message_text(
         query,
@@ -14779,8 +14894,8 @@ def admin_statistics_course(query: Update.callback_query, course_id: str):
         for sub in subs:
             data = sub.to_dict()
             user_name = data.get("full_name") or data.get("username") or str(data.get("user_id"))
-            benefits_count = data.get("benefits_count", 0)
-            button_label = f"{user_name} | فوائد: {benefits_count}"
+            points = data.get("points", 0)
+            button_label = f"{user_name} | نقاط: {points}"
             keyboard.append(
                 [
                     InlineKeyboardButton(
@@ -14814,7 +14929,6 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
         lessons_count = len(data.get("lessons_attended", []))
         quizzes_count = len(data.get("completed_quizzes", []))
         points = data.get("points", 0)
-        benefits_count = data.get("benefits_count", 0)
         user_record = get_user_record_by_id(int(target_user_id)) or {}
         name = data.get("full_name") or user_record.get("course_full_name") or data.get("username") or target_user_id
         age = data.get("age") or user_record.get("age")
@@ -14836,7 +14950,6 @@ def admin_statistics_user(query: Update.callback_query, course_id: str, target_u
             "📊 التقدم",
             f"حضور الدروس: {lessons_count}",
             f"الاختبارات: {quizzes_count}",
-            f"الفوائد المرسلة: {benefits_count}",
             f"مجموع النقاط: {points}",
         ]
 
