@@ -1877,6 +1877,49 @@ MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+PRESENTATION_SESSION_KB = ReplyKeyboardMarkup(
+    [[KeyboardButton("🚪 خروج من العرض")]],
+    resize_keyboard=True,
+)
+
+BENEFIT_SESSION_KB = ReplyKeyboardMarkup(
+    [[KeyboardButton("🚪 خروج من الفائدة")]],
+    resize_keyboard=True,
+)
+
+SESSION_EXIT_PRESENTATION_TEXTS = {"🚪 خروج من العرض", "🚪 خروج من العَرْض"}
+SESSION_EXIT_BENEFIT_TEXTS = {"🚪 خروج من الفائدة"}
+
+MAIN_MENU_BUTTON_TEXTS = {
+    BTN_ADHKAR_MAIN,
+    BTN_QURAN_MAIN,
+    BTN_COURSES_SECTION,
+    BTN_BOOKS_MAIN,
+    BTN_MEMOS_MAIN,
+    BTN_AUDIO_LIBRARY,
+    BTN_COMP_MAIN,
+    BTN_BENEFITS_MAIN,
+    BTN_STATS,
+    BTN_WATER_MAIN,
+    BTN_NOTIFICATIONS_MAIN,
+    BTN_SUPPORT,
+    BTN_ADMIN_PANEL,
+    "أذكاري",
+    "وردي القرآني",
+    "قسم الدورات",
+    "مكتبة طالب العلم",
+    "مذكرات قلبي",
+    "مكتبة صوتية",
+    "المنافسات و المجتمع",
+    "مجتمع الفوائد و النصائح",
+    "احصائياتي",
+    "إحصائياتي",
+    "منبه الماء",
+    "الاشعارات",
+    "تواصل مع الدعم",
+    "لوحة التحكم",
+}
+
 BTN_SUPPORT_END = "🔚 إنهاء التواصل"
 
 CANCEL_KB = ReplyKeyboardMarkup(
@@ -13002,7 +13045,7 @@ def _lesson_view_keyboard(
         keyboard.append(
             [
                 InlineKeyboardButton(
-                    "🚪 خروج من العَرْض",
+                    "🚪 خروج من العرض",
                     callback_data=f"COURSE:PRES:CLOSE:{presentation_thread_id}",
                 )
             ]
@@ -13530,16 +13573,11 @@ def handle_course_presentation_open(
     try:
         context.bot.send_message(
             chat_id=user_id,
-            text=f"تم فتح العَرْض {target_label}. أرسل/أرسلي تسميعك هنا.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "🚪 إغلاق العَرْض", callback_data=f"COURSE:PRES:CLOSE:{thread_id}"
-                        )
-                    ]
-                ]
+            text=(
+                "✅ تم فتح وضع العرض. أرسل تسميعك هنا.\n"
+                "اضغط (خروج من العرض) لإنهاء الجلسة."
             ),
+            reply_markup=PRESENTATION_SESSION_KB,
         )
     except Exception as e:
         logger.debug("[PRES] Failed to send chat-style open message: %s", e)
@@ -13555,27 +13593,51 @@ def handle_course_presentation_open(
     )
 
 
-def handle_course_presentation_close(query: Update.callback_query, thread_id: str):
+def handle_course_presentation_close(
+    query: Optional[Update.callback_query],
+    context: CallbackContext,
+    thread_id: str,
+    *,
+    user_id: Optional[int] = None,
+    user_chat_id: Optional[int] = None,
+):
     """إنهاء جلسة العرض وإرجاع المستخدم مباشرةً لقائمة الدروس كخيار UX معتمد."""
-    user_id = query.from_user.id
+
+    resolved_user_id = user_id or (query.from_user.id if query else None)
+    chat_id = user_chat_id or (
+        query.message.chat_id if query and query.message else resolved_user_id
+    )
+    if not resolved_user_id:
+        return
+
     if not firestore_available():
-        query.answer("❌ لا يمكن إنهاء العَرْض حالياً.", show_alert=True)
+        if query:
+            query.answer("❌ لا يمكن إنهاء العَرْض حالياً.", show_alert=True)
+        elif chat_id:
+            context.bot.send_message(
+                chat_id=chat_id,
+                text="❌ لا يمكن إنهاء العَرْض حالياً. حاول لاحقاً.",
+            )
         return
 
     thread_ref = db.collection(COURSE_PRESENTATIONS_THREADS_COLLECTION).document(thread_id)
     thread_doc = thread_ref.get()
     if not thread_doc.exists:
-        WAITING_COURSE_PRESENTATION_MEDIA.pop(user_id, None)
-        query.answer("⚠️ هذه الجلسة غير متاحة الآن.", show_alert=True)
+        WAITING_COURSE_PRESENTATION_MEDIA.pop(resolved_user_id, None)
+        if query:
+            query.answer("⚠️ هذه الجلسة غير متاحة الآن.", show_alert=True)
+        elif chat_id:
+            context.bot.send_message(chat_id=chat_id, text="⚠️ هذه الجلسة غير متاحة الآن.")
         return
 
     thread = thread_doc.to_dict() or {}
-    if thread.get("user_id") != user_id:
-        query.answer("❌ هذا الزر خاص بالطالبة صاحبة العرض.", show_alert=True)
+    if thread.get("user_id") != resolved_user_id:
+        if query:
+            query.answer("❌ هذا الزر خاص بالطالبة صاحبة العرض.", show_alert=True)
         return
 
-    _cancel_presentation_media_timeout(user_id)
-    WAITING_COURSE_PRESENTATION_MEDIA.pop(user_id, None)
+    _cancel_presentation_media_timeout(resolved_user_id)
+    WAITING_COURSE_PRESENTATION_MEDIA.pop(resolved_user_id, None)
     try:
         thread_ref.update(
             {"status": "closed", "last_message_at": firestore.SERVER_TIMESTAMP}
@@ -13586,20 +13648,28 @@ def handle_course_presentation_close(query: Update.callback_query, thread_id: st
     course_id = thread.get("course_id")
     lesson_id = thread.get("lesson_id")
     # الإغلاق يعيد المستخدم مباشرةً لقائمة دروس الدورة لضمان وضوح المسار.
-    safe_edit_message_text(
-        query,
-        "✅ تم إغلاق العرض.",
-        reply_markup=InlineKeyboardMarkup(
-            [
+    if query:
+        safe_edit_message_text(
+            query,
+            "✅ تم إغلاق العرض.",
+            reply_markup=InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        "📚 الرجوع لقائمة الدروس",
-                        callback_data=f"COURSES:user_lessons_{course_id}",
-                    )
+                    [
+                        InlineKeyboardButton(
+                            "📚 الرجوع لقائمة الدروس",
+                            callback_data=f"COURSES:user_lessons_{course_id}",
+                        )
+                    ]
                 ]
-            ]
-        ),
-    )
+            ),
+        )
+
+    if chat_id:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="✅ تم الخروج.",
+            reply_markup=user_main_keyboard(resolved_user_id),
+        )
 
 
 def handle_course_presentation_user_media(update: Update, context: CallbackContext):
@@ -13611,6 +13681,24 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
     if not firestore_available():
         update.message.reply_text("❌ لا يمكن إرسال العرض حالياً. حاول لاحقاً.")
         return
+
+    message_text = update.message.text if update.message else None
+    if message_text:
+        normalized_text = message_text.strip()
+        if normalized_text in SESSION_EXIT_PRESENTATION_TEXTS:
+            handle_course_presentation_close(
+                None,
+                context,
+                thread_id,
+                user_id=user.id,
+                user_chat_id=update.message.chat_id,
+            )
+            return
+        if normalized_text in MAIN_MENU_BUTTON_TEXTS:
+            update.message.reply_text(
+                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة."
+            )
+            return
 
     payload = _extract_presentation_payload(update.message)
     if not payload:
@@ -13711,7 +13799,7 @@ def handle_course_presentation_user_media(update: Update, context: CallbackConte
             [
                 [
                     InlineKeyboardButton(
-                        "🚪 خروج من العَرْض",
+                        "🚪 خروج من العرض",
                         callback_data=f"COURSE:PRES:CLOSE:{thread_id}",
                     )
                 ]
@@ -13869,28 +13957,38 @@ def handle_course_benefit_open(
     try:
         context.bot.send_message(
             chat_id=user_id,
-            text="تم فتح وضع الفائدة. أرسل/ي الصورة أو النص هنا.",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "🚪 خروج من الفائدة",
-                            callback_data=f"COURSE:BEN:CLOSE:{thread_id}",
-                        )
-                    ]
-                ]
+            text=(
+                "✅ تم فتح وضع الفائدة. أرسل/ي الصورة أو النص هنا.\n"
+                "اضغط (خروج من الفائدة) لإنهاء الجلسة."
             ),
+            reply_markup=BENEFIT_SESSION_KB,
         )
     except Exception:
         pass
 
 
-def handle_course_benefit_close(query: Update.callback_query, session_id: str):
-    user_id = query.from_user.id
+def handle_course_benefit_close(
+    query: Optional[Update.callback_query],
+    context: CallbackContext,
+    session_id: str,
+    *,
+    user_id: Optional[int] = None,
+    user_chat_id: Optional[int] = None,
+):
+    resolved_user_id = user_id or (query.from_user.id if query else None)
     thread_id = session_id
-    active = WAITING_COURSE_BENEFIT_MEDIA.get(user_id)
+    chat_id = user_chat_id or (
+        query.message.chat_id if query and query.message else resolved_user_id
+    )
+    if not resolved_user_id:
+        return
+
+    active = WAITING_COURSE_BENEFIT_MEDIA.get(resolved_user_id)
     if not active or active.get("session_id") != session_id:
-        query.answer("⚠️ لا توجد فائدة مفتوحة الآن.", show_alert=True)
+        if query:
+            query.answer("⚠️ لا توجد فائدة مفتوحة الآن.", show_alert=True)
+        elif chat_id:
+            context.bot.send_message(chat_id=chat_id, text="⚠️ لا توجد فائدة مفتوحة الآن.")
         return
     try:
         db.collection(COURSE_BENEFIT_THREADS_COLLECTION).document(thread_id).update(
@@ -13898,23 +13996,32 @@ def handle_course_benefit_close(query: Update.callback_query, session_id: str):
         )
     except Exception as e:
         logger.debug("[BENEFIT] Failed to close thread %s: %s", session_id, e)
-    _clear_benefit_states(user_id)
-    query.answer("✅ تم إغلاق وضع الفائدة.", show_alert=True)
+    _clear_benefit_states(resolved_user_id)
+    if query:
+        query.answer("✅ تم إغلاق وضع الفائدة.", show_alert=True)
     course_id = active.get("course_id")
-    safe_edit_message_text(
-        query,
-        "✅ تم إغلاق وضع الفائدة.",
-        reply_markup=InlineKeyboardMarkup(
-            [
+    if query:
+        safe_edit_message_text(
+            query,
+            "✅ تم إغلاق وضع الفائدة.",
+            reply_markup=InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        "📚 الرجوع لقائمة الدروس",
-                        callback_data=f"COURSES:user_lessons_{course_id}",
-                    )
+                    [
+                        InlineKeyboardButton(
+                            "📚 الرجوع لقائمة الدروس",
+                            callback_data=f"COURSES:user_lessons_{course_id}",
+                        )
+                    ]
                 ]
-            ]
-        ),
-    )
+            ),
+        )
+
+    if chat_id:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="✅ تم الخروج.",
+            reply_markup=user_main_keyboard(resolved_user_id),
+        )
 
 
 def handle_course_benefit_user_message(update: Update, context: CallbackContext):
@@ -13927,6 +14034,24 @@ def handle_course_benefit_user_message(update: Update, context: CallbackContext)
     if not thread_id:
         _clear_benefit_states(user.id)
         return
+
+    message_text = update.message.text if update.message else None
+    if message_text:
+        normalized_text = message_text.strip()
+        if normalized_text in SESSION_EXIT_BENEFIT_TEXTS:
+            handle_course_benefit_close(
+                None,
+                context,
+                thread_id,
+                user_id=user.id,
+                user_chat_id=update.message.chat_id,
+            )
+            return
+        if normalized_text in MAIN_MENU_BUTTON_TEXTS:
+            update.message.reply_text(
+                "⚠️ أنت الآن داخل وضع العرض/الفائدة. اضغط خروج لإنهاء الجلسة."
+            )
+            return
 
     payload = _extract_benefit_payload(update.message)
     if not payload:
@@ -15240,7 +15365,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 handle_course_benefit_open(query, context, user_id, course_id, lesson_id)
         elif data.startswith("COURSE:BEN:CLOSE:"):
             session_id = data.replace("COURSE:BEN:CLOSE:", "")
-            handle_course_benefit_close(query, session_id)
+            handle_course_benefit_close(query, context, session_id)
         elif data.startswith("COURSE:PRES:OPEN:"):
             parts = data.split(":", 4)
             if len(parts) == 5:
@@ -15248,7 +15373,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                 handle_course_presentation_open(query, context, user_id, course_id, lesson_id)
         elif data.startswith("COURSE:PRES:CLOSE:"):
             thread_id = data.replace("COURSE:PRES:CLOSE:", "")
-            handle_course_presentation_close(query, thread_id)
+            handle_course_presentation_close(query, context, thread_id)
 
         elif data.startswith("COURSES:view_"):
             course_id = data.replace("COURSES:view_", "")
