@@ -21,6 +21,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardRemove,
+    ParseMode,
 )
 
 import firebase_admin
@@ -13646,6 +13647,18 @@ def handle_course_presentation_close(
     )
 
     # الإغلاق يعيد المستخدم مباشرةً لقائمة الدورة الحالية.
+    main_kb = user_main_keyboard(resolved_user_id)
+
+    if chat_id:
+        try:
+            context.bot.send_message(
+                chat_id=chat_id,
+                text="✅ تم الخروج.",
+                reply_markup=main_kb,
+            )
+        except Exception as e:
+            logger.debug("[PRES] Failed to send exit message: %s", e)
+
     if query:
         if course_text and course_markup:
             safe_edit_message_text(query, course_text, reply_markup=course_markup)
@@ -13665,15 +13678,16 @@ def handle_course_presentation_close(
                 ),
             )
 
-    if chat_id:
+    if chat_id and course_text and course_markup:
         try:
-            context.bot.send_message(chat_id=chat_id, text="✅ تم الخروج.")
-        except Exception as e:
-            logger.debug("[PRES] Failed to send exit message: %s", e)
-        if course_text and course_markup:
             context.bot.send_message(
-                chat_id=chat_id, text=course_text, reply_markup=course_markup
+                chat_id=chat_id,
+                text=course_text,
+                reply_markup=course_markup,
+                parse_mode=ParseMode.HTML,
             )
+        except Exception as e:
+            logger.debug("[PRES] Failed to send course details: %s", e)
 
 
 def handle_course_presentation_user_media(update: Update, context: CallbackContext):
@@ -14011,6 +14025,18 @@ def handle_course_benefit_close(
         else (None, None)
     )
 
+    main_kb = user_main_keyboard(resolved_user_id)
+
+    if chat_id:
+        try:
+            context.bot.send_message(
+                chat_id=chat_id,
+                text="✅ تم الخروج.",
+                reply_markup=main_kb,
+            )
+        except Exception as e:
+            logger.debug("[BENEFIT] Failed to send exit message: %s", e)
+
     if query:
         if course_text and course_markup:
             safe_edit_message_text(query, course_text, reply_markup=course_markup)
@@ -14030,15 +14056,16 @@ def handle_course_benefit_close(
                 ),
             )
 
-    if chat_id:
+    if chat_id and course_text and course_markup:
         try:
-            context.bot.send_message(chat_id=chat_id, text="✅ تم الخروج.")
-        except Exception as e:
-            logger.debug("[BENEFIT] Failed to send exit message: %s", e)
-        if course_text and course_markup:
             context.bot.send_message(
-                chat_id=chat_id, text=course_text, reply_markup=course_markup
+                chat_id=chat_id,
+                text=course_text,
+                reply_markup=course_markup,
+                parse_mode=ParseMode.HTML,
             )
+        except Exception as e:
+            logger.debug("[BENEFIT] Failed to send course details: %s", e)
 
 
 def handle_course_benefit_user_message(update: Update, context: CallbackContext):
