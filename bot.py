@@ -12663,20 +12663,16 @@ def _course_details_text(course_id: str, course: Dict, subscribed: bool, subscri
     return "\n\n".join(lines)
 
 
-def show_course_details(
-    query: Update.callback_query,
-    context: CallbackContext,
-    user_id: int,
-    course_id: str,
-):
-    _clear_course_transient_messages(context, query.message.chat_id, user_id)
+def _course_details_view(
+    context: CallbackContext, user_id: int, course_id: str
+) -> Tuple[Optional[str], Optional[InlineKeyboardMarkup]]:
     course = _course_document(course_id)
     if not course:
-        safe_edit_message_text(query, "❌ الدورة غير موجودة.", reply_markup=COURSES_USER_MENU_KB)
-        return
+        return None, None
 
     subscription, _ = _ensure_subscription(user_id, course_id)
     subscribed = subscription is not None
+
     keyboard = []
 
     if course.get("status", "active") == "active" and not subscribed:
@@ -12700,10 +12696,27 @@ def show_course_details(
     back_target = context.user_data.get("courses_back_target", "COURSES:back_user")
     keyboard.append([InlineKeyboardButton("🔙 رجوع", callback_data=back_target)])
 
+    return _course_details_text(course_id, course, subscribed, subscription or {}), InlineKeyboardMarkup(
+        keyboard
+    )
+
+
+def show_course_details(
+    query: Update.callback_query,
+    context: CallbackContext,
+    user_id: int,
+    course_id: str,
+):
+    _clear_course_transient_messages(context, query.message.chat_id, user_id)
+    text, markup = _course_details_view(context, user_id, course_id)
+    if not text or not markup:
+        safe_edit_message_text(query, "❌ الدورة غير موجودة.", reply_markup=COURSES_USER_MENU_KB)
+        return
+
     safe_edit_message_text(
         query,
-        _course_details_text(course_id, course, subscribed, subscription or {}),
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        text,
+        reply_markup=markup,
     )
 
 
@@ -13626,29 +13639,41 @@ def handle_course_presentation_close(
 
     course_id = thread.get("course_id")
     lesson_id = thread.get("lesson_id")
-    # الإغلاق يعيد المستخدم مباشرةً لقائمة دروس الدورة لضمان وضوح المسار.
+    course_text, course_markup = (
+        _course_details_view(context, resolved_user_id, course_id)
+        if course_id
+        else (None, None)
+    )
+
+    # الإغلاق يعيد المستخدم مباشرةً لقائمة الدورة الحالية.
     if query:
-        safe_edit_message_text(
-            query,
-            "✅ تم إغلاق العرض.",
-            reply_markup=InlineKeyboardMarkup(
-                [
+        if course_text and course_markup:
+            safe_edit_message_text(query, course_text, reply_markup=course_markup)
+        else:
+            safe_edit_message_text(
+                query,
+                "✅ تم إغلاق العرض.",
+                reply_markup=InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "📚 الرجوع لقائمة الدروس",
-                            callback_data=f"COURSES:user_lessons_{course_id}",
-                        )
+                        [
+                            InlineKeyboardButton(
+                                "📚 الرجوع لقائمة الدروس",
+                                callback_data=f"COURSES:user_lessons_{course_id}",
+                            )
+                        ]
                     ]
-                ]
-            ),
-        )
+                ),
+            )
 
     if chat_id:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text="✅ تم الخروج.",
-            reply_markup=user_main_keyboard(resolved_user_id),
-        )
+        try:
+            context.bot.send_message(chat_id=chat_id, text="✅ تم الخروج.")
+        except Exception as e:
+            logger.debug("[PRES] Failed to send exit message: %s", e)
+        if course_text and course_markup:
+            context.bot.send_message(
+                chat_id=chat_id, text=course_text, reply_markup=course_markup
+            )
 
 
 def handle_course_presentation_user_media(update: Update, context: CallbackContext):
@@ -13980,28 +14005,40 @@ def handle_course_benefit_close(
     if query:
         query.answer("✅ تم إغلاق وضع الفائدة.", show_alert=True)
     course_id = active.get("course_id")
+    course_text, course_markup = (
+        _course_details_view(context, resolved_user_id, course_id)
+        if course_id
+        else (None, None)
+    )
+
     if query:
-        safe_edit_message_text(
-            query,
-            "✅ تم إغلاق وضع الفائدة.",
-            reply_markup=InlineKeyboardMarkup(
-                [
+        if course_text and course_markup:
+            safe_edit_message_text(query, course_text, reply_markup=course_markup)
+        else:
+            safe_edit_message_text(
+                query,
+                "✅ تم إغلاق وضع الفائدة.",
+                reply_markup=InlineKeyboardMarkup(
                     [
-                        InlineKeyboardButton(
-                            "📚 الرجوع لقائمة الدروس",
-                            callback_data=f"COURSES:user_lessons_{course_id}",
-                        )
+                        [
+                            InlineKeyboardButton(
+                                "📚 الرجوع لقائمة الدروس",
+                                callback_data=f"COURSES:user_lessons_{course_id}",
+                            )
+                        ]
                     ]
-                ]
-            ),
-        )
+                ),
+            )
 
     if chat_id:
-        context.bot.send_message(
-            chat_id=chat_id,
-            text="✅ تم الخروج.",
-            reply_markup=user_main_keyboard(resolved_user_id),
-        )
+        try:
+            context.bot.send_message(chat_id=chat_id, text="✅ تم الخروج.")
+        except Exception as e:
+            logger.debug("[BENEFIT] Failed to send exit message: %s", e)
+        if course_text and course_markup:
+            context.bot.send_message(
+                chat_id=chat_id, text=course_text, reply_markup=course_markup
+            )
 
 
 def handle_course_benefit_user_message(update: Update, context: CallbackContext):
