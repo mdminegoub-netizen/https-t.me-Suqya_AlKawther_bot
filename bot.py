@@ -12848,7 +12848,7 @@ def _finalize_course_subscription(user: User, context: CallbackContext):
         )
         context.bot.send_message(
             chat_id=user_id,
-            text="✅ تم تسجيلك في الدورة بنجاح!\nستصلك الدروس والاختبارات هنا.",
+            text="✅ تم تسجيلك في الدورة بنجاح!\n📚 ستجد الدروس والاختبارات داخل قسم «الدورات».",
             reply_markup=user_main_keyboard(user_id),
         )
 
