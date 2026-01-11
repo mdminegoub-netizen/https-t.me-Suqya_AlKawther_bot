@@ -9469,6 +9469,10 @@ def handle_text(update: Update, context: CallbackContext):
             open_books_admin_menu(update, context)
             return
 
+    if text == BTN_ADMIN_RANKINGS and is_admin(user_id):
+        handle_admin_rankings(update, context)
+        return
+
     # ✅ بحث مكتبة طالب العلم: يعتمد على Firestore
     if not in_admin_books_mode and (user_id in WAITING_BOOK_SEARCH or fresh_record.get("book_search_waiting", False)):
         WAITING_BOOK_SEARCH.discard(user_id)
