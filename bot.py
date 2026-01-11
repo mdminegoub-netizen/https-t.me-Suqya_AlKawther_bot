@@ -8636,11 +8636,33 @@ def handle_admin_rankings(update: Update, context: CallbackContext):
         line += f") — مستوى {level} — {points} نقطة — ميداليات: {medals_text}"
         lines.append(line)
 
-    chunk = "\n".join(lines[:80])
-    update.message.reply_text(
-        chunk,
-        reply_markup=ADMIN_PANEL_KB,
-    )
+    max_length = 4000
+    messages = []
+    current_lines = []
+    current_length = 0
+
+    for line in lines:
+        separator_length = 1 if current_lines else 0
+        line_length = len(line)
+        if current_length + separator_length + line_length > max_length:
+            messages.append("\n".join(current_lines))
+            current_lines = [line]
+            current_length = line_length
+        else:
+            if current_lines:
+                current_length += separator_length + line_length
+            else:
+                current_length = line_length
+            current_lines.append(line)
+
+    if current_lines:
+        messages.append("\n".join(current_lines))
+
+    for message in messages:
+        update.message.reply_text(
+            message,
+            reply_markup=ADMIN_PANEL_KB,
+        )
 
 
 def send_new_user_notification_to_admin(user: User, context: CallbackContext):
