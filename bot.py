@@ -5248,7 +5248,6 @@ def handle_weight_input(update: Update, context: CallbackContext):
 
     record["water_liters"] = round(water_liters, 2)
     record["cups_goal"] = cups_goal
-    save_data()
 
     WAITING_WEIGHT.discard(user_id)
 
@@ -5260,6 +5259,8 @@ def handle_weight_input(update: Update, context: CallbackContext):
         "كل كوب تسجّله يعطيك نقاطًا إضافية 🎯",
         reply_markup=water_menu_keyboard(user_id),
     )
+
+    save_data()
 
 
 def handle_log_cup(update: Update, context: CallbackContext):
@@ -5771,8 +5772,8 @@ def start_structured_adhkar(update: Update, context: CallbackContext, category_k
         open_adhkar_menu(update, context)
         return
 
-    increment_adhkar_count(user.id, 1)
     send_structured_adhkar_step(update, user.id, category_key, 0)
+    increment_adhkar_count(user.id, 1)
 
 
 def send_morning_adhkar(update: Update, context: CallbackContext):
@@ -5896,12 +5897,12 @@ def start_sleep_adhkar(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
 
-    increment_adhkar_count(user.id, 1)
     SLEEP_ADHKAR_STATE[user.id] = 0
     update.message.reply_text(
         format_sleep_adhkar_text(0),
         reply_markup=SLEEP_ADHKAR_KB,
     )
+    increment_adhkar_count(user.id, 1)
 
 
 def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
@@ -5945,13 +5946,14 @@ def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
 
-    if user_id in SLEEP_ADHKAR_STATE:
-        increment_adhkar_count(user_id, 1)
+    had_state = user_id in SLEEP_ADHKAR_STATE
     SLEEP_ADHKAR_STATE.pop(user_id, None)
     update.message.reply_text(
         "عدنا إلى القائمة الرئيسية.",
         reply_markup=user_main_keyboard(user_id),
     )
+    if had_state:
+        increment_adhkar_count(user_id, 1)
 
 # =================== قسم السبحة ===================
 
