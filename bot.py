@@ -979,7 +979,7 @@ def save_benefits(benefits_list):
         logger.error(f"❌ خطأ في حفظ الفوائد: {e}")
 
 
-def get_user_record(user):
+def get_user_record(user, update_last_active: bool = True):
     """
     ينشئ أو يرجع سجل المستخدم من Firestore
     """
@@ -991,7 +991,8 @@ def get_user_record(user):
     cached_record = data.get(user_id)
     if cached_record and _is_cache_fresh(user_id, now_dt):
         cached_record["last_active"] = now_iso
-        _throttled_last_active_update(user_id, now_iso, now_dt)
+        if update_last_active:
+            _throttled_last_active_update(user_id, now_iso, now_dt)
         ensure_medal_defaults(cached_record)
         ensure_water_defaults(cached_record)
         return cached_record
@@ -1023,7 +1024,8 @@ def get_user_record(user):
                 logger.warning(f"⚠️ تعذر تحميل المذكرات الفرعية للمستخدم {user_id}: {e}")
 
             # تحديث آخر نشاط مع تقليل الكتابات المتكررة
-            _throttled_last_active_update(user_id, now_iso, now_dt)
+            if update_last_active:
+                _throttled_last_active_update(user_id, now_iso, now_dt)
             # إضافة المستخدم إلى data المحلي
             ensure_medal_defaults(record)
             _remember_cache(user_id, record, now_dt)
@@ -4445,12 +4447,32 @@ def tasbih_run_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return TASBIH_RUN_KB_ADMIN if is_admin(user_id) else TASBIH_RUN_KB_USER
 
 
-def ensure_today_water(record):
+def _run_deferred_task(task, args, kwargs):
+    try:
+        task(*args, **kwargs)
+    except Exception as e:
+        logger.error("❌ خطأ في مهمة مؤجلة: %s", e)
+
+
+def run_after_response(task, *args, **kwargs):
+    Thread(target=_run_deferred_task, args=(task, args, kwargs), daemon=True).start()
+
+
+def defer_last_active_update(user_id: int):
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    run_after_response(_throttled_last_active_update, str(user_id), now_iso, now_dt)
+
+
+def ensure_today_water(record, persist: bool = True) -> bool:
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("today_date") != today_str:
         record["today_date"] = today_str
         record["today_cups"] = 0
-        save_data()
+        if persist:
+            save_data()
+        return True
+    return False
 
 
 def ensure_water_defaults(record: Dict):
@@ -4507,16 +4529,19 @@ def perform_initial_water_cleanup():
     save_global_config(cfg)
 
 
-def ensure_today_quran(record):
+def ensure_today_quran(record, persist: bool = True) -> bool:
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("quran_today_date") != today_str:
         record["quran_today_date"] = today_str
         record["quran_pages_today"] = 0
-        save_data()
+        if persist:
+            save_data()
+        return True
+    return False
 
 
-def format_water_status_text(record):
-    ensure_today_water(record)
+def format_water_status_text(record, persist: bool = True):
+    ensure_today_water(record, persist=persist)
     cups_goal = record.get("cups_goal")
     today_cups = record.get("today_cups", 0)
 
@@ -4549,8 +4574,8 @@ def format_water_status_text(record):
     return text
 
 
-def format_quran_status_text(record):
-    ensure_today_quran(record)
+def format_quran_status_text(record, persist: bool = True):
+    ensure_today_quran(record, persist=persist)
     goal = record.get("quran_pages_goal")
     today = record.get("quran_pages_today", 0)
 
@@ -5070,7 +5095,7 @@ def help_command(update: Update, context: CallbackContext):
 
 def open_water_menu(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5086,11 +5111,12 @@ def open_water_menu(update: Update, context: CallbackContext):
         "كل كوب يزيد نقاطك ويرفع مستواك 🎯",
         reply_markup=kb,
     )
+    defer_last_active_update(user.id)
 
 
 def open_water_settings(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5103,11 +5129,12 @@ def open_water_settings(update: Update, context: CallbackContext):
         "2) تصفير العداد والرجوع إلى منبّه الماء مباشرة.",
         reply_markup=kb,
     )
+    defer_last_active_update(user.id)
 
 
 def handle_water_need_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5123,11 +5150,12 @@ def handle_water_need_start(update: Update, context: CallbackContext):
         "أولًا: اختر الجنس:",
         reply_markup=GENDER_KB,
     )
+    defer_last_active_update(user_id)
 
 
 def handle_gender_input(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5148,7 +5176,7 @@ def handle_gender_input(update: Update, context: CallbackContext):
         )
         return
 
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     gender = "male" if text == BTN_GENDER_MALE else "female"
     record["gender"] = gender
 
@@ -5161,13 +5189,16 @@ def handle_gender_input(update: Update, context: CallbackContext):
     )
 
     # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
-    update_user_record(user.id, gender=record["gender"])
-    save_data()
+    def _persist_gender():
+        update_user_record(user.id, gender=record["gender"])
+        save_data()
+
+    run_after_response(_persist_gender)
 
 
 def handle_age_input(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5192,7 +5223,7 @@ def handle_age_input(update: Update, context: CallbackContext):
         )
         return
 
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     record["age"] = age
 
     WAITING_AGE.discard(user_id)
@@ -5204,13 +5235,16 @@ def handle_age_input(update: Update, context: CallbackContext):
     )
 
     # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
-    update_user_record(user.id, age=record["age"])
-    save_data()
+    def _persist_age():
+        update_user_record(user.id, age=record["age"])
+        save_data()
+
+    run_after_response(_persist_age)
 
 
 def handle_weight_input(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5235,7 +5269,7 @@ def handle_weight_input(update: Update, context: CallbackContext):
         )
         return
 
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     record["weight"] = weight
 
     if record.get("gender") == "male":
@@ -5259,19 +5293,19 @@ def handle_weight_input(update: Update, context: CallbackContext):
         "كل كوب تسجّله يعطيك نقاطًا إضافية 🎯",
         reply_markup=water_menu_keyboard(user_id),
     )
-
-    save_data()
+    run_after_response(save_data)
+    defer_last_active_update(user_id)
 
 
 def handle_log_cup(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if not record.get("cups_goal"):
         update.message.reply_text(
@@ -5281,13 +5315,17 @@ def handle_log_cup(update: Update, context: CallbackContext):
         )
         return
 
-    ensure_today_water(record)
+    today_changed = ensure_today_water(record, persist=False)
     before = record.get("today_cups", 0)
     new_cups = before + 1
+    # تحديث record المحلي
+    record["today_cups"] = new_cups
 
-    # حفظ في Firestore
-    update_user_record(user.id, today_cups=new_cups)
-    logger.info(f"✅ تم حفظ كوب ماء للمستخدم {user.id} في Firestore")
+    status_text = format_water_status_text(record, persist=False)
+    update.message.reply_text(
+        f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
+        reply_markup=water_menu_keyboard(user.id),
+    )
 
     add_points(user.id, POINTS_PER_WATER_CUP, context, reason="شرب كوب ماء")
 
@@ -5295,29 +5333,31 @@ def handle_log_cup(update: Update, context: CallbackContext):
     if cups_goal and before < cups_goal <= new_cups:
         add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
 
-    # تحديث record المحلي
-    record["today_cups"] = new_cups
     check_daily_full_activity(user.id, record, context)
 
     check_daily_full_activity(user.id, record, context)
 
-    status_text = format_water_status_text(record)
-    update.message.reply_text(
-        f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
-        reply_markup=water_menu_keyboard(user.id),
-    )
+    def _persist_cup():
+        # حفظ في Firestore
+        update_user_record(user.id, today_cups=new_cups)
+        logger.info(f"✅ تم حفظ كوب ماء للمستخدم {user.id} في Firestore")
+
+        if today_changed:
+            save_data()
+
+    run_after_response(_persist_cup)
 
 
 def handle_add_cups(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     text = (update.message.text or "").strip()
 
     if not record.get("cups_goal"):
@@ -5350,12 +5390,18 @@ def handle_add_cups(update: Update, context: CallbackContext):
         )
         return
 
-    ensure_today_water(record)
+    today_changed = ensure_today_water(record, persist=False)
     before = record.get("today_cups", 0)
     new_total = before + cups
-
-    update_user_record(user.id, today_cups=new_total)
     record["today_cups"] = new_total
+
+    WAITING_WATER_ADD_CUPS.discard(user_id)
+
+    status_text = format_water_status_text(record, persist=False)
+    update.message.reply_text(
+        f"🥤 تم إضافة {cups} كوب إلى عدّادك اليوم.\n\n{status_text}",
+        reply_markup=water_menu_keyboard(user.id),
+    )
 
     add_points(user.id, cups * POINTS_PER_WATER_CUP, context, reason="إضافة أكواب ماء")
 
@@ -5365,40 +5411,44 @@ def handle_add_cups(update: Update, context: CallbackContext):
 
     check_daily_full_activity(user.id, record, context)
 
-    WAITING_WATER_ADD_CUPS.discard(user_id)
+    def _persist_add_cups():
+        update_user_record(user.id, today_cups=new_total)
 
-    status_text = format_water_status_text(record)
-    update.message.reply_text(
-        f"🥤 تم إضافة {cups} كوب إلى عدّادك اليوم.\n\n{status_text}",
-        reply_markup=water_menu_keyboard(user.id),
-    )
+        if today_changed:
+            save_data()
+
+    run_after_response(_persist_add_cups)
 
 
 def handle_status(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
-    text = format_water_status_text(record)
+    record = get_user_record(user, update_last_active=False)
+    today_changed = ensure_today_water(record, persist=False)
+    text = format_water_status_text(record, persist=False)
     update.message.reply_text(
         text,
         reply_markup=water_menu_keyboard(user.id),
     )
+    if today_changed:
+        run_after_response(save_data)
+    defer_last_active_update(user.id)
 
 
 def handle_reminders_on(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if not record.get("cups_goal"):
         update.message.reply_text(
@@ -5406,20 +5456,11 @@ def handle_reminders_on(update: Update, context: CallbackContext):
             "«حساب احتياج الماء 🧮».",
             reply_markup=water_settings_keyboard(user.id),
         )
+        defer_last_active_update(user.id)
         return
 
     record["water_enabled"] = True
     record["reminders_on"] = True
-
-    # حفظ في Firestore
-    update_user_record(
-        user.id,
-        reminders_on=record["reminders_on"],
-        water_enabled=record["water_enabled"],
-    )
-    save_data()
-
-    refresh_water_jobs()
 
     update.message.reply_text(
         "تم تشغيل تذكيرات الماء ⏰\n"
@@ -5427,28 +5468,30 @@ def handle_reminders_on(update: Update, context: CallbackContext):
         reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
+    def _persist_reminders_on():
+        # حفظ في Firestore
+        update_user_record(
+            user.id,
+            reminders_on=record["reminders_on"],
+            water_enabled=record["water_enabled"],
+        )
+        save_data()
+        refresh_water_jobs()
+
+    run_after_response(_persist_reminders_on)
+
 
 def handle_reminders_off(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     record["water_enabled"] = False
     record["reminders_on"] = False
-
-    # حفظ في Firestore
-    update_user_record(
-        user.id,
-        reminders_on=record["reminders_on"],
-        water_enabled=record["water_enabled"],
-    )
-    save_data()
-
-    refresh_water_jobs()
 
     update.message.reply_text(
         "تم إيقاف تذكيرات الماء 📴\n"
@@ -5456,11 +5499,23 @@ def handle_reminders_off(update: Update, context: CallbackContext):
         reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
+    def _persist_reminders_off():
+        # حفظ في Firestore
+        update_user_record(
+            user.id,
+            reminders_on=record["reminders_on"],
+            water_enabled=record["water_enabled"],
+        )
+        save_data()
+        refresh_water_jobs()
+
+    run_after_response(_persist_reminders_off)
+
 
 def handle_water_reset(update: Update, context: CallbackContext):
     """تصفير عداد الماء يدوياً"""
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5474,12 +5529,6 @@ def handle_water_reset(update: Update, context: CallbackContext):
     # تصفير العداد
     record["today_cups"] = 0
     
-    # حفظ في Firestore
-    update_user_record(user_id, today_cups=0)
-    save_data()
-    
-    logger.info(f"✅ تم تصفير عداد الماء للمستخدم {user_id} (كان: {today_cups} كوب)")
-    
     update.message.reply_text(
         f"تم تصفير عداد الماء 🔄\n"
         f"كان عدد الأكواب: {today_cups} كوب\n"
@@ -5487,6 +5536,14 @@ def handle_water_reset(update: Update, context: CallbackContext):
         "يمكنك البدء من جديد!",
         reply_markup=water_settings_keyboard(user_id),
     )
+
+    def _persist_water_reset():
+        # حفظ في Firestore
+        update_user_record(user_id, today_cups=0)
+        save_data()
+        logger.info(f"✅ تم تصفير عداد الماء للمستخدم {user_id} (كان: {today_cups} كوب)")
+
+    run_after_response(_persist_water_reset)
 
 
 # =================== قسم ورد القرآن ===================
@@ -5500,7 +5557,7 @@ def open_quran_menu(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
     
-    get_user_record(user)
+    get_user_record(user, update_last_active=False)
     kb = quran_menu_keyboard(user.id)
     update.message.reply_text(
         "وردي القرآني 📖:\n"
@@ -5706,14 +5763,14 @@ def handle_quran_reset_day(update: Update, context: CallbackContext):
 
 def open_adhkar_menu(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
 
     STRUCTURED_ADHKAR_STATE.pop(user.id, None)
-    get_user_record(user)
+    get_user_record(user, update_last_active=False)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         "أذكاري 🤲:\n"
@@ -5723,6 +5780,7 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
         "• أذكار النوم الموثوقة.",
         reply_markup=kb,
     )
+    defer_last_active_update(user.id)
 
 
 def format_structured_adhkar_text(category_key: str, index: int) -> str:
@@ -5763,7 +5821,7 @@ def send_structured_adhkar_step(update: Update, user_id: int, category_key: str,
 
 def start_structured_adhkar(update: Update, context: CallbackContext, category_key: str):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5774,6 +5832,7 @@ def start_structured_adhkar(update: Update, context: CallbackContext, category_k
 
     send_structured_adhkar_step(update, user.id, category_key, 0)
     increment_adhkar_count(user.id, 1)
+    defer_last_active_update(user.id)
 
 
 def send_morning_adhkar(update: Update, context: CallbackContext):
@@ -5791,7 +5850,7 @@ def send_general_adhkar(update: Update, context: CallbackContext):
 def handle_structured_adhkar_next(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5812,15 +5871,17 @@ def handle_structured_adhkar_next(update: Update, context: CallbackContext):
             done_msg,
             reply_markup=adhkar_menu_keyboard(user_id),
         )
+        defer_last_active_update(user_id)
         return
 
     send_structured_adhkar_step(update, user_id, category, index + 1)
+    defer_last_active_update(user_id)
 
 
 def handle_structured_adhkar_done(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5840,12 +5901,13 @@ def handle_structured_adhkar_done(update: Update, context: CallbackContext):
         done_msg,
         reply_markup=adhkar_menu_keyboard(user_id),
     )
+    defer_last_active_update(user_id)
 
 
 def handle_structured_adhkar_prev(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5860,9 +5922,11 @@ def handle_structured_adhkar_prev(update: Update, context: CallbackContext):
 
     if index <= 0:
         send_structured_adhkar_step(update, user_id, category, 0)
+        defer_last_active_update(user_id)
         return
 
     send_structured_adhkar_step(update, user_id, category, index - 1)
+    defer_last_active_update(user_id)
 
 
 def handle_structured_adhkar_back_to_menu(update: Update, context: CallbackContext):
@@ -5892,7 +5956,7 @@ def format_sleep_adhkar_text(index: int) -> str:
 
 def start_sleep_adhkar(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5903,12 +5967,13 @@ def start_sleep_adhkar(update: Update, context: CallbackContext):
         reply_markup=SLEEP_ADHKAR_KB,
     )
     increment_adhkar_count(user.id, 1)
+    defer_last_active_update(user.id)
 
 
 def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5928,6 +5993,7 @@ def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
             "ويكتب لك أجر الذاكرين، ويغمر قلبك بالطمأنينة والبركة. 🌙",
             reply_markup=adhkar_menu_keyboard(user_id),
         )
+        defer_last_active_update(user_id)
         return
 
     next_index = current_index + 1
@@ -5936,12 +6002,13 @@ def handle_sleep_adhkar_next(update: Update, context: CallbackContext):
         format_sleep_adhkar_text(next_index),
         reply_markup=SLEEP_ADHKAR_KB,
     )
+    defer_last_active_update(user_id)
 
 
 def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
 
     if record.get("is_banned", False):
         return
@@ -5954,6 +6021,7 @@ def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
     )
     if had_state:
         increment_adhkar_count(user_id, 1)
+    defer_last_active_update(user_id)
 
 # =================== قسم السبحة ===================
 
