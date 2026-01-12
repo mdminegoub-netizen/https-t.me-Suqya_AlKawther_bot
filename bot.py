@@ -5551,13 +5551,12 @@ def handle_water_reset(update: Update, context: CallbackContext):
 
 def open_quran_menu(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    get_user_record(user, update_last_active=False)
     kb = quran_menu_keyboard(user.id)
     update.message.reply_text(
         "وردي القرآني 📖:\n"
@@ -5568,11 +5567,12 @@ def open_quran_menu(update: Update, context: CallbackContext):
         "كل صفحة تضيفها تزيد نقاطك وترفع مستواك 🎯",
         reply_markup=kb,
     )
+    defer_last_active_update(user.id)
 
 
 def handle_quran_set_goal(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5587,11 +5587,12 @@ def handle_quran_set_goal(update: Update, context: CallbackContext):
         "أرسل عدد الصفحات التي تريد قراءتها اليوم من القرآن، مثال: 5 أو 10.",
         reply_markup=CANCEL_KB,
     )
+    defer_last_active_update(user_id)
 
 
 def handle_quran_goal_input(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5606,6 +5607,7 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
             "تم الإلغاء، عدنا إلى قائمة وردي القرآني.",
             reply_markup=quran_menu_keyboard(user_id),
         )
+        defer_last_active_update(user_id)
         return
 
     try:
@@ -5617,15 +5619,11 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
             "رجاءً أرسل عدد صفحات منطقيًا، مثل: 5 أو 10 أو 20.",
             reply_markup=CANCEL_KB,
         )
+        defer_last_active_update(user_id)
         return
 
-    record = get_user_record(user)
-    ensure_today_quran(record)
+    ensure_today_quran(record, persist=False)
     record["quran_pages_goal"] = pages
-    
-    # حفظ في Firestore
-    update_user_record(user.id, quran_pages_goal=record["quran_pages_goal"])
-    save_data()
 
     WAITING_QURAN_GOAL.discard(user_id)
 
@@ -5634,24 +5632,30 @@ def handle_quran_goal_input(update: Update, context: CallbackContext):
         "يمكنك تسجيل ما قرأته من خلال «سجلت صفحات اليوم ✅».",
         reply_markup=quran_menu_keyboard(user_id),
     )
+    defer_last_active_update(user_id)
+
+    def _persist_quran_goal():
+        update_user_record(user.id, quran_pages_goal=record["quran_pages_goal"])
+        save_data()
+
+    run_after_response(_persist_quran_goal)
 
 
 def handle_quran_add_pages_start(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
-
     if not record.get("quran_pages_goal"):
         update.message.reply_text(
             "لم تضبط بعد ورد اليوم.\n"
             "استخدم «تعيين ورد اليوم 📌» أولًا.",
             reply_markup=quran_menu_keyboard(user.id),
         )
+        defer_last_active_update(user.id)
         return
 
     WAITING_QURAN_ADD_PAGES.add(user.id)
@@ -5659,11 +5663,12 @@ def handle_quran_add_pages_start(update: Update, context: CallbackContext):
         "أرسل الآن عدد الصفحات التي قرأتها من ورد اليوم، مثال: 2 أو 3.",
         reply_markup=CANCEL_KB,
     )
+    defer_last_active_update(user.id)
 
 
 def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
@@ -5678,6 +5683,7 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
             "تم الإلغاء، عدنا إلى قائمة وردي القرآني.",
             reply_markup=quran_menu_keyboard(user_id),
         )
+        defer_last_active_update(user_id)
         return
 
     try:
@@ -5689,74 +5695,84 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
             "رجاءً أرسل عدد صفحات صحيحًا، مثل: 1 أو 2 أو 5.",
             reply_markup=CANCEL_KB,
         )
+        defer_last_active_update(user_id)
         return
 
-    record = get_user_record(user)
-    ensure_today_quran(record)
+    ensure_today_quran(record, persist=False)
 
     before = record.get("quran_pages_today", 0)
     record["quran_pages_today"] = before + pages
 
-    add_points(user_id, pages * POINTS_PER_QURAN_PAGE, context)
-
     goal = record.get("quran_pages_goal")
     after = record["quran_pages_today"]
-    if goal and before < goal <= after:
-        add_points(user_id, POINTS_QURAN_DAILY_BONUS, context)
-
-    save_data()
-    # تحديث Firestore مباشرة
-    update_user_record(user_id, quran_pages_today=record["quran_pages_today"], quran_today_date=record.get("quran_today_date"))
-
-    check_daily_full_activity(user_id, record, context)
+    bonus_points = POINTS_QURAN_DAILY_BONUS if goal and before < goal <= after else 0
 
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
-    status_text = format_quran_status_text(record)
+    status_text = format_quran_status_text(record, persist=False)
     update.message.reply_text(
         f"تم إضافة {pages} صفحة إلى وردك اليوم.\n\n{status_text}",
         reply_markup=quran_menu_keyboard(user_id),
     )
+    defer_last_active_update(user_id)
+
+    def _persist_quran_pages():
+        add_points(user_id, pages * POINTS_PER_QURAN_PAGE, context)
+        if bonus_points:
+            add_points(user_id, bonus_points, context)
+        save_data()
+        update_user_record(
+            user_id,
+            quran_pages_today=record["quran_pages_today"],
+            quran_today_date=record.get("quran_today_date"),
+        )
+        check_daily_full_activity(user_id, record, context)
+
+    run_after_response(_persist_quran_pages)
 
 
 def handle_quran_status(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
-    text = format_quran_status_text(record)
+    updated_today = ensure_today_quran(record, persist=False)
+    text = format_quran_status_text(record, persist=False)
     update.message.reply_text(
         text,
         reply_markup=quran_menu_keyboard(user.id),
     )
+    defer_last_active_update(user.id)
+    if updated_today:
+        run_after_response(save_data)
 
 
 def handle_quran_reset_day(update: Update, context: CallbackContext):
     user = update.effective_user
-    record = get_user_record(user)
+    record = get_user_record(user, update_last_active=False)
     
     # التحقق إذا كان المستخدم محظورًا
     if record.get("is_banned", False):
         return
     
-    record = get_user_record(user)
-
-    ensure_today_quran(record)
+    ensure_today_quran(record, persist=False)
     record["quran_pages_today"] = 0
-    
-    # حفظ في Firestore
-    update_user_record(user.id, quran_pages_today=record["quran_pages_today"])
-    save_data()
 
     update.message.reply_text(
         "تم إعادة تعيين ورد اليوم.\n"
         "يمكنك البدء من جديد في حساب الصفحات لهذا اليوم.",
         reply_markup=quran_menu_keyboard(user.id),
     )
+    defer_last_active_update(user.id)
+
+    def _persist_quran_reset():
+        update_user_record(user.id, quran_pages_today=record["quran_pages_today"])
+        save_data()
+
+    run_after_response(_persist_quran_reset)
 
 # =================== قسم الأذكار ===================
 
@@ -5770,7 +5786,6 @@ def open_adhkar_menu(update: Update, context: CallbackContext):
         return
 
     STRUCTURED_ADHKAR_STATE.pop(user.id, None)
-    get_user_record(user, update_last_active=False)
     kb = adhkar_menu_keyboard(user.id)
     update.message.reply_text(
         "أذكاري 🤲:\n"
@@ -5831,7 +5846,7 @@ def start_structured_adhkar(update: Update, context: CallbackContext, category_k
         return
 
     send_structured_adhkar_step(update, user.id, category_key, 0)
-    increment_adhkar_count(user.id, 1)
+    run_after_response(increment_adhkar_count, user.id, 1)
     defer_last_active_update(user.id)
 
 
@@ -5966,7 +5981,7 @@ def start_sleep_adhkar(update: Update, context: CallbackContext):
         format_sleep_adhkar_text(0),
         reply_markup=SLEEP_ADHKAR_KB,
     )
-    increment_adhkar_count(user.id, 1)
+    run_after_response(increment_adhkar_count, user.id, 1)
     defer_last_active_update(user.id)
 
 
@@ -6020,7 +6035,7 @@ def handle_sleep_adhkar_back(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
     if had_state:
-        increment_adhkar_count(user_id, 1)
+        run_after_response(increment_adhkar_count, user_id, 1)
     defer_last_active_update(user_id)
 
 # =================== قسم السبحة ===================
