@@ -5151,10 +5151,6 @@ def handle_gender_input(update: Update, context: CallbackContext):
     record = get_user_record(user)
     gender = "male" if text == BTN_GENDER_MALE else "female"
     record["gender"] = gender
-    
-    # حفظ في Firestore
-    update_user_record(user.id, gender=record["gender"])
-    save_data()
 
     WAITING_GENDER.discard(user_id)
     WAITING_AGE.add(user_id)
@@ -5163,6 +5159,10 @@ def handle_gender_input(update: Update, context: CallbackContext):
         "جميل.\nالآن أرسل عمرك (بالسنوات)، مثال: 25",
         reply_markup=CANCEL_KB,
     )
+
+    # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
+    update_user_record(user.id, gender=record["gender"])
+    save_data()
 
 
 def handle_age_input(update: Update, context: CallbackContext):
@@ -5194,10 +5194,6 @@ def handle_age_input(update: Update, context: CallbackContext):
 
     record = get_user_record(user)
     record["age"] = age
-    
-    # حفظ في Firestore
-    update_user_record(user.id, age=record["age"])
-    save_data()
 
     WAITING_AGE.discard(user_id)
     WAITING_WEIGHT.add(user_id)
@@ -5206,6 +5202,10 @@ def handle_age_input(update: Update, context: CallbackContext):
         "شكرًا.\nالآن أرسل وزنك بالكيلوغرام، مثال: 70",
         reply_markup=CANCEL_KB,
     )
+
+    # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
+    update_user_record(user.id, age=record["age"])
+    save_data()
 
 
 def handle_weight_input(update: Update, context: CallbackContext):
