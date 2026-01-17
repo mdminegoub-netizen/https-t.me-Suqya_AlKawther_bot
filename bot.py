@@ -1320,6 +1320,25 @@ def _reset_quiz_creation(user_id: int):
     QUIZ_CREATION_CONTEXT.pop(user_id, None)
 
 
+def _get_course_title(course_id: str) -> str:
+    course = _course_document(course_id) if course_id else None
+    return (course or {}).get("name") or "دورة"
+
+
+def _broadcast_course_update(bot, text: str) -> None:
+    user_ids = get_active_user_ids()
+    sent = 0
+    failed = 0
+    for uid in user_ids:
+        try:
+            bot.send_message(chat_id=uid, text=text)
+            sent += 1
+        except Exception as e:
+            logger.debug("❌ فشل إرسال الإشعار إلى %s: %s", uid, e)
+            failed += 1
+    logger.info("📣 إشعار الدورات | sent=%s | failed=%s", sent, failed)
+
+
 def _save_lesson(
     user_id: int,
     course_id: str,
@@ -1350,6 +1369,15 @@ def _save_lesson(
             "created_at": firestore.SERVER_TIMESTAMP,
         }
         db.collection(COURSE_LESSONS_COLLECTION).add(lesson_payload)
+        course_title = _get_course_title(course_id)
+        _broadcast_course_update(
+            msg.bot,
+            (
+                "📖 تم إضافة درس جديد في دورة "
+                f"«{course_title}»:\n«{title}».\n"
+                "ستجدون هذا الدرس في قسم «دوراتي» ثم اختيار الدورة."
+            ),
+        )
         msg.reply_text(
             "✅ تم إضافة الدرس.",
             reply_markup=_lessons_back_keyboard(course_id),
@@ -1516,6 +1544,15 @@ def _finalize_quiz_creation_from_message(user_id: int, msg):
         else:
             quiz_payload["created_at"] = firestore.SERVER_TIMESTAMP
             db.collection(COURSE_QUIZZES_COLLECTION).add(quiz_payload)
+            course_title = _get_course_title(course_id)
+            _broadcast_course_update(
+                msg.bot,
+                (
+                    "📝 تم إضافة اختبار جديد في دورة "
+                    f"«{course_title}»:\n«{ctx.get('title')}».\n"
+                    "يمكنكم الدخول إلى الاختبار من قسم «دوراتي» ثم «الاختبارات» في الدورة."
+                ),
+            )
             msg.reply_text(
                 "✅ تم إضافة الاختبار.",
                 reply_markup=_quizzes_back_keyboard(course_id),
@@ -1565,6 +1602,15 @@ def _finalize_quiz_creation_from_callback(user_id: int, query: Update.callback_q
         else:
             quiz_payload["created_at"] = firestore.SERVER_TIMESTAMP
             db.collection(COURSE_QUIZZES_COLLECTION).add(quiz_payload)
+            course_title = _get_course_title(course_id)
+            _broadcast_course_update(
+                query.message.bot,
+                (
+                    "📝 تم إضافة اختبار جديد في دورة "
+                    f"«{course_title}»:\n«{ctx.get('title')}».\n"
+                    "يمكنكم الدخول إلى الاختبار من قسم «دوراتي» ثم «الاختبارات» في الدورة."
+                ),
+            )
             safe_edit_message_text(
                 query,
                 "✅ تم إضافة الاختبار.",
@@ -1658,12 +1704,19 @@ def handle_lesson_image_message(update: Update, context: CallbackContext):
         return
 
     photos = update.message.photo or []
-    if not photos:
+    document = getattr(update.message, "document", None)
+    document_is_image = bool(document and (document.mime_type or "").startswith("image/"))
+
+    if not photos and not document_is_image:
         update.message.reply_text("❌ يرجى إرسال صورة واحدة.", reply_markup=_lessons_back_keyboard(course_id))
         return
 
-    best_photo = photos[-1]
-    file_id = best_photo.file_id
+    if photos:
+        best_photo = photos[-1]
+        file_id = best_photo.file_id
+    else:
+        file_id = document.file_id
+
     caption = update.message.caption or ""
     meta = {
         "file_id": file_id,
@@ -9917,6 +9970,13 @@ def handle_text(update: Update, context: CallbackContext):
                     "created_at": firestore.SERVER_TIMESTAMP,
                 }
             )
+            _broadcast_course_update(
+                msg.bot,
+                (
+                    "📚 تم إطلاق دورة جديدة: "
+                    f"«{course_name}».\nيمكنكم العثور عليها في قسم «الدورات» ثم الاشتراك فيها من هناك."
+                ),
+            )
             _reset_course_creation(user_id)
             msg.reply_text(
                 f"✅ تم إنشاء دورة ({course_name}) بنجاح",
@@ -12042,7 +12102,12 @@ def start_bot():
             & Filters.user(WAITING_LESSON_AUDIO)
         )
         lesson_image_filter = (
-            Filters.photo
+            (
+                Filters.photo
+                | Filters.document.mime_type("image/jpeg")
+                | Filters.document.mime_type("image/png")
+                | Filters.document.mime_type("image/webp")
+            )
             & Filters.chat_type.private
             & Filters.user(WAITING_LESSON_IMAGE)
         )
