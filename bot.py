@@ -13485,23 +13485,30 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
                 media = [InputMediaPhoto(file_id) for file_id in image_file_ids]
                 media[0].caption = caption
                 try:
-                    context.bot.send_media_group(
+                    msgs = context.bot.send_media_group(
                         chat_id=query.message.chat_id,
                         media=media,
                     )
+                    context.user_data["lesson_image_msg_ids"] = [
+                        m.message_id for m in msgs
+                    ]
                 except Exception:
+                    sent_ids = []
                     for idx, file_id in enumerate(image_file_ids):
-                        context.bot.send_photo(
+                        msg = context.bot.send_photo(
                             chat_id=query.message.chat_id,
                             photo=file_id,
                             caption=caption if idx == 0 else None,
                         )
+                        sent_ids.append(msg.message_id)
+                    context.user_data["lesson_image_msg_ids"] = sent_ids
             else:
-                context.bot.send_photo(
+                msg = context.bot.send_photo(
                     chat_id=query.message.chat_id,
                     photo=image_file_ids[0],
                     caption=caption,
                 )
+                context.user_data["lesson_image_msg_ids"] = [msg.message_id]
             safe_edit_message_text(
                 query,
                 f"📖 {title}\nتم إرسال صورة الدرس أعلاه.",
@@ -15732,6 +15739,15 @@ def handle_courses_callback(update: Update, context: CallbackContext):
             subscribe_to_course(query, context, course_id)
         elif data.startswith("COURSES:user_lessons_"):
             course_id = data.replace("COURSES:user_lessons_", "")
+            msg_ids = context.user_data.get("lesson_image_msg_ids") or []
+            for mid in msg_ids:
+                try:
+                    context.bot.delete_message(
+                        chat_id=query.message.chat_id, message_id=mid
+                    )
+                except Exception:
+                    pass
+            context.user_data.pop("lesson_image_msg_ids", None)
             user_lessons_list(query, context, course_id)
         elif data.startswith("COURSES:user_quizzes_"):
             course_id = data.replace("COURSES:user_quizzes_", "")
