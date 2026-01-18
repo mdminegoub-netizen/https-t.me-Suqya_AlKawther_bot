@@ -22,6 +22,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardRemove,
     ParseMode,
+    InputMediaPhoto,
 )
 
 import firebase_admin
@@ -1264,6 +1265,16 @@ def _lessons_back_keyboard(course_id: str):
     return COURSES_ADMIN_MENU_KB
 
 
+def _lesson_images_keyboard(course_id: str):
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✅ تم", callback_data=f"COURSES:lesson_images_done_{course_id}")],
+            [InlineKeyboardButton("❌ إلغاء", callback_data=f"COURSES:lesson_images_cancel_{course_id}")],
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:lessons_{course_id}")],
+        ]
+    )
+
+
 def _quizzes_back_keyboard(course_id: str):
     if course_id:
         return InlineKeyboardMarkup(
@@ -1350,10 +1361,12 @@ def _save_lesson(
     audio_file_unique_id: str = None,
     audio_kind: str = None,
     image_file_id: str = None,
+    image_file_ids: List[str] = None,
     source_chat_id: int = None,
     source_message_id: int = None,
 ):
     try:
+        first_image_id = (image_file_ids or [None])[0] if image_file_ids is not None else image_file_id
         lesson_payload = {
             "course_id": course_id,
             "title": title,
@@ -1363,11 +1376,13 @@ def _save_lesson(
             "audio_file_id": audio_file_id,
             "audio_file_unique_id": audio_file_unique_id,
             "audio_kind": audio_kind,
-            "image_file_id": image_file_id,
+            "image_file_id": first_image_id,
             "source_chat_id": source_chat_id,
             "source_message_id": source_message_id,
             "created_at": firestore.SERVER_TIMESTAMP,
         }
+        if image_file_ids:
+            lesson_payload["image_file_ids"] = image_file_ids
         db.collection(COURSE_LESSONS_COLLECTION).add(lesson_payload)
         course_title = _get_course_title(course_id)
         _broadcast_course_update(
@@ -1401,6 +1416,7 @@ def _update_lesson(
     msg,
     content_value: str = "",
     audio_meta: Dict = None,
+    image_file_ids: List[str] = None,
 ):
     try:
         doc_ref = db.collection(COURSE_LESSONS_COLLECTION).document(lesson_id)
@@ -1428,13 +1444,15 @@ def _update_lesson(
                 }
             )
         elif content_type == "image":
+            first_image_id = (image_file_ids or [None])[0] if image_file_ids is not None else (audio_meta or {}).get("file_id")
             update_payload.update(
                 {
                     "content": content_value,
                     "audio_file_id": None,
                     "audio_file_unique_id": None,
                     "audio_kind": None,
-                    "image_file_id": (audio_meta or {}).get("file_id"),
+                    "image_file_id": first_image_id,
+                    "image_file_ids": image_file_ids or [],
                     "source_chat_id": (audio_meta or {}).get("source_chat_id"),
                     "source_message_id": (audio_meta or {}).get("source_message_id"),
                 }
@@ -1447,6 +1465,7 @@ def _update_lesson(
                     "audio_file_unique_id": None,
                     "audio_kind": None,
                     "image_file_id": None,
+                    "image_file_ids": firestore.DELETE_FIELD,
                     "source_chat_id": None,
                     "source_message_id": None,
                 }
@@ -1473,6 +1492,17 @@ def _is_audio_document(document) -> bool:
     filename = (getattr(document, "file_name", "") or "").lower()
     audio_ext = (".mp3", ".wav", ".ogg", ".oga", ".opus", ".m4a", ".flac", ".aac")
     return any(filename.endswith(ext) for ext in audio_ext)
+
+
+def _is_image_document(document) -> bool:
+    if not document:
+        return False
+    mime = (getattr(document, "mime_type", "") or "").lower()
+    if mime.startswith("image/"):
+        return True
+    filename = (getattr(document, "file_name", "") or "").lower()
+    image_ext = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+    return any(filename.endswith(ext) for ext in image_ext)
 
 
 def _extract_audio_metadata(message) -> Dict:
@@ -1693,6 +1723,13 @@ def handle_lesson_image_message(update: Update, context: CallbackContext):
     if user_id not in WAITING_LESSON_IMAGE:
         return
 
+    logger.info(
+        "🖼️ LESSON_IMAGE_HANDLER | user_id=%s | has_photo=%s | has_document=%s",
+        user_id,
+        bool(update.message.photo),
+        bool(getattr(update.message, "document", None)),
+    )
+
     ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
     course_id = ctx.get("course_id")
     title = ctx.get("title")
@@ -1705,10 +1742,13 @@ def handle_lesson_image_message(update: Update, context: CallbackContext):
 
     photos = update.message.photo or []
     document = getattr(update.message, "document", None)
-    document_is_image = bool(document and (document.mime_type or "").startswith("image/"))
+    document_is_image = _is_image_document(document)
 
     if not photos and not document_is_image:
-        update.message.reply_text("❌ يرجى إرسال صورة واحدة.", reply_markup=_lessons_back_keyboard(course_id))
+        update.message.reply_text(
+            "❌ يرجى إرسال صورة واحدة على الأقل.",
+            reply_markup=_lesson_images_keyboard(course_id),
+        )
         return
 
     if photos:
@@ -1718,39 +1758,18 @@ def handle_lesson_image_message(update: Update, context: CallbackContext):
         file_id = document.file_id
 
     caption = update.message.caption or ""
-    meta = {
-        "file_id": file_id,
-        "source_chat_id": update.effective_chat.id,
-        "source_message_id": update.message.message_id,
-    }
+    ctx.setdefault("image_file_ids", []).append(file_id)
+    if caption and not ctx.get("content"):
+        ctx["content"] = caption
+    if not ctx.get("source_chat_id"):
+        ctx["source_chat_id"] = update.effective_chat.id
+    if not ctx.get("source_message_id"):
+        ctx["source_message_id"] = update.message.message_id
 
-    if edit_action == "edit_content":
-        if not lesson_id:
-            _reset_lesson_creation(user_id)
-            update.message.reply_text("❌ الدرس غير معروف.", reply_markup=COURSES_ADMIN_MENU_KB)
-            return
-        _update_lesson(
-            user_id,
-            lesson_id,
-            course_id,
-            title,
-            "image",
-            update.message,
-            content_value=caption,
-            audio_meta=meta,
-        )
-    else:
-        _save_lesson(
-            user_id,
-            course_id,
-            title,
-            "image",
-            update.message,
-            content_value=caption,
-            image_file_id=file_id,
-            source_chat_id=meta.get("source_chat_id"),
-            source_message_id=meta.get("source_message_id"),
-        )
+    update.message.reply_text(
+        "✅ تم استلام الصورة. يمكنك إرسال المزيد أو الضغط على «تم».",
+        reply_markup=_lesson_images_keyboard(course_id),
+    )
 
 # أذكار النوم
 SLEEP_ADHKAR_STATE = {}  # user_id -> current_index
@@ -12104,9 +12123,7 @@ def start_bot():
         lesson_image_filter = (
             (
                 Filters.photo
-                | Filters.document.mime_type("image/jpeg")
-                | Filters.document.mime_type("image/png")
-                | Filters.document.mime_type("image/webp")
+                | Filters.document
             )
             & Filters.chat_type.private
             & Filters.user(WAITING_LESSON_IMAGE)
@@ -13442,8 +13459,14 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
         return
 
     if content_type == "image":
-        image_file_id = lesson.get("image_file_id")
-        if not image_file_id:
+        image_file_ids = lesson.get("image_file_ids") or []
+        if isinstance(image_file_ids, str):
+            image_file_ids = [image_file_ids]
+        if not image_file_ids:
+            legacy_image_id = lesson.get("image_file_id")
+            if legacy_image_id:
+                image_file_ids = [legacy_image_id]
+        if not image_file_ids:
             safe_edit_message_text(
                 query,
                 f"<b>{title}</b>\n\n⚠️ لا توجد صورة مرفقة لهذا الدرس.",
@@ -13456,11 +13479,27 @@ def user_view_lesson(query: Update.callback_query, context: CallbackContext, les
             caption_parts.append(content)
         caption = "\n\n".join(caption_parts)
         try:
-            context.bot.send_photo(
-                chat_id=query.message.chat_id,
-                photo=image_file_id,
-                caption=caption,
-            )
+            if len(image_file_ids) > 1:
+                media = [InputMediaPhoto(file_id) for file_id in image_file_ids]
+                media[0].caption = caption
+                try:
+                    context.bot.send_media_group(
+                        chat_id=query.message.chat_id,
+                        media=media,
+                    )
+                except Exception:
+                    for idx, file_id in enumerate(image_file_ids):
+                        context.bot.send_photo(
+                            chat_id=query.message.chat_id,
+                            photo=file_id,
+                            caption=caption if idx == 0 else None,
+                        )
+            else:
+                context.bot.send_photo(
+                    chat_id=query.message.chat_id,
+                    photo=image_file_ids[0],
+                    caption=caption,
+                )
             safe_edit_message_text(
                 query,
                 f"📖 {title}\nتم إرسال صورة الدرس أعلاه.",
@@ -15783,10 +15822,14 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                     WAITING_LESSON_IMAGE.add(user_id)
                     WAITING_LESSON_AUDIO.discard(user_id)
                     WAITING_LESSON_CONTENT.discard(user_id)
+                    LESSON_CREATION_CONTEXT.setdefault(user_id, {})["image_file_ids"] = []
+                    LESSON_CREATION_CONTEXT[user_id].pop("content", None)
+                    LESSON_CREATION_CONTEXT[user_id].pop("source_chat_id", None)
+                    LESSON_CREATION_CONTEXT[user_id].pop("source_message_id", None)
                     safe_edit_message_text(
                         query,
-                        "🖼️ أرسل صورة الدرس الآن.",
-                        reply_markup=_lessons_back_keyboard(course_id),
+                        "🖼️ أرسل صور الدرس الآن (يمكنك إرسال أكثر من صورة، وعند الانتهاء اضغط تم).",
+                        reply_markup=_lesson_images_keyboard(course_id),
                     )
                 else:
                     WAITING_LESSON_CONTENT.add(user_id)
@@ -15798,6 +15841,65 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                         prompt,
                         reply_markup=_lessons_back_keyboard(course_id),
                     )
+        elif data.startswith("COURSES:lesson_images_done_"):
+            course_id = data.replace("COURSES:lesson_images_done_", "")
+            ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+            image_file_ids = ctx.get("image_file_ids") or []
+            title = ctx.get("title")
+            lesson_id = ctx.get("lesson_id")
+            edit_action = ctx.get("edit_action")
+            content_value = ctx.get("content", "")
+            if not image_file_ids:
+                safe_edit_message_text(
+                    query,
+                    "❌ لم يتم استلام أي صورة، أرسل صورة واحدة على الأقل.",
+                    reply_markup=_lesson_images_keyboard(course_id),
+                )
+                return
+            if not course_id or not title:
+                _reset_lesson_creation(user_id)
+                safe_edit_message_text(query, "❌ البيانات غير مكتملة.", reply_markup=COURSES_ADMIN_MENU_KB)
+                return
+            meta = {
+                "source_chat_id": ctx.get("source_chat_id"),
+                "source_message_id": ctx.get("source_message_id"),
+            }
+            if edit_action == "edit_content":
+                if not lesson_id:
+                    _reset_lesson_creation(user_id)
+                    safe_edit_message_text(query, "❌ الدرس غير معروف.", reply_markup=COURSES_ADMIN_MENU_KB)
+                    return
+                _update_lesson(
+                    user_id,
+                    lesson_id,
+                    course_id,
+                    title,
+                    "image",
+                    query.message,
+                    content_value=content_value,
+                    audio_meta=meta,
+                    image_file_ids=image_file_ids,
+                )
+            else:
+                _save_lesson(
+                    user_id,
+                    course_id,
+                    title,
+                    "image",
+                    query.message,
+                    content_value=content_value,
+                    image_file_ids=image_file_ids,
+                    source_chat_id=meta.get("source_chat_id"),
+                    source_message_id=meta.get("source_message_id"),
+                )
+        elif data.startswith("COURSES:lesson_images_cancel_"):
+            course_id = data.replace("COURSES:lesson_images_cancel_", "")
+            _reset_lesson_creation(user_id)
+            safe_edit_message_text(
+                query,
+                "تم الإلغاء.",
+                reply_markup=_lessons_back_keyboard(course_id),
+            )
         elif data.startswith("COURSES:quizzes_"):
             _reset_quiz_creation(user_id)
             course_id = data.replace("COURSES:quizzes_", "")
