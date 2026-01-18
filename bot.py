@@ -1213,6 +1213,11 @@ def _user_waiting_book_media(user) -> bool:
         | WAITING_BOOK_EDIT_PDF
     )
 
+
+def _user_waiting_lesson_image(message) -> bool:
+    user = getattr(message, "from_user", None)
+    return bool(user and user.id in WAITING_LESSON_IMAGE)
+
 # فوائد ونصائح
 WAITING_BENEFIT_TEXT = set()
 WAITING_BENEFIT_EDIT_TEXT = set()
@@ -1661,7 +1666,7 @@ def handle_audio_message(update: Update, context: CallbackContext):
     if user_id not in WAITING_LESSON_AUDIO:
         return
 
-    ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+    ctx = LESSON_CREATION_CONTEXT.setdefault(user_id, {})
     course_id = ctx.get("course_id")
     title = ctx.get("title")
     lesson_id = ctx.get("lesson_id")
@@ -1730,7 +1735,7 @@ def handle_lesson_image_message(update: Update, context: CallbackContext):
         bool(getattr(update.message, "document", None)),
     )
 
-    ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
+    ctx = LESSON_CREATION_CONTEXT.setdefault(user_id, {})
     course_id = ctx.get("course_id")
     title = ctx.get("title")
     lesson_id = ctx.get("lesson_id")
@@ -12121,12 +12126,9 @@ def start_bot():
             & Filters.user(WAITING_LESSON_AUDIO)
         )
         lesson_image_filter = (
-            (
-                Filters.photo
-                | Filters.document
-            )
+            (Filters.photo | Filters.document)
             & Filters.chat_type.private
-            & Filters.user(WAITING_LESSON_IMAGE)
+            & FuncMessageFilter(_user_waiting_lesson_image)
         )
         user_audio_filter = (Filters.audio | Filters.voice | audio_document_filter) & Filters.chat_type.private
         channel_audio_filter = Filters.chat_type.channel & (Filters.audio | Filters.voice | audio_document_filter)
@@ -12255,7 +12257,7 @@ def start_bot():
                 lesson_image_filter,
                 handle_lesson_image_message,
             ),
-            group=0,
+            group=-1,
         )
 
         dispatcher.add_handler(
@@ -15843,6 +15845,7 @@ def handle_courses_callback(update: Update, context: CallbackContext):
                     )
         elif data.startswith("COURSES:lesson_images_done_"):
             course_id = data.replace("COURSES:lesson_images_done_", "")
+            logger.info("🖼️ LESSON_IMAGES_DONE | user_id=%s | ctx=%s", user_id, LESSON_CREATION_CONTEXT.get(user_id))
             ctx = LESSON_CREATION_CONTEXT.get(user_id, {}) or {}
             image_file_ids = ctx.get("image_file_ids") or []
             title = ctx.get("title")
