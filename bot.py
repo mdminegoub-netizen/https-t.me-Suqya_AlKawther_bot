@@ -23,6 +23,7 @@ from telegram import (
     ReplyKeyboardRemove,
     ParseMode,
     InputMediaPhoto,
+    InputMediaDocument,
 )
 
 import firebase_admin
@@ -1195,6 +1196,8 @@ MEMO_EDIT_INDEX = {}
 WAITING_SUPPORT_GENDER = set()
 WAITING_SUPPORT = set()
 WAITING_BROADCAST = set()
+PENDING_BROADCAST_MEDIA: Dict[Tuple[int, str], Dict[str, object]] = {}
+PENDING_BROADCAST_JOBS: Dict[Tuple[int, str], object] = {}
 SUPPORT_MSG_MAP: Dict[Tuple[int, int], int] = {}  # (admin_id, msg_id) -> user_id
 
 # فلاتر مساعدة
@@ -8788,6 +8791,189 @@ def handle_admin_users_list(update: Update, context: CallbackContext):
         reply_markup=ADMIN_PANEL_KB,
     )
 
+def _broadcast_caption(raw_text: str) -> str:
+    prefix = "📢 رسالة من الدعم"
+    cleaned = (raw_text or "").strip()
+    if cleaned:
+        return f"{prefix}:\n\n{cleaned}"
+    return prefix
+
+
+def _broadcast_send_text(bot, user_ids: List[int], text: str) -> Tuple[int, int]:
+    sent = 0
+    failed = 0
+    payload = _broadcast_caption(text)
+    for uid in user_ids:
+        try:
+            bot.send_message(chat_id=uid, text=payload)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending broadcast to {uid}: {e}")
+            failed += 1
+    return sent, failed
+
+
+def _broadcast_send_photo(
+    bot,
+    user_ids: List[int],
+    photo_file_id: str,
+    caption: str,
+) -> Tuple[int, int]:
+    sent = 0
+    failed = 0
+    payload = _broadcast_caption(caption)
+    for uid in user_ids:
+        try:
+            bot.send_photo(chat_id=uid, photo=photo_file_id, caption=payload)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending broadcast photo to {uid}: {e}")
+            failed += 1
+    return sent, failed
+
+
+def _broadcast_send_document_image(
+    bot,
+    user_ids: List[int],
+    document_file_id: str,
+    caption: str,
+) -> Tuple[int, int]:
+    sent = 0
+    failed = 0
+    payload = _broadcast_caption(caption)
+    for uid in user_ids:
+        try:
+            bot.send_document(chat_id=uid, document=document_file_id, caption=payload)
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending broadcast document image to {uid}: {e}")
+            failed += 1
+    return sent, failed
+
+
+def _broadcast_send_media_group(
+    bot,
+    user_ids: List[int],
+    media_items: List[Dict[str, str]],
+    caption: str,
+) -> Tuple[int, int]:
+    if not media_items:
+        return 0, 0
+    sent = 0
+    failed = 0
+    payload = _broadcast_caption(caption)
+    chunks = [media_items[i : i + 10] for i in range(0, len(media_items), 10)]
+    for uid in user_ids:
+        try:
+            caption_sent = False
+            for chunk in chunks:
+                media = [
+                    (
+                        InputMediaPhoto(
+                            media=item["file_id"],
+                            caption=payload if (idx == 0 and not caption_sent) else None,
+                        )
+                        if item["type"] == "photo"
+                        else InputMediaDocument(
+                            media=item["file_id"],
+                            caption=payload if (idx == 0 and not caption_sent) else None,
+                        )
+                    )
+                    for idx, item in enumerate(chunk)
+                ]
+                bot.send_media_group(chat_id=uid, media=media)
+                caption_sent = True
+            sent += 1
+        except Exception as e:
+            logger.error(f"Error sending broadcast media group to {uid}: {e}")
+            failed += 1
+    return sent, failed
+
+
+def _extract_image_media(message) -> Optional[Dict[str, str]]:
+    photos = getattr(message, "photo", None) or []
+    if photos:
+        return {"type": "photo", "file_id": photos[-1].file_id}
+    document = getattr(message, "document", None)
+    if document and _is_image_document(document):
+        return {"type": "document", "file_id": document.file_id}
+    return None
+
+
+def _queue_broadcast_media_group(user_id: int, message, context: CallbackContext) -> None:
+    media_group_id = getattr(message, "media_group_id", None)
+    if not media_group_id:
+        return
+    key = (user_id, media_group_id)
+    entry = PENDING_BROADCAST_MEDIA.setdefault(key, {"items": [], "caption": ""})
+    media_item = _extract_image_media(message)
+    if media_item:
+        entry["items"].append(media_item)
+    if not entry["caption"] and message.caption:
+        entry["caption"] = message.caption
+
+    existing_job = PENDING_BROADCAST_JOBS.get(key)
+    if existing_job:
+        existing_job.schedule_removal()
+
+    job = context.job_queue.run_once(
+        _flush_broadcast_media_group,
+        when=1.0,
+        context={"user_id": user_id, "media_group_id": media_group_id},
+    )
+    PENDING_BROADCAST_JOBS[key] = job
+
+
+def _flush_broadcast_media_group(context: CallbackContext) -> None:
+    job_context = context.job.context if context.job else {}
+    user_id = job_context.get("user_id")
+    media_group_id = job_context.get("media_group_id")
+    if not user_id or not media_group_id:
+        return
+    if user_id not in WAITING_BROADCAST:
+        PENDING_BROADCAST_MEDIA.pop((user_id, media_group_id), None)
+        PENDING_BROADCAST_JOBS.pop((user_id, media_group_id), None)
+        return
+    key = (user_id, media_group_id)
+    entry = PENDING_BROADCAST_MEDIA.pop(key, None)
+    PENDING_BROADCAST_JOBS.pop(key, None)
+    if not entry:
+        return
+    media_items = entry.get("items") or []
+    caption = entry.get("caption") or ""
+    if not media_items:
+        context.bot.send_message(
+            chat_id=user_id,
+            text="❌ لم يتم العثور على صور صالحة. الرجاء إعادة الإرسال كـ Photo.",
+            reply_markup=CANCEL_KB,
+        )
+        return
+    user_ids = get_active_user_ids()
+    sent, failed = _broadcast_send_media_group(
+        context.bot,
+        user_ids,
+        media_items,
+        caption,
+    )
+    WAITING_BROADCAST.discard(user_id)
+    context.bot.send_message(
+        chat_id=user_id,
+        text=(
+            f"✅ تم إرسال الرسالة إلى {sent} مستخدم.\n"
+            f"❌ فشل إرسال الرسالة إلى {failed} مستخدم."
+        ),
+        reply_markup=admin_panel_keyboard_for(user_id),
+    )
+
+
+def _clear_broadcast_pending(user_id: int) -> None:
+    keys = [key for key in PENDING_BROADCAST_MEDIA if key[0] == user_id]
+    for key in keys:
+        PENDING_BROADCAST_MEDIA.pop(key, None)
+        job = PENDING_BROADCAST_JOBS.pop(key, None)
+        if job:
+            job.schedule_removal()
+
 
 def handle_admin_broadcast_start(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -8796,7 +8982,8 @@ def handle_admin_broadcast_start(update: Update, context: CallbackContext):
 
     WAITING_BROADCAST.add(user.id)
     update.message.reply_text(
-        "اكتب الآن الرسالة التي تريد إرسالها لكل مستخدمي البوت.\n"
+        "اكتب الآن الرسالة أو أرسل الصور التي تريد إرسالها لكل مستخدمي البوت.\n"
+        "يمكنك إرسال صورة واحدة أو ألبوم صور.\n"
         "مثال: تذكير، نصيحة، أو إعلان مهم.\n\n"
         "للإلغاء اضغط «إلغاء ❌».",
         reply_markup=CANCEL_KB,
@@ -8809,6 +8996,7 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
     text = (update.message.text or "").strip()
 
     if text == BTN_CANCEL:
+        _clear_broadcast_pending(user_id)
         WAITING_BROADCAST.discard(user_id)
         handle_admin_panel(update, context)
         return
@@ -8822,19 +9010,7 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
         return
 
     user_ids = get_active_user_ids()  # إرسال فقط للمستخدمين النشطين (غير المحظورين)
-    sent = 0
-    failed = 0
-    
-    for uid in user_ids:
-        try:
-            update.effective_message.bot.send_message(
-                chat_id=uid,
-                text=f"📢 رسالة من الدعم:\n\n{text}",
-            )
-            sent += 1
-        except Exception as e:
-            logger.error(f"Error sending broadcast to {uid}: {e}")
-            failed += 1
+    sent, failed = _broadcast_send_text(update.effective_message.bot, user_ids, text)
 
     WAITING_BROADCAST.discard(user_id)
 
@@ -8843,6 +9019,53 @@ def handle_admin_broadcast_input(update: Update, context: CallbackContext):
         f"❌ فشل إرسال الرسالة إلى {failed} مستخدم.",
         reply_markup=admin_panel_keyboard_for(user_id),
     )
+
+
+def handle_admin_broadcast_media(update: Update, context: CallbackContext):
+    user = update.effective_user
+    user_id = user.id if user else None
+    if not user_id or user_id not in WAITING_BROADCAST:
+        return
+
+    if not (is_admin(user_id) or is_supervisor(user_id)):
+        WAITING_BROADCAST.discard(user_id)
+        update.message.reply_text(
+            "هذه الميزة خاصة بالإدارة فقط.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        raise DispatcherHandlerStop()
+
+    message = update.effective_message
+    if message.media_group_id:
+        _queue_broadcast_media_group(user_id, message, context)
+        raise DispatcherHandlerStop()
+
+    media_item = _extract_image_media(message)
+    if not media_item:
+        update.message.reply_text(
+            "الرجاء إرسال الصورة كصورة عادية من تيليجرام.",
+            reply_markup=CANCEL_KB,
+        )
+        raise DispatcherHandlerStop()
+
+    caption = message.caption or ""
+    user_ids = get_active_user_ids()
+    if media_item["type"] == "photo":
+        sent, failed = _broadcast_send_photo(context.bot, user_ids, media_item["file_id"], caption)
+    else:
+        sent, failed = _broadcast_send_document_image(
+            context.bot,
+            user_ids,
+            media_item["file_id"],
+            caption,
+        )
+    WAITING_BROADCAST.discard(user_id)
+    update.message.reply_text(
+        f"✅ تم إرسال الرسالة إلى {sent} مستخدم.\n"
+        f"❌ فشل إرسال الرسالة إلى {failed} مستخدم.",
+        reply_markup=admin_panel_keyboard_for(user_id),
+    )
+    raise DispatcherHandlerStop()
 
 
 def handle_admin_rankings(update: Update, context: CallbackContext):
@@ -10315,6 +10538,7 @@ def handle_text(update: Update, context: CallbackContext):
         BOOK_EDIT_CONTEXT.pop(user_id, None)
         BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
         WAITING_SUPPORT_GENDER.discard(user_id)
+        _clear_broadcast_pending(user_id)
         WAITING_BROADCAST.discard(user_id)
         WAITING_MOTIVATION_ADD.discard(user_id)
         WAITING_MOTIVATION_DELETE.discard(user_id)
@@ -12158,6 +12382,16 @@ def start_bot():
                 return False
             return user.id in WAITING_COURSE_BENEFIT_MEDIA
 
+        def _in_broadcast_mode(message) -> bool:
+            user = getattr(message, "from_user", None)
+            if not user:
+                return False
+            return user.id in WAITING_BROADCAST
+
+        def _broadcast_document_is_image(message) -> bool:
+            document = getattr(message, "document", None)
+            return _is_image_document(document)
+
         book_media_filter = (
             Filters.photo
             | Filters.document.mime_type("application/pdf")
@@ -12173,6 +12407,7 @@ def start_bot():
             & Filters.chat_type.private
             & ~FuncMessageFilter(_in_presentation_mode)
             & ~FuncMessageFilter(_in_benefit_mode)
+            & ~FuncMessageFilter(_in_broadcast_mode)
         )
         support_audio_filter = (
             (Filters.audio | Filters.voice)
@@ -12209,6 +12444,12 @@ def start_bot():
             Filters.chat_type.private
             & FuncMessageFilter(_in_benefit_mode)
             & (Filters.photo | (Filters.text & ~Filters.command))
+        )
+
+        broadcast_media_filter = (
+            Filters.chat_type.private
+            & FuncMessageFilter(_in_broadcast_mode)
+            & (Filters.photo | (Filters.document & FuncMessageFilter(_broadcast_document_is_image)))
         )
 
         dispatcher.add_handler(
@@ -12248,6 +12489,14 @@ def start_bot():
             MessageHandler(
                 benefit_media_filter,
                 course_benefit_router,
+            ),
+            group=0,
+        )
+
+        dispatcher.add_handler(
+            MessageHandler(
+                broadcast_media_filter,
+                handle_admin_broadcast_media,
             ),
             group=0,
         )
