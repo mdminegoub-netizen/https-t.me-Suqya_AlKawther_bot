@@ -305,7 +305,6 @@ def _throttled_last_active_update(user_id: str, now_iso: str, now_dt: datetime):
 
 # المجموعات (Collections) في Firestore
 USERS_COLLECTION = "users"
-WATER_LOGS_COLLECTION = "water_logs"
 TIPS_COLLECTION = "tips"
 NOTES_COLLECTION = "notes"
 GLOBAL_CONFIG_COLLECTION = "global_config"
@@ -446,13 +445,6 @@ def get_user_record_local(user: User) -> Dict:
             "ban_reason": None,
             "gender": None,
             "age": None,
-            "weight": None,
-            "water_liters": None,
-            "cups_goal": None,
-            "reminders_on": False,
-            "water_enabled": False,
-            "today_date": None,
-            "today_cups": 0,
             "quran_pages_goal": None,
             "quran_pages_today": 0,
             "quran_today_date": None,
@@ -466,9 +458,6 @@ def get_user_record_local(user: User) -> Dict:
             "medals": [],
             "best_rank": None,
             "course_full_name": None,
-            "daily_full_streak": 0,
-            "last_full_day": None,
-            "daily_full_count": 0,
             "motivation_on": True,
         }
     else:
@@ -486,13 +475,6 @@ def get_user_record_local(user: User) -> Dict:
             "gender": None,
             "country": None,
             "age": None,
-            "weight": None,
-            "water_liters": None,
-            "cups_goal": None,
-            "reminders_on": False,
-            "water_enabled": False,
-            "today_date": None,
-            "today_cups": 0,
             "quran_pages_goal": None,
             "quran_pages_today": 0,
             "quran_today_date": None,
@@ -505,9 +487,6 @@ def get_user_record_local(user: User) -> Dict:
             "level": 0,
             "medals": [],
             "best_rank": None,
-            "daily_full_streak": 0,
-            "last_full_day": None,
-            "daily_full_count": 0,
             "motivation_on": True,
             "course_full_name": None,
             "is_new_user": False
@@ -995,7 +974,6 @@ def get_user_record(user, update_last_active: bool = True):
         if update_last_active:
             _throttled_last_active_update(user_id, now_iso, now_dt)
         ensure_medal_defaults(cached_record)
-        ensure_water_defaults(cached_record)
         return cached_record
     
     if not firestore_available():
@@ -1009,7 +987,6 @@ def get_user_record(user, update_last_active: bool = True):
 
         if doc.exists:
             record = doc.to_dict()
-            ensure_water_defaults(record)
             # تحميل المذكرات من Subcollections إذا كانت غير موجودة في السجل
             try:
                 if not record.get("heart_memos"):
@@ -1048,13 +1025,6 @@ def get_user_record(user, update_last_active: bool = True):
                 "gender": None,
                 "country": None,
                 "age": None,
-                "weight": None,
-                "water_liters": None,
-                "cups_goal": None,
-                "reminders_on": False,
-                "water_enabled": False,
-                "today_date": None,
-                "today_cups": 0,
                 "quran_pages_goal": None,
                 "quran_pages_today": 0,
                 "quran_today_date": None,
@@ -1065,10 +1035,7 @@ def get_user_record(user, update_last_active: bool = True):
                 "saved_books_updated_at": None,
                 "points": 0,
                 "level": 1,
-                "streak_days": 0,
-                "last_streak_date": None,
                 "medals": [],
-                "daily_full_count": 0,
                 "saved_benefits": [],
                 "motivation_on": True,
                 "motivation_times": DEFAULT_MOTIVATION_TIMES_UTC.copy(),
@@ -1146,11 +1113,7 @@ def is_supervisor(user_id: int) -> bool:
 
 # =================== حالات الإدخال ===================
 
-WAITING_GENDER = set()
-WAITING_AGE = set()
-WAITING_WEIGHT = set()
 
-WAITING_WATER_ADD_CUPS = set()
 
 WAITING_QURAN_GOAL = set()
 WAITING_QURAN_ADD_PAGES = set()
@@ -1243,7 +1206,6 @@ WAITING_LESSON_CURRICULUM_NAME = set()
 WAITING_QUIZ_TITLE = set()
 WAITING_QUIZ_QUESTION = set()
 WAITING_QUIZ_ANSWER_TEXT = set()
-WAITING_QUIZ_ANSWER_POINTS = set()
 WAITING_COURSE_COUNTRY = set()
 WAITING_COURSE_AGE = set()
 WAITING_COURSE_GENDER = set()
@@ -1334,7 +1296,6 @@ def _reset_quiz_creation(user_id: int):
     WAITING_QUIZ_TITLE.discard(user_id)
     WAITING_QUIZ_QUESTION.discard(user_id)
     WAITING_QUIZ_ANSWER_TEXT.discard(user_id)
-    WAITING_QUIZ_ANSWER_POINTS.discard(user_id)
     QUIZ_CREATION_CONTEXT.pop(user_id, None)
 
 
@@ -1846,7 +1807,6 @@ BTN_LESSONS_MAIN = "الدروس 📚"
 BTN_QUIZZES_MAIN = "الاختبارات 📝"
 BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكرات قلبي 🗓️"
-BTN_WATER_MAIN = "منبه الماء 💧"
 BTN_STATS = "احصائياتي 📊"
 BTN_STATS_ONLY = "إحصائياتي 📊"
 BTN_MEDALS_ONLY = "ميدالياتي 🏅"
@@ -1958,8 +1918,6 @@ MEDAL_BEGINNING = "ميدالية بداية الطريق 🌱"
 MEDAL_PERSISTENCE = "ميدالية الاستمرار 🚀"
 MEDAL_HIGH_SPIRIT = "ميدالية الهمة العالية 💪"
 MEDAL_HERO = "ميدالية بطل سُقيا الكوثر 🥇"
-MEDAL_DAILY_ACTIVITY = "ميدالية النشاط اليومي ✨"
-MEDAL_STREAK = "ميدالية الاستمرارية (ستريك الأيام) 🗓️"
 MEDAL_TOP_BENEFIT = "وسام صاحب فائدة من العشرة الأوائل 💡🥇"
 
 LEVEL_MEDAL_RULES = [
@@ -1969,32 +1927,27 @@ LEVEL_MEDAL_RULES = [
     (25, MEDAL_HERO),
 ]
 
-DAILY_FULL_MEDAL_THRESHOLD = 3
-DAILY_STREAK_MEDAL_THRESHOLD = 14
-
 MEDAL_RENAMES = {
     "ميدالية بداية الطريق 🟢": MEDAL_BEGINNING,
     "ميدالية الاستمرار 🎓": MEDAL_PERSISTENCE,
     "ميدالية الهمة العالية 🔥": MEDAL_HIGH_SPIRIT,
     "ميدالية بطل سُقيا الكوثر 🏆": MEDAL_HERO,
-    "ميدالية النشاط اليومي ⚡": MEDAL_DAILY_ACTIVITY,
-    "ميدالية الاستمرارية 📅": MEDAL_STREAK,
     "وسام صاحب فائدة من العشرة الأوائل 💡🏅": MEDAL_TOP_BENEFIT,
 }
 
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
-        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
-        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        # السطر الأول: قسم الدورات في العمود الأيسر والدروس في العمود الأيمن
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_LESSONS_MAIN)],
+        # السطر الثاني: الاختبارات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
+        [KeyboardButton(BTN_QUIZZES_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
-        # السطر السادس: التواصل مع الدعم
+        # السطر الرابع: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الخامس: الاشعارات في العمود الأيسر والاحصائيات في العمود الأيمن
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: تواصل مع الدعم
         [KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
@@ -2002,17 +1955,17 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
-        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
-        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        # السطر الأول: قسم الدورات في العمود الأيسر والدروس في العمود الأيمن
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_LESSONS_MAIN)],
+        # السطر الثاني: الاختبارات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
+        [KeyboardButton(BTN_QUIZZES_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
-        # السطر السادس: التواصل مع الدعم
+        # السطر الرابع: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الخامس: الاشعارات في العمود الأيسر والاحصائيات في العمود الأيمن
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: تواصل مع الدعم
         [KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
@@ -2022,17 +1975,17 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
-        # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
-        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
-        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
-        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
-        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        # السطر الأول: قسم الدورات في العمود الأيسر والدروس في العمود الأيمن
+        [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_LESSONS_MAIN)],
+        # السطر الثاني: الاختبارات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
+        [KeyboardButton(BTN_QUIZZES_MAIN), KeyboardButton(BTN_BOOKS_MAIN)],
+        # السطر الثالث: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
         [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
-        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
-        # السطر السادس: التواصل مع الدعم
+        # السطر الرابع: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الخامس: الاشعارات في العمود الأيسر والاحصائيات في العمود الأيمن
+        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_STATS)],
+        # السطر السادس: تواصل مع الدعم
         [KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
@@ -2124,61 +2077,8 @@ STATS_MENU_KB = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
-# ---- منبّه الماء ----
-BTN_WATER_LOG = "سجلت كوب ماء 🥤"
-BTN_WATER_ADD_CUPS = "إضافة عدد أكواب 🧮🥤"
-BTN_WATER_STATUS = "مستواي اليوم 📊"
-BTN_WATER_SETTINGS = "إعدادات الماء ⚙️"
-
-BTN_WATER_NEED = "حساب احتياج الماء 🧘"
-BTN_WATER_REM_ON = "تشغيل تذكير الماء ⏰"
-BTN_WATER_REM_OFF = "إيقاف تذكير الماء 📴"
-BTN_WATER_RESET = "تصفير عداد الماء 🔄"
-
-BTN_WATER_BACK_MENU = "رجوع إلى منبّه الماء ⬅️"
-
 BTN_GENDER_MALE = "🧔‍♂️ ذكر"
 BTN_GENDER_FEMALE = "👩 أنثى"
-
-WATER_MENU_KB_USER = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_ADD_CUPS)],
-        [KeyboardButton(BTN_WATER_STATUS)],
-        [KeyboardButton(BTN_WATER_SETTINGS)],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
-
-WATER_MENU_KB_ADMIN = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_WATER_LOG), KeyboardButton(BTN_WATER_ADD_CUPS)],
-        [KeyboardButton(BTN_WATER_STATUS)],
-        [KeyboardButton(BTN_WATER_SETTINGS)],
-        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
-    ],
-    resize_keyboard=True,
-)
-
-WATER_SETTINGS_KB_ADMIN = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_WATER_NEED)],
-        [KeyboardButton(BTN_WATER_RESET)],
-        [KeyboardButton(BTN_WATER_BACK_MENU)],
-        [KeyboardButton(BTN_BACK_MAIN), KeyboardButton(BTN_ADMIN_PANEL)],
-    ],
-    resize_keyboard=True,
-)
-
-WATER_SETTINGS_KB_USER = ReplyKeyboardMarkup(
-    [
-        [KeyboardButton(BTN_WATER_NEED)],
-        [KeyboardButton(BTN_WATER_RESET)],
-        [KeyboardButton(BTN_WATER_BACK_MENU)],
-        [KeyboardButton(BTN_BACK_MAIN)],
-    ],
-    resize_keyboard=True,
-)
 
 GENDER_KB = ReplyKeyboardMarkup(
     [[KeyboardButton(BTN_GENDER_MALE), KeyboardButton(BTN_GENDER_FEMALE)]],
@@ -2406,13 +2306,9 @@ COMP_MENU_KB = ReplyKeyboardMarkup(
 # ---- الاشعارات / الجرعة التحفيزية (للمستخدم) ----
 def notifications_menu_keyboard(user_id: int, record: Dict = None) -> ReplyKeyboardMarkup:
     record = record or get_user_record_by_id(user_id) or {}
-    reminders_on = bool(record.get("water_enabled", False))
-    water_button = KeyboardButton(BTN_WATER_REM_OFF if reminders_on else BTN_WATER_REM_ON)
-
     rows = [
         [KeyboardButton(BTN_MOTIVATION_ON)],
         [KeyboardButton(BTN_MOTIVATION_OFF)],
-        [water_button],
     ]
 
     if is_admin(user_id):
@@ -2424,15 +2320,8 @@ def notifications_menu_keyboard(user_id: int, record: Dict = None) -> ReplyKeybo
 
 # =================== نظام النقاط ===================
 
-POINTS_PER_WATER_CUP = 1
-POINTS_WATER_DAILY_BONUS = 20
-
-POINTS_PER_QURAN_PAGE = 3
-POINTS_QURAN_DAILY_BONUS = 30
-
-
-def tasbih_points_for_session(target_count: int) -> int:
-    return max(target_count // 10, 1)
+POINTS_PER_LESSON_ATTENDANCE = 2
+POINTS_PER_QUIZ_COMPLETION = 5
 
 # =================== الميداليات ===================
 
@@ -2448,9 +2337,6 @@ def normalize_medals_list(medals: List[str]) -> List[str]:
 
 def ensure_medal_defaults(record: dict):
     record["medals"] = normalize_medals_list(record.get("medals", []))
-    record.setdefault("daily_full_count", 0)
-    record.setdefault("daily_full_streak", 0)
-    record.setdefault("last_full_day", None)
     record.setdefault("saved_books", [])
     record.setdefault("saved_books_updated_at", None)
 
@@ -4579,14 +4465,6 @@ def admin_panel_keyboard_for(user_id: int) -> ReplyKeyboardMarkup:
     return user_main_keyboard(user_id)
 
 
-def water_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
-    return WATER_MENU_KB_ADMIN if is_admin(user_id) else WATER_MENU_KB_USER
-
-
-def water_settings_keyboard(user_id: int) -> ReplyKeyboardMarkup:
-    return WATER_SETTINGS_KB_ADMIN if is_admin(user_id) else WATER_SETTINGS_KB_USER
-
-
 def adhkar_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     return ADHKAR_MENU_KB_ADMIN if is_admin(user_id) else ADHKAR_MENU_KB_USER
 
@@ -4616,71 +4494,6 @@ def defer_last_active_update(user_id: int):
     run_after_response(_throttled_last_active_update, str(user_id), now_iso, now_dt)
 
 
-def ensure_today_water(record, persist: bool = True) -> bool:
-    today_str = datetime.now(timezone.utc).date().isoformat()
-    if record.get("today_date") != today_str:
-        record["today_date"] = today_str
-        record["today_cups"] = 0
-        if persist:
-            save_data()
-        return True
-    return False
-
-
-def ensure_water_defaults(record: Dict):
-    """ضبط الإعدادات الافتراضية لتذكير الماء"""
-    if "water_enabled" not in record:
-        record["water_enabled"] = False
-    if "reminders_on" not in record:
-        record["reminders_on"] = False
-
-
-def perform_initial_water_cleanup():
-    """تعطيل تذكيرات الماء للمستخدمين الحاليين لمرة واحدة"""
-    cfg = get_global_config()
-    if cfg.get("water_cleanup_done"):
-        return
-
-    updated = 0
-    try:
-        if firestore_available():
-            batch = db.batch()
-            for doc in db.collection(USERS_COLLECTION).stream():
-                if str(doc.id) == str(GLOBAL_KEY):
-                    continue
-                doc_data = doc.to_dict() or {}
-                updates = {}
-
-                if doc_data.get("water_enabled") is not False:
-                    updates["water_enabled"] = False
-                if doc_data.get("reminders_on"):
-                    updates["reminders_on"] = False
-
-                if updates:
-                    batch.update(doc.reference, updates)
-                    updated += 1
-                    if updated % 400 == 0:
-                        batch.commit()
-                        batch = db.batch()
-
-            if updated % 400 != 0:
-                batch.commit()
-
-        for uid, rec in data.items():
-            if str(uid) == str(GLOBAL_KEY):
-                continue
-            if rec.get("water_enabled") or rec.get("reminders_on"):
-                rec["water_enabled"] = False
-                rec["reminders_on"] = False
-
-        logger.info(f"✅ تم تعطيل تذكيرات الماء افتراضيًا لـ {updated} مستخدم")
-    except Exception as e:
-        logger.error(f"❌ خطأ في تعطيل تذكيرات الماء: {e}")
-
-    cfg["water_cleanup_done"] = True
-    save_global_config(cfg)
-
-
 def ensure_today_quran(record, persist: bool = True) -> bool:
     today_str = datetime.now(timezone.utc).date().isoformat()
     if record.get("quran_today_date") != today_str:
@@ -4690,40 +4503,6 @@ def ensure_today_quran(record, persist: bool = True) -> bool:
             save_data()
         return True
     return False
-
-
-def format_water_status_text(record, persist: bool = True):
-    ensure_today_water(record, persist=persist)
-    cups_goal = record.get("cups_goal")
-    today_cups = record.get("today_cups", 0)
-
-    if not cups_goal:
-        return (
-            "لم تقم بعد بحساب احتياجك من الماء.\n"
-            "اذهب إلى «منبّه الماء 💧» ثم «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮»."
-        )
-
-    remaining = max(cups_goal - today_cups, 0)
-    percent = min(int(today_cups / cups_goal * 100), 100)
-
-    text = (
-        "📊 مستوى شرب الماء اليوم:\n\n"
-        f"- الأكواب التي شربتها: {today_cups} من {cups_goal} كوب.\n"
-        f"- نسبة الإنجاز التقريبية: {percent}%.\n\n"
-    )
-
-    if remaining > 0:
-        text += (
-            f"تبقّى لك تقريبًا {remaining} كوب لتصل لهدفك اليومي.\n"
-            "استمر بهدوء، كوب بعد كوب 💧."
-        )
-    else:
-        text += (
-            "ما شاء الله، وصلت لهدفك اليومي من الماء 🎉\n"
-            "حافظ على هذا المستوى قدر استطاعتك."
-        )
-
-    return text
 
 
 def format_quran_status_text(record, persist: bool = True):
@@ -4895,92 +4674,6 @@ def update_level_and_medals(user_id: int, record: dict, context: CallbackContext
             logger.error(f"Error sending level up message to {user_id}: {e}")
 
 
-def check_daily_full_activity(user_id: int, record: dict, context: CallbackContext = None):
-    ensure_medal_defaults(record)
-    ensure_today_water(record)
-    ensure_today_quran(record)
-
-    cups_goal = record.get("cups_goal")
-    q_goal = record.get("quran_pages_goal")
-    if not cups_goal or not q_goal:
-        return
-
-    today_cups = record.get("today_cups", 0)
-    q_today = record.get("quran_pages_today", 0)
-
-    if today_cups < cups_goal or q_today < q_goal:
-        return
-
-    today_date = datetime.now(timezone.utc).date()
-    today_str = today_date.isoformat()
-
-    medals = record.get("medals", []) or []
-    streak = record.get("daily_full_streak", 0) or 0
-    last_full_day = record.get("last_full_day")
-    total_full_days = record.get("daily_full_count", 0) or 0
-
-    got_new_daily_medal = False
-    got_new_streak_medal = False
-
-    is_new_completion = last_full_day != today_str
-
-    if is_new_completion:
-        total_full_days += 1
-        if last_full_day:
-            try:
-                y, m, d = map(int, last_full_day.split("-"))
-                last_date = datetime(y, m, d, tzinfo=timezone.utc).date()
-                if (today_date - last_date).days == 1:
-                    streak += 1
-                else:
-                    streak = 1
-            except Exception:
-                streak = 1
-        else:
-            streak = 1
-
-    if total_full_days >= DAILY_FULL_MEDAL_THRESHOLD and MEDAL_DAILY_ACTIVITY not in medals:
-        medals.append(MEDAL_DAILY_ACTIVITY)
-        got_new_daily_medal = True
-
-    record["daily_full_count"] = total_full_days
-    record["daily_full_streak"] = streak
-
-    if is_new_completion:
-        record["last_full_day"] = today_str
-
-    if streak >= DAILY_STREAK_MEDAL_THRESHOLD and MEDAL_STREAK not in medals:
-        medals.append(MEDAL_STREAK)
-        got_new_streak_medal = True
-
-    record["medals"] = medals
-    save_data()
-
-    if context is not None:
-        try:
-            if got_new_daily_medal:
-                context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        "✨ مبروك! أنجزت هدف الماء وهدف القرآن لعدة أيام.\n"
-                        f"هذه *{MEDAL_DAILY_ACTIVITY}* بعد الوصول إلى {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة. استمر! 🤍"
-                    ),
-                    parse_mode="Markdown",
-                )
-            if got_new_streak_medal:
-                context.bot.send_message(
-                    chat_id=user_id,
-                    text=(
-                        f"🗓️ ما شاء الله! حافظت على نشاطك اليومي (ماء + قرآن) لمدة {DAILY_STREAK_MEDAL_THRESHOLD} أيام متتالية.\n"
-                        f"حصلت على *{MEDAL_STREAK}*\n"
-                        "استمر، فالقليل الدائم أحبّ إلى الله من الكثير المنقطع 🤍"
-                    ),
-                    parse_mode="Markdown",
-                )
-        except Exception as e:
-            logger.error(f"Error sending daily activity medals messages to {user_id}: {e}")
-
-
 def add_points(user_id: int, amount: int, context: CallbackContext = None, reason: str = ""):
     """إضافة نقاط للمستخدم في Firestore"""
     user_id_str = str(user_id)
@@ -5085,9 +4778,6 @@ def start_command(update: Update, context: CallbackContext):
     
     # الخطوة 1: تنظيف جميع حالات الانتظار للمستخدم الحالي
     # هذا يضمن أن /start يقطع أي عملية جارية ويعيد المستخدم للقائمة الرئيسية
-    WAITING_GENDER.discard(user_id)
-    WAITING_AGE.discard(user_id)
-    WAITING_WEIGHT.discard(user_id)
     WAITING_QURAN_GOAL.discard(user_id)
     WAITING_QURAN_ADD_PAGES.discard(user_id)
     WAITING_TASBIH.discard(user_id)
@@ -5115,7 +4805,6 @@ def start_command(update: Update, context: CallbackContext):
     BOOK_CATEGORY_EDIT_CONTEXT.pop(user_id, None)
     WAITING_SUPPORT_GENDER.discard(user_id)
     WAITING_BROADCAST.discard(user_id)
-    WAITING_WATER_ADD_CUPS.discard(user_id)
     WAITING_BENEFIT_TEXT.discard(user_id)
     WAITING_BENEFIT_EDIT_TEXT.discard(user_id)
     WAITING_BENEFIT_DELETE_CONFIRM.discard(user_id)
@@ -5254,459 +4943,6 @@ def menu_command(update: Update, context: CallbackContext):
         reply_markup=user_main_keyboard(user_id),
     )
 
-def open_water_menu(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    get_user_record(user)
-    kb = water_menu_keyboard(user.id)
-    update.message.reply_text(
-        "منبّه الماء 💧:\n"
-        "• سجّل ما تشربه من أكواب.\n"
-        "• شاهد مستواك اليوم.\n"
-        "• عدّل إعداداتك وتابع احتياجك اليومي.\n"
-        "كل كوب يزيد نقاطك ويرفع مستواك 🎯",
-        reply_markup=kb,
-    )
-    defer_last_active_update(user.id)
-
-
-def open_water_settings(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    kb = water_settings_keyboard(update.effective_user.id)
-    update.message.reply_text(
-        "إعدادات الماء ⚙️:\n"
-        "1) حساب احتياجك اليومي من الماء بناءً على الجنس والعمر والوزن.\n"
-        "2) تصفير العداد والرجوع إلى منبّه الماء مباشرة.",
-        reply_markup=kb,
-    )
-    defer_last_active_update(user.id)
-
-
-def handle_water_need_start(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    user_id = update.effective_user.id
-
-    WAITING_GENDER.add(user_id)
-    WAITING_AGE.discard(user_id)
-    WAITING_WEIGHT.discard(user_id)
-
-    update.message.reply_text(
-        "أولًا: اختر الجنس:",
-        reply_markup=GENDER_KB,
-    )
-    defer_last_active_update(user_id)
-
-
-def handle_gender_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    user_id = user.id
-    text = update.message.text.strip()
-
-    if text == BTN_CANCEL:
-        WAITING_GENDER.discard(user_id)
-        open_water_menu(update, context)
-        return
-
-    if text not in [BTN_GENDER_MALE, BTN_GENDER_FEMALE]:
-        update.message.reply_text(
-            "رجاءً اختر من الخيارات الظاهرة:",
-            reply_markup=GENDER_KB,
-        )
-        return
-
-    record = get_user_record(user, update_last_active=False)
-    gender = "male" if text == BTN_GENDER_MALE else "female"
-    record["gender"] = gender
-
-    WAITING_GENDER.discard(user_id)
-    WAITING_AGE.add(user_id)
-
-    update.message.reply_text(
-        "جميل.\nالآن أرسل عمرك (بالسنوات)، مثال: 25",
-        reply_markup=CANCEL_KB,
-    )
-
-    # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
-    def _persist_gender():
-        update_user_record(user.id, gender=record["gender"])
-        save_data()
-
-    run_after_response(_persist_gender)
-
-
-def handle_age_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    user_id = user.id
-    text = update.message.text.strip()
-
-    if text == BTN_CANCEL:
-        WAITING_AGE.discard(user_id)
-        open_water_menu(update, context)
-        return
-
-    try:
-        age = int(text)
-        if age <= 0 or age > 120:
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسل عمرًا صحيحًا بالأرقام فقط، مثال: 20",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    record = get_user_record(user, update_last_active=False)
-    record["age"] = age
-
-    WAITING_AGE.discard(user_id)
-    WAITING_WEIGHT.add(user_id)
-
-    update.message.reply_text(
-        "شكرًا.\nالآن أرسل وزنك بالكيلوغرام، مثال: 70",
-        reply_markup=CANCEL_KB,
-    )
-
-    # حفظ في Firestore بعد الرد لتحسين سرعة التدفق
-    def _persist_age():
-        update_user_record(user.id, age=record["age"])
-        save_data()
-
-    run_after_response(_persist_age)
-
-
-def handle_weight_input(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    user_id = user.id
-    text = update.message.text.strip()
-
-    if text == BTN_CANCEL:
-        WAITING_WEIGHT.discard(user_id)
-        open_water_menu(update, context)
-        return
-
-    try:
-        weight = float(text.replace(",", "."))
-        if weight <= 20 or weight > 300:
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "رجاءً أرسل وزنًا صحيحًا بالكيلوغرام، مثال: 65",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    record = get_user_record(user, update_last_active=False)
-    record["weight"] = weight
-
-    if record.get("gender") == "male":
-        rate = 0.035
-    else:
-        rate = 0.033
-
-    water_liters = weight * rate
-    cups_goal = max(int(round(water_liters * 1000 / 250)), 1)
-
-    record["water_liters"] = round(water_liters, 2)
-    record["cups_goal"] = cups_goal
-
-    WAITING_WEIGHT.discard(user_id)
-
-    update.message.reply_text(
-        "تم حساب احتياجك اليومي من الماء 💧\n\n"
-        f"- تقريبًا: {record['water_liters']} لتر في اليوم.\n"
-        f"- ما يعادل تقريبًا: {cups_goal} كوب (بمتوسط 250 مل للكوب).\n\n"
-        "وزّع أكوابك على اليوم، وسأذكّرك وأساعدك على المتابعة.\n"
-        "كل كوب تسجّله يعطيك نقاطًا إضافية 🎯",
-        reply_markup=water_menu_keyboard(user_id),
-    )
-    run_after_response(save_data)
-    defer_last_active_update(user_id)
-
-
-def handle_log_cup(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    record = get_user_record(user, update_last_active=False)
-
-    if not record.get("cups_goal"):
-        update.message.reply_text(
-            "لم تقم بعد بحساب احتياجك من الماء.\n"
-            "اذهب إلى «إعدادات الماء ⚙️» ثم «حساب احتياج الماء 🧮».",
-            reply_markup=water_menu_keyboard(user.id),
-        )
-        return
-
-    today_changed = ensure_today_water(record, persist=False)
-    before = record.get("today_cups", 0)
-    new_cups = before + 1
-    # تحديث record المحلي
-    record["today_cups"] = new_cups
-
-    status_text = format_water_status_text(record, persist=False)
-    update.message.reply_text(
-        f"🥤 تم تسجيل كوب ماء.\n\n{status_text}",
-        reply_markup=water_menu_keyboard(user.id),
-    )
-
-    add_points(user.id, POINTS_PER_WATER_CUP, context, reason="شرب كوب ماء")
-
-    cups_goal = record.get("cups_goal")
-    if cups_goal and before < cups_goal <= new_cups:
-        add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
-
-    check_daily_full_activity(user.id, record, context)
-
-    check_daily_full_activity(user.id, record, context)
-
-    def _persist_cup():
-        # حفظ في Firestore
-        update_user_record(user.id, today_cups=new_cups)
-        logger.info(f"✅ تم حفظ كوب ماء للمستخدم {user.id} في Firestore")
-
-        if today_changed:
-            save_data()
-
-    run_after_response(_persist_cup)
-
-
-def handle_add_cups(update: Update, context: CallbackContext):
-    user = update.effective_user
-    user_id = user.id
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    record = get_user_record(user, update_last_active=False)
-    text = (update.message.text or "").strip()
-
-    if not record.get("cups_goal"):
-        WAITING_WATER_ADD_CUPS.discard(user_id)
-        update.message.reply_text(
-            "قبل استخدام هذه الميزة، احسب احتياجك من الماء أولًا من خلال:\n"
-            "«إعدادات الماء ⚙️» → «حساب احتياج الماء 🧮».",
-            reply_markup=water_menu_keyboard(user.id),
-        )
-        return
-
-    if text == BTN_WATER_ADD_CUPS:
-        WAITING_WATER_ADD_CUPS.add(user_id)
-        update.message.reply_text(
-            "أرسل الآن عدد الأكواب التي شربتها (بالأرقام فقط)، مثال: 2 أو 3.\n"
-            "وسيتم إضافتها مباشرة إلى عدّاد اليوم.",
-            reply_markup=CANCEL_KB,
-        )
-        return
-
-    try:
-        cups = int(text)
-        if cups <= 0 or cups > 50:
-            raise ValueError()
-    except ValueError:
-        update.message.reply_text(
-            "لو كنت تريد إضافة عدد من الأكواب، أرسل رقمًا منطقيًا مثل: 2 أو 3.\n"
-            "أو استخدم بقية الأزرار للقائمة.",
-            reply_markup=water_menu_keyboard(user.id),
-        )
-        return
-
-    today_changed = ensure_today_water(record, persist=False)
-    before = record.get("today_cups", 0)
-    new_total = before + cups
-    record["today_cups"] = new_total
-
-    WAITING_WATER_ADD_CUPS.discard(user_id)
-
-    status_text = format_water_status_text(record, persist=False)
-    update.message.reply_text(
-        f"🥤 تم إضافة {cups} كوب إلى عدّادك اليوم.\n\n{status_text}",
-        reply_markup=water_menu_keyboard(user.id),
-    )
-
-    add_points(user.id, cups * POINTS_PER_WATER_CUP, context, reason="إضافة أكواب ماء")
-
-    cups_goal = record.get("cups_goal")
-    if cups_goal and before < cups_goal <= new_total:
-        add_points(user.id, POINTS_WATER_DAILY_BONUS, context, reason="إكمال هدف الماء اليومي")
-
-    check_daily_full_activity(user.id, record, context)
-
-    def _persist_add_cups():
-        update_user_record(user.id, today_cups=new_total)
-
-        if today_changed:
-            save_data()
-
-    run_after_response(_persist_add_cups)
-
-
-def handle_status(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    record = get_user_record(user, update_last_active=False)
-    today_changed = ensure_today_water(record, persist=False)
-    text = format_water_status_text(record, persist=False)
-    update.message.reply_text(
-        text,
-        reply_markup=water_menu_keyboard(user.id),
-    )
-    if today_changed:
-        run_after_response(save_data)
-    defer_last_active_update(user.id)
-
-
-def handle_reminders_on(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    record = get_user_record(user, update_last_active=False)
-
-    if not record.get("cups_goal"):
-        update.message.reply_text(
-            "قبل تشغيل التذكير، احسب احتياجك من الماء من خلال:\n"
-            "«حساب احتياج الماء 🧮».",
-            reply_markup=water_settings_keyboard(user.id),
-        )
-        defer_last_active_update(user.id)
-        return
-
-    record["water_enabled"] = True
-    record["reminders_on"] = True
-
-    update.message.reply_text(
-        "تم تشغيل تذكيرات الماء ⏰\n"
-        "ستصلك رسائل خلال اليوم لتذكيرك بالشرب.",
-        reply_markup=notifications_menu_keyboard(user.id, record),
-    )
-
-    def _persist_reminders_on():
-        # حفظ في Firestore
-        update_user_record(
-            user.id,
-            reminders_on=record["reminders_on"],
-            water_enabled=record["water_enabled"],
-        )
-        save_data()
-        refresh_water_jobs()
-
-    run_after_response(_persist_reminders_on)
-
-
-def handle_reminders_off(update: Update, context: CallbackContext):
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    record = get_user_record(user, update_last_active=False)
-    record["water_enabled"] = False
-    record["reminders_on"] = False
-
-    update.message.reply_text(
-        "تم إيقاف تذكيرات الماء 📴\n"
-        "يمكنك تشغيلها مرة أخرى وقتما شئت.",
-        reply_markup=notifications_menu_keyboard(user.id, record),
-    )
-
-    def _persist_reminders_off():
-        # حفظ في Firestore
-        update_user_record(
-            user.id,
-            reminders_on=record["reminders_on"],
-            water_enabled=record["water_enabled"],
-        )
-        save_data()
-        refresh_water_jobs()
-
-    run_after_response(_persist_reminders_off)
-
-
-def handle_water_reset(update: Update, context: CallbackContext):
-    """تصفير عداد الماء يدوياً"""
-    user = update.effective_user
-    record = get_user_record(user, update_last_active=False)
-    
-    # التحقق إذا كان المستخدم محظورًا
-    if record.get("is_banned", False):
-        return
-    
-    user_id = user.id
-    
-    # حفظ الاستهلاك اليومي قبل التصفير
-    today_cups = record.get("today_cups", 0)
-    
-    # تصفير العداد
-    record["today_cups"] = 0
-    
-    update.message.reply_text(
-        f"تم تصفير عداد الماء 🔄\n"
-        f"كان عدد الأكواب: {today_cups} كوب\n"
-        f"الآن: 0 كوب\n\n"
-        "يمكنك البدء من جديد!",
-        reply_markup=water_settings_keyboard(user_id),
-    )
-
-    def _persist_water_reset():
-        # حفظ في Firestore
-        update_user_record(user_id, today_cups=0)
-        save_data()
-        logger.info(f"✅ تم تصفير عداد الماء للمستخدم {user_id} (كان: {today_cups} كوب)")
-
-    run_after_response(_persist_water_reset)
-
-
 # =================== قسم ورد القرآن ===================
 
 
@@ -5724,8 +4960,7 @@ def open_quran_menu(update: Update, context: CallbackContext):
         "• عيّن عدد صفحات اليوم.\n"
         "• سجّل ما قرأته.\n"
         "• شاهد مستوى إنجازك.\n"
-        "• يمكنك إعادة تعيين ورد اليوم.\n"
-        "كل صفحة تضيفها تزيد نقاطك وترفع مستواك 🎯",
+        "• يمكنك إعادة تعيين ورد اليوم.",
         reply_markup=kb,
     )
     defer_last_active_update(user.id)
@@ -5864,10 +5099,6 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     before = record.get("quran_pages_today", 0)
     record["quran_pages_today"] = before + pages
 
-    goal = record.get("quran_pages_goal")
-    after = record["quran_pages_today"]
-    bonus_points = POINTS_QURAN_DAILY_BONUS if goal and before < goal <= after else 0
-
     WAITING_QURAN_ADD_PAGES.discard(user_id)
 
     status_text = format_quran_status_text(record, persist=False)
@@ -5878,16 +5109,12 @@ def handle_quran_add_pages_input(update: Update, context: CallbackContext):
     defer_last_active_update(user_id)
 
     def _persist_quran_pages():
-        add_points(user_id, pages * POINTS_PER_QURAN_PAGE, context)
-        if bonus_points:
-            add_points(user_id, bonus_points, context)
         save_data()
         update_user_record(
             user_id,
             quran_pages_today=record["quran_pages_today"],
             quran_today_date=record.get("quran_today_date"),
         )
-        check_daily_full_activity(user_id, record, context)
 
     run_after_response(_persist_quran_pages)
 
@@ -6287,9 +5514,6 @@ def handle_tasbih_tick(update: Update, context: CallbackContext):
             reply_markup=tasbih_run_keyboard(user_id),
         )
     else:
-        reward_points = tasbih_points_for_session(target)
-        add_points(user_id, reward_points, context)
-
         update.message.reply_text(
             f"اكتمل التسبيح على: {dhikr}\n"
             f"وصلت إلى {target} تسبيحة. تقبّل الله منك 🤍.\n\n"
@@ -6608,9 +5832,6 @@ def build_medals_overview_lines(record: dict) -> List[str]:
 
     medals = record.get("medals", [])
     level = record.get("level", 0)
-    total_full_days = record.get("daily_full_count", 0) or 0
-    streak = record.get("daily_full_streak", 0) or 0
-
     lines = ["🏵️ لوحة الميداليات:\n"]
 
     if medals:
@@ -6624,16 +5845,6 @@ def build_medals_overview_lines(record: dict) -> List[str]:
     for lvl, name in LEVEL_MEDAL_RULES:
         status = "✅" if name in medals else "⏳" if level >= lvl else "⌛"
         lines.append(f"  {status} {name} — تبدأ من المستوى {lvl}.")
-
-    daily_status = "✅" if MEDAL_DAILY_ACTIVITY in medals else "⏳"
-    lines.append(
-        f"• {daily_status} {MEDAL_DAILY_ACTIVITY}: بعد {DAILY_FULL_MEDAL_THRESHOLD} أيام مكتملة (أنجزت {total_full_days})."
-    )
-
-    streak_status = "✅" if MEDAL_STREAK in medals else "⏳"
-    lines.append(
-        f"• {streak_status} {MEDAL_STREAK}: تتطلب {DAILY_STREAK_MEDAL_THRESHOLD} يومًا متتاليًا (سلسلتك الحالية {streak})."
-    )
 
     benefit_status = "✅" if MEDAL_TOP_BENEFIT in medals else "⏳"
     lines.append(
@@ -6656,6 +5867,28 @@ def open_stats_menu(update: Update, context: CallbackContext):
     )
 
 
+def _get_learning_totals(user_id: int) -> Tuple[int, int]:
+    if not firestore_available():
+        return 0, 0
+
+    try:
+        subs = (
+            db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+            .where("user_id", "==", user_id)
+            .stream()
+        )
+        lessons_count = 0
+        quizzes_count = 0
+        for sub in subs:
+            data = sub.to_dict() or {}
+            lessons_count += len(data.get("lessons_attended") or [])
+            quizzes_count += len(data.get("completed_quizzes") or [])
+        return lessons_count, quizzes_count
+    except Exception as e:
+        logger.error(f"خطأ في تحميل إنجازات الدروس والاختبارات: {e}")
+        return 0, 0
+
+
 def send_stats_overview(update: Update, context: CallbackContext):
     user = update.effective_user
     record = get_user_record(user)
@@ -6663,42 +5896,14 @@ def send_stats_overview(update: Update, context: CallbackContext):
     if record.get("is_banned", False):
         return
 
-    record = get_user_record(user)
-
-    ensure_today_water(record)
-    ensure_today_quran(record)
     ensure_medal_defaults(record)
-
-    cups_goal = record.get("cups_goal")
-    today_cups = record.get("today_cups", 0)
-
-    q_goal = record.get("quran_pages_goal")
-    q_today = record.get("quran_pages_today", 0)
-
-    adhkar_count = record.get("adhkar_count", 0)
-
-    memos_count = len(record.get("heart_memos", []))
-    saved_books_count = len(record.get("saved_books", []))
-
+    lessons_count, quizzes_count = _get_learning_totals(user.id)
     points = record.get("points", 0)
     level = record.get("level", 0)
 
-    text_lines = ["احصائياتك لليوم 📊:\n"]
-
-    if cups_goal:
-        text_lines.append(f"- الماء: {today_cups} / {cups_goal} كوب.")
-    else:
-        text_lines.append("- الماء: لم يتم حساب احتياجك بعد.")
-
-    if q_goal:
-        text_lines.append(f"- ورد القرآن: {q_today} / {q_goal} صفحة.")
-    else:
-        text_lines.append("- ورد القرآن: لم تضبط وردًا لليوم بعد.")
-
-    text_lines.append(f"- عدد المرات التي استخدمت فيها قسم الأذكار: {adhkar_count} مرة.")
-    text_lines.append(f"- عدد مذكّرات قلبك المسجّلة: {memos_count} مذكرة.")
-    text_lines.append(f"- عدد الكتب المحفوظة لديك: {saved_books_count} كتاب.")
-
+    text_lines = ["احصائياتك التعليمية 📊:\n"]
+    text_lines.append(f"- حضور الدروس: {lessons_count} درسًا.")
+    text_lines.append(f"- اختبارات مكتملة: {quizzes_count} اختبارًا.")
     text_lines.append(f"- مجموع نقاطك: {points} نقطة.")
     if level <= 0:
         text_lines.append("- مستواك الحالي: 0 (أول مستوى فعلي يبدأ من 20 نقطة).")
@@ -6804,13 +6009,9 @@ def handle_add_benefit_text(update: Update, context: CallbackContext):
     # حفظ الفائدة في Firestore مباشرة
     save_benefit_to_firestore(new_benefit)
 
-    # 2. منح النقاط
-    add_points(user_id, 2)
-
-    # 3. إرسال رسالة تأكيد
+    # 2. إرسال رسالة تأكيد
     update.message.reply_text(
-        "✅ تم إضافة فائدتك بنجاح! شكرًا لمشاركتك.\n"
-        f"لقد حصلت على 2 نقطة مكافأة.",
+        "✅ تم إضافة فائدتك بنجاح! شكرًا لمشاركتك.",
         reply_markup=BENEFITS_MENU_KB,
     )
 
@@ -7479,11 +6680,7 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
         benefit["likes_count"] = benefit.get("likes_count", 0) + 1
         benefit["liked_by"] = liked_by
         
-        # 2. منح نقطة لصاحب الفائدة
-        owner_id = benefit["user_id"]
-        add_points(owner_id, 1)
-        
-        # 3. حفظ التغييرات في Firestore بشكل مباشر
+        # 2. حفظ التغييرات في Firestore بشكل مباشر
         if firestore_id and firestore_available():
             try:
                 update_benefit_in_firestore(firestore_id, {
@@ -7494,11 +6691,11 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
             except Exception as e:
                 logger.error(f"❌ خطأ في حفظ الإعجاب في Firestore: {e}")
         
-        # 4. تحديث قائمة الفوائد المحلية
+        # 3. تحديث قائمة الفوائد المحلية
         benefits[benefit_index] = benefit
         save_benefits(benefits)
         
-        # 5. تحديث زر الإعجاب
+        # 4. تحديث زر الإعجاب
         new_likes_count = benefit["likes_count"]
         new_button_text = f"✅ أعجبتني ({new_likes_count})"
         
@@ -7516,7 +6713,7 @@ def handle_like_benefit_callback(update: Update, context: CallbackContext):
             
         query.answer(f"تم الإعجاب! الفائدة لديها الآن {new_likes_count} إعجاب.")
         
-        # 6. فحص ومنح الوسام
+        # 5. فحص ومنح الوسام
         check_and_award_medal(context)
 
 
@@ -7534,15 +6731,13 @@ def open_notifications_menu(update: Update, context: CallbackContext):
     kb = notifications_menu_keyboard(user.id, record)
 
     status = "مفعّلة ✅" if record.get("motivation_on", True) else "موقفة ⛔️"
-    water_status = "مفعّل ✅" if record.get("water_enabled") else "متوقف ⛔️"
 
     update.message.reply_text(
         "الاشعارات 🔔:\n"
         f"• حالة الجرعة التحفيزية الحالية: {status}\n\n"
-        f"• حالة تذكير الماء: {water_status}\n\n"
         "الجرعة التحفيزية هي رسائل قصيرة ولطيفة خلال اليوم تشرح القلب "
-        "وتعينك على الاستمرار في الماء والقرآن والذكر 🤍\n\n"
-        "يمكنك التحكم في الجرعة والتحكم في تذكير الماء من الأزرار بالأسفل.",
+        "وتعينك على الاستمرار في الخير 🤍\n\n"
+        "يمكنك التحكم في الجرعة التحفيزية من الأزرار بالأسفل.",
         reply_markup=kb,
     )
 
@@ -7590,85 +6785,7 @@ def handle_motivation_off(update: Update, context: CallbackContext):
         reply_markup=notifications_menu_keyboard(user.id, record),
     )
 
-# =================== تذكيرات الماء ===================
-
-REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-
-
-def water_reminder_job(context: CallbackContext):
-    logger.info("Running water reminder job...")
-    bot = context.bot
-    current_hour = context.job.context if hasattr(context, "job") else None
-
-    for uid in get_active_user_ids():
-        rec = data.get(str(uid)) or {}
-        if rec.get("water_enabled") is not True:
-            continue
-
-        user_hours = _normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC)
-        if current_hour is not None and current_hour not in user_hours:
-            continue
-
-        ensure_today_water(rec)
-        cups_goal = rec.get("cups_goal")
-        today_cups = rec.get("today_cups", 0)
-        if not cups_goal:
-            continue
-
-        remaining = max(cups_goal - today_cups, 0)
-
-        try:
-            bot.send_message(
-                chat_id=uid,
-                text=(
-                    "تذكير لطيف بشرب الماء 💧:\n\n"
-                    f"شربت حتى الآن: {today_cups} من {cups_goal} كوب.\n"
-                    f"المتبقي لهذا اليوم تقريبًا: {remaining} كوب.\n\n"
-                    "لو استطعت الآن، خذ كوب ماء وسجّله في البوت."
-                ),
-            )
-        except Exception as e:
-            logger.error(f"Error sending water reminder to {uid}: {e}")
-
-
 # =================== التصفير اليومي ===================
-
-def daily_reset_water():
-    """تصفير عداد الماء يومياً عند منتصف الليل"""
-    logger.info("🔄 بدء تصفير عداد الماء اليومي...")
-    
-    if not firestore_available():
-        logger.warning("Firestore غير متوفر للتصفير اليومي")
-        return
-    
-    try:
-        # قراءة جميع المستخدمين من Firestore
-        users_ref = db.collection(USERS_COLLECTION)
-        docs = users_ref.stream()
-        
-        reset_count = 0
-        for doc in docs:
-            if str(doc.id) == str(GLOBAL_KEY):
-                continue
-            user_data = doc.to_dict()
-            today_cups = user_data.get("today_cups", 0)
-            
-            if today_cups > 0:
-                # تصفير العداد
-                doc.reference.update({"today_cups": 0})
-                
-                # تحديث data المحلي
-                if doc.id in data:
-                    data[doc.id]["today_cups"] = 0
-                
-                reset_count += 1
-        
-        logger.info(f"✅ تم تصفير عداد الماء لـ {reset_count} مستخدم")
-        
-    except Exception as e:
-        logger.error(f"❌ خطأ في تصفير عداد الماء: {e}", exc_info=True)
-
-
 def daily_reset_quran():
     """تصفير ورد القرآن يومياً عند منتصف الليل"""
     logger.info("🔄 بدء تصفير ورد القرآن اليومي...")
@@ -7749,10 +6866,7 @@ def daily_reset_competition():
 def daily_reset_all(context: CallbackContext = None):
     """تصفير جميع البيانات اليومية عند منتصف الليل"""
     logger.info("🌙 بدء التصفير اليومي الشامل (00:00 توقيت الجزائر)...")
-    
-    # تصفير عداد الماء
-    daily_reset_water()
-    
+
     # تصفير ورد القرآن
     daily_reset_quran()
     
@@ -7792,53 +6906,6 @@ def _all_motivation_times() -> List[str]:
         )
 
     return sorted(times, key=_time_to_minutes) or MOTIVATION_TIMES_UTC
-
-
-def _all_water_hours() -> List[int]:
-    hours = set()
-    for uid in get_active_user_ids():
-        rec = data.get(str(uid)) or {}
-        if not rec.get("water_enabled"):
-            continue
-        hours.update(_normalize_hours(rec.get("water_reminder_hours"), REMINDER_HOURS_UTC))
-
-    return sorted(hours)
-
-
-def refresh_water_jobs():
-    """إعادة مزامنة مهام تذكير الماء مع إعدادات المستخدمين"""
-    if not job_queue:
-        return
-
-    desired_hours = _all_water_hours()
-
-    current_jobs = [
-        job for job in job_queue.jobs() if job.name and job.name.startswith("water_reminder_")
-    ]
-    current_hours = set()
-
-    for job in current_jobs:
-        try:
-            hour = int(str(job.name).split("_")[-1])
-            current_hours.add(hour)
-            if hour not in desired_hours:
-                job.schedule_removal()
-        except Exception:
-            continue
-
-    for hour in desired_hours:
-        if hour in current_hours:
-            continue
-        try:
-            job_queue.run_daily(
-                water_reminder_job,
-                time=time(hour=hour, minute=0, second=random.randint(0, 45), tzinfo=pytz.UTC),
-                name=f"water_reminder_{hour}",
-                context=hour,
-                job_kwargs={"misfire_grace_time": 300, "coalesce": True},
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ خطأ في جدولة تذكير الماء للساعة {hour}: {e}")
 
 
 def motivation_job(context: CallbackContext):
@@ -9877,7 +8944,6 @@ def get_user_record_by_id(user_id: int) -> Dict:
         doc = doc_ref.get()
         if doc.exists:
             record = doc.to_dict()
-            ensure_water_defaults(record)
             data[user_id_str] = record
             ensure_medal_defaults(record)
             return record
@@ -10002,9 +9068,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     main_kb = user_main_keyboard(user_id)
     support_session_active = user_id in WAITING_SUPPORT
-
-    if user_id in WAITING_WATER_ADD_CUPS and not text.isdigit() and text != BTN_WATER_ADD_CUPS:
-        WAITING_WATER_ADD_CUPS.discard(user_id)
 
     # بيانات التسجيل في الدورات
     if user_id in WAITING_COURSE_COUNTRY:
@@ -10419,37 +9482,9 @@ def handle_text(update: Update, context: CallbackContext):
             msg.reply_text("تم الإلغاء.", reply_markup=_quizzes_back_keyboard(course_id))
             return
 
-        QUIZ_CREATION_CONTEXT.setdefault(user_id, {})["pending_answer_text"] = text
-        WAITING_QUIZ_ANSWER_TEXT.discard(user_id)
-        WAITING_QUIZ_ANSWER_POINTS.add(user_id)
-        msg.reply_text(
-            "كم عدد النقاط لهذه الإجابة؟",
-            reply_markup=_quizzes_back_keyboard(course_id),
-        )
-        return
-
-    if user_id in WAITING_QUIZ_ANSWER_POINTS:
-        course_id = QUIZ_CREATION_CONTEXT.get(user_id, {}).get("course_id")
         ctx = QUIZ_CREATION_CONTEXT.setdefault(user_id, {})
-        if text == BTN_CANCEL:
-            _reset_quiz_creation(user_id)
-            msg.reply_text("تم الإلغاء.", reply_markup=_quizzes_back_keyboard(course_id))
-            return
-
-        try:
-            points = int(text)
-        except Exception:
-            msg.reply_text("❌ يرجى إرسال رقم صالح للنقاط.", reply_markup=_quizzes_back_keyboard(course_id))
-            return
-
-        answer_text = ctx.pop("pending_answer_text", None)
-        if not answer_text or not course_id:
-            _reset_quiz_creation(user_id)
-            msg.reply_text("❌ البيانات غير مكتملة.", reply_markup=COURSES_ADMIN_MENU_KB)
-            return
-
-        ctx.setdefault("answers", []).append({"text": answer_text, "points": points})
-        WAITING_QUIZ_ANSWER_POINTS.discard(user_id)
+        ctx.setdefault("answers", []).append({"text": text})
+        WAITING_QUIZ_ANSWER_TEXT.discard(user_id)
 
         if len(ctx.get("answers", [])) >= 4:
             _finalize_quiz_creation_from_message(user_id, msg)
@@ -10547,9 +9582,6 @@ def handle_text(update: Update, context: CallbackContext):
             )
             return
         # إزالة المستخدم من جميع حالات الانتظار
-        WAITING_GENDER.discard(user_id)
-        WAITING_AGE.discard(user_id)
-        WAITING_WEIGHT.discard(user_id)
         WAITING_QURAN_GOAL.discard(user_id)
         WAITING_QURAN_ADD_PAGES.discard(user_id)
         WAITING_TASBIH.discard(user_id)
@@ -10591,7 +9623,6 @@ def handle_text(update: Update, context: CallbackContext):
         SLEEP_ADHKAR_STATE.pop(user_id, None)
         STRUCTURED_ADHKAR_STATE.pop(user_id, None)
         AUDIO_USER_STATE.pop(user_id, None)
-        WAITING_WATER_ADD_CUPS.discard(user_id)
         _reset_lesson_creation(user_id)
         _reset_quiz_creation(user_id)
         update_user_record(user_id, book_search_waiting=False, book_search_waiting_at=None)
@@ -10640,19 +9671,6 @@ def handle_text(update: Update, context: CallbackContext):
             _support_confirmation_text(record.get("gender"), True),
             reply_markup=SUPPORT_SESSION_KB,
         )
-        return
-
-    # حالات إدخال الماء
-    if user_id in WAITING_GENDER:
-        handle_gender_input(update, context)
-        return
-
-    if user_id in WAITING_AGE:
-        handle_age_input(update, context)
-        return
-
-    if user_id in WAITING_WEIGHT:
-        handle_weight_input(update, context)
         return
 
     # حالات ورد القرآن
@@ -10921,10 +9939,6 @@ def handle_text(update: Update, context: CallbackContext):
         open_books_admin_menu(update, context)
         return
 
-    if text == BTN_WATER_MAIN:
-        open_water_menu(update, context)
-        return
-
     if text == BTN_STATS:
         open_stats_menu(update, context)
         return
@@ -11023,47 +10037,6 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_ADHKAR_SLEEP:
         start_sleep_adhkar(update, context)
-        return
-
-    # منبّه الماء
-    if text == BTN_WATER_LOG:
-        handle_log_cup(update, context)
-        return
-
-    if text == BTN_WATER_STATUS:
-        handle_status(update, context)
-        return
-
-    if text == BTN_WATER_SETTINGS:
-        open_water_settings(update, context)
-        return
-
-    if text == BTN_WATER_NEED:
-        handle_water_need_start(update, context)
-        return
-
-    if text == BTN_WATER_REM_ON:
-        handle_reminders_on(update, context)
-        return
-
-    if text == BTN_WATER_REM_OFF:
-        handle_reminders_off(update, context)
-        return
-
-    if text == BTN_WATER_RESET:
-        handle_water_reset(update, context)
-        return
-
-    if text == BTN_WATER_ADD_CUPS:
-        handle_add_cups(update, context)
-        return
-
-    if text == BTN_WATER_BACK_MENU:
-        open_water_menu(update, context)
-        return
-
-    if text.isdigit() and user_id in WAITING_WATER_ADD_CUPS:
-        handle_add_cups(update, context)
         return
 
     # ورد القرآن
@@ -12327,10 +11300,7 @@ def start_bot():
         for uid in data:
             if str(uid) == str(GLOBAL_KEY):
                 continue
-            ensure_water_defaults(data[uid])
             USER_CACHE_TIMESTAMPS[uid] = preload_time
-
-        perform_initial_water_cleanup()
 
         # عدم ترحيل بيانات Firestore عند كل تشغيل لمنع الكتابة فوق البيانات الحالية
         if db is not None and not DATA_LOADED_FROM_FIRESTORE:
@@ -12646,9 +11616,6 @@ def start_bot():
             )
         except Exception as e:
             logger.warning(f"⚠️ خطأ في جدولة الميدالية: {e}")
-        
-        REMINDER_HOURS_UTC = [7, 10, 13, 16, 19]
-        refresh_water_jobs()
         
         try:
             first_run_delay = _seconds_until_next_minute() + random.uniform(0, 10)
@@ -14080,14 +13047,11 @@ def register_lesson_attendance(
         return
 
     try:
-        current_points = int(subscription.get("points", 0))
-        new_points = current_points + 1
-
         logger.info("✏️ ATTEND_UPDATE_TRY | lesson_id=%s", lesson_id)
         sub_ref.update(
             {
                 "lessons_attended": firestore.ArrayUnion([lesson_id]),
-                "points": firestore.Increment(1),
+                "points": firestore.Increment(POINTS_PER_LESSON_ATTENDANCE),
                 "updated_at": firestore.SERVER_TIMESTAMP,
             }
         )
@@ -14108,6 +13072,12 @@ def register_lesson_attendance(
             )
         except Exception:
             pass
+        add_points(
+            user_id,
+            POINTS_PER_LESSON_ATTENDANCE,
+            context,
+            reason="حضور درس",
+        )
     except Exception as e:
         logger.error("❌ ATTEND_UPDATE_FAIL", exc_info=True)
         query.answer("❌ تعذر تسجيل الحضور حالياً.", show_alert=True)
@@ -15195,8 +14165,7 @@ def handle_quiz_answer_selection(query: Update.callback_query, user_id: int, qui
         query.answer("خيار غير صالح", show_alert=True)
         return
 
-    option = options[idx]
-    points = int(option.get("points", 0))
+    points = POINTS_PER_QUIZ_COMPLETION
     try:
         sub_ref.update(
             {
@@ -15217,6 +14186,7 @@ def handle_quiz_answer_selection(query: Update.callback_query, user_id: int, qui
                 ]
             ),
         )
+        add_points(user_id, points, None, reason="إكمال اختبار")
     except Exception as e:
         logger.error(f"خطأ في تحديث نقاط الاختبار: {e}")
         safe_edit_message_text(query, "⚠️ تعذر حفظ النتيجة حالياً.", reply_markup=COURSES_USER_MENU_KB)
@@ -15242,7 +14212,7 @@ def _complete_quiz_answer(user_id: int, answer_text: str, update: Update, contex
         try:
             sub_ref.update(
                 {
-                    "points": firestore.Increment(state.get("points", 0)),
+                    "points": firestore.Increment(POINTS_PER_QUIZ_COMPLETION),
                     "completed_quizzes": firestore.ArrayUnion([state.get("quiz_id")]),
                 }
             )
@@ -15259,6 +14229,7 @@ def _complete_quiz_answer(user_id: int, answer_text: str, update: Update, contex
                     ]
                 ),
             )
+            add_points(user_id, POINTS_PER_QUIZ_COMPLETION, context, reason="إكمال اختبار")
         except Exception as e:
             logger.error(f"خطأ في تحديث نقاط الاختبار: {e}")
             update.message.reply_text("⚠️ تعذر حفظ النتيجة حالياً. حاول لاحقاً.")
