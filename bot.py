@@ -20,7 +20,6 @@ from telegram import (
     KeyboardButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    ReplyKeyboardRemove,
     ParseMode,
     InputMediaPhoto,
     InputMediaDocument,
@@ -1843,6 +1842,8 @@ WAITING_CONFIRM_RESET_MEDALS = set()
 # رئيسية
 BTN_ADHKAR_MAIN = "أذكاري 📿"
 BTN_QURAN_MAIN = "وردي القرآني 📖"
+BTN_LESSONS_MAIN = "الدروس 📚"
+BTN_QUIZZES_MAIN = "الاختبارات 📝"
 BTN_TASBIH_MAIN = "السبحة 📿"
 BTN_MEMOS_MAIN = "مذكرات قلبي 🗓️"
 BTN_WATER_MAIN = "منبه الماء 💧"
@@ -1984,17 +1985,17 @@ MEDAL_RENAMES = {
 MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة طالب العلم في العمود الأيسر وقسم الدورات في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
+        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
+        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الثالث: مكتبة صوتية في العمود الأيسر ومذكرات قلبي في العمود الأيمن
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء في العمود الأيسر واحصائياتي في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر السادس: التواصل مع الدعم
+        [KeyboardButton(BTN_SUPPORT)],
     ],
     resize_keyboard=True,
 )
@@ -2002,17 +2003,17 @@ MAIN_KEYBOARD_USER = ReplyKeyboardMarkup(
 MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة طالب العلم في العمود الأيسر وقسم الدورات في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
+        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
+        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الثالث: مكتبة صوتية في العمود الأيسر ومذكرات قلبي في العمود الأيمن
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء في العمود الأيسر واحصائياتي في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر السادس: التواصل مع الدعم
+        [KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (فقط للمدير)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -2022,17 +2023,17 @@ MAIN_KEYBOARD_ADMIN = ReplyKeyboardMarkup(
 MAIN_KEYBOARD_SUPERVISOR = ReplyKeyboardMarkup(
     [
         # السطر الأول: وردي القرآني في العمود الأيسر وأذكاري في العمود الأيمن
-        [KeyboardButton(BTN_ADHKAR_MAIN), KeyboardButton(BTN_QURAN_MAIN)],
-        # السطر الثاني: مكتبة طالب العلم في العمود الأيسر وقسم الدورات في العمود الأيمن
+        [KeyboardButton(BTN_QURAN_MAIN), KeyboardButton(BTN_ADHKAR_MAIN)],
+        # السطر الثاني: الدروس في العمود الأيسر والاختبارات في العمود الأيمن
+        [KeyboardButton(BTN_LESSONS_MAIN), KeyboardButton(BTN_QUIZZES_MAIN)],
+        # السطر الثالث: قسم الدورات في العمود الأيسر ومكتبة طالب العلم في العمود الأيمن
         [KeyboardButton(BTN_COURSES_SECTION), KeyboardButton(BTN_BOOKS_MAIN)],
-        # السطر الثالث: مكتبة صوتية في العمود الأيسر ومذكرات قلبي في العمود الأيمن
-        [KeyboardButton(BTN_MEMOS_MAIN), KeyboardButton(BTN_AUDIO_LIBRARY)],
-        # السطر الرابع: مجتمع الفوائد والنصائح في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
-        [KeyboardButton(BTN_COMP_MAIN), KeyboardButton(BTN_BENEFITS_MAIN)],
-        # السطر الخامس: منبه الماء في العمود الأيسر واحصائياتي في العمود الأيمن
-        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_WATER_MAIN)],
-        # السطر السادس: التواصل مع الدعم في العمود الأيسر والاشعارات في العمود الأيمن
-        [KeyboardButton(BTN_NOTIFICATIONS_MAIN), KeyboardButton(BTN_SUPPORT)],
+        # السطر الرابع: مكتبة صوتية في العمود الأيسر والمنافسات والمجتمع في العمود الأيمن
+        [KeyboardButton(BTN_AUDIO_LIBRARY), KeyboardButton(BTN_COMP_MAIN)],
+        # السطر الخامس: احصائياتي في العمود الأيسر والاشعارات في العمود الأيمن
+        [KeyboardButton(BTN_STATS), KeyboardButton(BTN_NOTIFICATIONS_MAIN)],
+        # السطر السادس: التواصل مع الدعم
+        [KeyboardButton(BTN_SUPPORT)],
         # السطر السابع: لوحة التحكم (للمشرفة)
         [KeyboardButton(BTN_ADMIN_PANEL)],
     ],
@@ -2055,28 +2056,26 @@ SESSION_EXIT_BENEFIT_TEXTS = {"🚪 خروج من الفائدة"}
 MAIN_MENU_BUTTON_TEXTS = {
     BTN_ADHKAR_MAIN,
     BTN_QURAN_MAIN,
+    BTN_LESSONS_MAIN,
+    BTN_QUIZZES_MAIN,
     BTN_COURSES_SECTION,
     BTN_BOOKS_MAIN,
-    BTN_MEMOS_MAIN,
     BTN_AUDIO_LIBRARY,
     BTN_COMP_MAIN,
-    BTN_BENEFITS_MAIN,
     BTN_STATS,
-    BTN_WATER_MAIN,
     BTN_NOTIFICATIONS_MAIN,
     BTN_SUPPORT,
     BTN_ADMIN_PANEL,
     "أذكاري",
     "وردي القرآني",
+    "الدروس",
+    "الاختبارات",
     "قسم الدورات",
     "مكتبة طالب العلم",
-    "مذكرات قلبي",
     "مكتبة صوتية",
     "المنافسات و المجتمع",
-    "مجتمع الفوائد و النصائح",
     "احصائياتي",
     "إحصائياتي",
-    "منبه الماء",
     "الاشعارات",
     "تواصل مع الدعم",
     "لوحة التحكم",
@@ -2095,6 +2094,9 @@ SUPPORT_SESSION_KB = ReplyKeyboardMarkup(
 )
 SUPPORT_REPLY_INLINE_KB = InlineKeyboardMarkup(
     [[InlineKeyboardButton("✉️ اضغط هنا للرد", callback_data="support_open")]]
+)
+MAIN_MENU_INLINE_KB = InlineKeyboardMarkup(
+    [[InlineKeyboardButton("📌 إظهار القائمة الرئيسية", callback_data="MENU:SHOW")]]
 )
 
 SUPPORT_PROMPT_KB = ReplyKeyboardMarkup(
@@ -3970,15 +3972,6 @@ def _send_admin_books_list(
     text = "\n".join(text_lines)
     query = getattr(update_or_query, "callback_query", None)
     message_obj = getattr(update_or_query, "message", None) or getattr(query, "message", None)
-    if message_obj and not from_callback:
-        # تأكد من إزالة أي ReplyKeyboard قديم قبل عرض لوحة Inline الحالية مرة واحدة فقط
-        kb_removed = context.user_data.get("admin_books_reply_kb_removed")
-        if not kb_removed:
-            try:
-                message_obj.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
-                context.user_data["admin_books_reply_kb_removed"] = True
-            except Exception:
-                pass
     if from_callback and query:
         try:
             query.edit_message_text(text, reply_markup=kb)
@@ -5241,15 +5234,24 @@ def help_command(update: Update, context: CallbackContext):
         "طريقة الاستخدام:\n\n"
         "• أذكاري 🤲 → أذكار الصباح والمساء وأذكار عامة.\n"
         "• وردي القرآني 📖 → تعيين عدد الصفحات التي تقرؤها يوميًا ومتابعة تقدمك.\n"
-        "• السبحة 📿 → اختيار ذكر معيّن والعدّ عليه بعدد محدد من التسبيحات.\n"
-        "• مذكّرات قلبي 🩵 → كتابة مشاعرك وخواطرك مع إمكانية التعديل والحذف.\n"
+        "• الدروس 📚 → عرض دروس الدورة مباشرة أو اختيار الدورة عند تعدد الاشتراكات.\n"
+        "• الاختبارات 📝 → عرض اختبارات الدورة مباشرة أو اختيار الدورة عند تعدد الاشتراكات.\n"
+        "• قسم الدورات 🧩 → استعراض الدورات المتاحة ودوراتي وتعديل البيانات.\n"
         "• مكتبة الكتب 📚 → تصفّح الكتب الموثوقة، التحميل، البحث، والحفظ للقراءة لاحقًا.\n"
-        "• منبّه الماء 💧 → حساب احتياجك من الماء، تسجيل الأكواب، وتفعيل التذكير.\n"
+        "• مكتبة صوتية 🎧 → الاستماع للمقاطع الصوتية المنظمة حسب الأقسام.\n"
         "• احصائياتي 📊 → ملخّص بسيط لإنجازاتك اليوم.\n"
         "• تواصل مع الدعم ✉️ → لإرسال رسالة للدعم والرد عليك لاحقًا.\n"
         "• المنافسات و المجتمع 🏅 → لرؤية مستواك ونقاطك ولوحات الشرف.\n"
         "• الاشعارات 🔔 → تشغيل أو إيقاف الجرعة التحفيزية خلال اليوم.",
         reply_markup=kb,
+    )
+
+
+def menu_command(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    update.message.reply_text(
+        "✅ تم إظهار القائمة الرئيسية.",
+        reply_markup=user_main_keyboard(user_id),
     )
 
 def open_water_menu(update: Update, context: CallbackContext):
@@ -8700,6 +8702,23 @@ def handle_support_open_callback(update: Update, context: CallbackContext):
     )
 
 
+def handle_show_main_menu_callback(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if not query:
+        return
+
+    query.answer()
+    user_id = query.from_user.id
+    try:
+        context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="✅ تم إظهار القائمة الرئيسية.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+    except Exception as e:
+        logger.debug(f"تعذر إرسال القائمة الرئيسية: {e}")
+
+
 def handle_admin_panel(update: Update, context: CallbackContext):
     user = update.effective_user
     user_id = user.id
@@ -10000,7 +10019,10 @@ def handle_text(update: Update, context: CallbackContext):
         if saved_name:
             COURSE_SUBSCRIPTION_CONTEXT[user_id]["full_name"] = saved_name
             WAITING_COURSE_AGE.add(user_id)
-            msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "كم عمرك؟",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
         else:
             WAITING_COURSE_FULL_NAME.add(user_id)
             msg.reply_text(
@@ -10036,7 +10058,10 @@ def handle_text(update: Update, context: CallbackContext):
             msg.reply_text("اختر الجنس:", reply_markup=GENDER_KB)
         else:
             WAITING_COURSE_AGE.add(user_id)
-            msg.reply_text("كم عمرك؟", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "كم عمرك؟",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
         return
 
     if user_id in WAITING_COURSE_AGE:
@@ -10046,12 +10071,18 @@ def handle_text(update: Update, context: CallbackContext):
             return
 
         if not text.isdigit():
-            msg.reply_text("⚠️ أرسل عمرك كرقم صحيح.", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "⚠️ أرسل عمرك كرقم صحيح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
             return
 
         age_val = int(text)
         if age_val <= 0 or age_val > 120:
-            msg.reply_text("⚠️ الرجاء إدخال عمر صالح.", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "⚠️ الرجاء إدخال عمر صالح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
             return
 
         COURSE_SUBSCRIPTION_CONTEXT.setdefault(user_id, {})["age"] = age_val
@@ -10097,7 +10128,10 @@ def handle_text(update: Update, context: CallbackContext):
         WAITING_PROFILE_EDIT_AGE.add(user_id)
         current_age = PROFILE_EDIT_CONTEXT[user_id].get("age")
         age_hint = f"العمر الحالي: {current_age}" if current_age is not None else "العمر غير محدد"
-        msg.reply_text(f"{age_hint}\n\nكم عمرك الآن؟", reply_markup=ReplyKeyboardRemove())
+        msg.reply_text(
+            f"{age_hint}\n\nكم عمرك الآن؟",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+        )
         return
 
     if user_id in WAITING_PROFILE_EDIT_AGE:
@@ -10107,12 +10141,18 @@ def handle_text(update: Update, context: CallbackContext):
             return
 
         if not text.isdigit():
-            msg.reply_text("⚠️ أرسل عمرك كرقم صحيح.", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "⚠️ أرسل عمرك كرقم صحيح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
             return
 
         age_val = int(text)
         if age_val <= 0 or age_val > 120:
-            msg.reply_text("⚠️ الرجاء إدخال عمر صالح.", reply_markup=ReplyKeyboardRemove())
+            msg.reply_text(
+                "⚠️ الرجاء إدخال عمر صالح.",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
+            )
             return
 
         PROFILE_EDIT_CONTEXT.setdefault(user_id, {})["age"] = age_val
@@ -10854,6 +10894,14 @@ def handle_text(update: Update, context: CallbackContext):
 
     if text == BTN_QURAN_MAIN:
         open_quran_menu(update, context)
+        return
+
+    if text == BTN_LESSONS_MAIN:
+        _open_course_shortcut(update, context, "lessons")
+        return
+
+    if text == BTN_QUIZZES_MAIN:
+        _open_course_shortcut(update, context, "quizzes")
         return
 
     if text == BTN_TASBIH_MAIN:
@@ -12306,10 +12354,12 @@ def start_bot():
         logger.info("جاري تسجيل المعالجات...")
         dispatcher.add_handler(CommandHandler("start", start_command))
         dispatcher.add_handler(CommandHandler("help", help_command))
+        dispatcher.add_handler(CommandHandler("menu", menu_command))
         dispatcher.add_handler(CommandHandler("clean_audio_library", handle_clean_audio_library_command))
         dispatcher.add_handler(CommandHandler("books_backfill", _run_books_backfill_for_admin))
 
         dispatcher.add_handler(CallbackQueryHandler(handle_support_open_callback, pattern=r"^SUPPORT:OPEN$"))
+        dispatcher.add_handler(CallbackQueryHandler(handle_show_main_menu_callback, pattern=r"^MENU:SHOW$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_like_benefit_callback, pattern=r"^like_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_edit_benefit_callback, pattern=r"^edit_benefit_\d+$"))
         dispatcher.add_handler(CallbackQueryHandler(handle_delete_benefit_callback, pattern=r"^delete_benefit_\d+$"))
@@ -12857,6 +12907,184 @@ def _format_gender_label(gender: Optional[str]) -> str:
     return "غير محدد"
 
 
+def _build_main_menu_inline_keyboard(
+    rows: List[List[InlineKeyboardButton]],
+) -> InlineKeyboardMarkup:
+    rows.append([InlineKeyboardButton("📌 إظهار القائمة الرئيسية", callback_data="MENU:SHOW")])
+    return InlineKeyboardMarkup(rows)
+
+
+def _send_main_menu_inline_hint(context: CallbackContext, chat_id: int):
+    try:
+        context.bot.send_message(
+            chat_id=chat_id,
+            text="📌 إظهار القائمة الرئيسية",
+            reply_markup=MAIN_MENU_INLINE_KB,
+        )
+    except Exception as e:
+        logger.debug(f"تعذر إرسال زر القائمة الرئيسية: {e}")
+
+
+def _get_user_subscribed_courses(user_id: int) -> List[Dict[str, str]]:
+    if not firestore_available():
+        return []
+
+    try:
+        subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
+        subs_docs = subs_ref.where("user_id", "==", user_id).stream()
+        courses = []
+        seen_ids = set()
+        for doc in subs_docs:
+            data = doc.to_dict() or {}
+            course_id = data.get("course_id")
+            if not course_id or course_id in seen_ids:
+                continue
+            course = _course_document(course_id)
+            if not course:
+                continue
+            course_name = course.get("name", "دورة")
+            if _is_back_placeholder_course(course_name):
+                continue
+            seen_ids.add(course_id)
+            courses.append({"id": course_id, "name": course_name})
+        return courses
+    except Exception as e:
+        logger.error(f"خطأ في جلب دورات المستخدم: {e}")
+        return []
+
+
+def _send_lessons_list_message(update: Update, context: CallbackContext, course_id: str):
+    user_id = update.effective_user.id
+    _clear_course_transient_messages(context, update.message.chat_id, user_id)
+    try:
+        lessons_ref = db.collection(COURSE_LESSONS_COLLECTION)
+        lessons = list(lessons_ref.where("course_id", "==", course_id).stream())
+
+        if not lessons:
+            update.message.reply_text(
+                "📚 لا توجد دروس مضافة بعد لهذه الدورة.",
+                reply_markup=_build_main_menu_inline_keyboard(
+                    [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]]
+                ),
+            )
+            return
+
+        keyboard = []
+        for doc in lessons:
+            lesson = doc.to_dict()
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        f"📖 {lesson.get('title', 'درس')}",
+                        callback_data=f"COURSES:view_lesson_{doc.id}",
+                    )
+                ]
+            )
+
+        keyboard.append(
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]
+        )
+        update.message.reply_text(
+            "📚 دروس الدورة:\nاختر درساً للعرض",
+            reply_markup=_build_main_menu_inline_keyboard(keyboard),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في جلب دروس الدورة: {e}")
+        update.message.reply_text(
+            "❌ تعذر تحميل الدروس حالياً.",
+            reply_markup=MAIN_MENU_INLINE_KB,
+        )
+
+
+def _send_quizzes_list_message(update: Update, context: CallbackContext, course_id: str):
+    user_id = update.effective_user.id
+    _clear_course_transient_messages(context, update.message.chat_id, user_id)
+    try:
+        quizzes_ref = db.collection(COURSE_QUIZZES_COLLECTION)
+        quizzes = list(quizzes_ref.where("course_id", "==", course_id).stream())
+
+        if not quizzes:
+            update.message.reply_text(
+                "📝 لا توجد اختبارات متاحة حالياً لهذه الدورة.",
+                reply_markup=_build_main_menu_inline_keyboard(
+                    [[InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]]
+                ),
+            )
+            return
+
+        keyboard = []
+        for doc in quizzes:
+            quiz = doc.to_dict()
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        f"📝 {quiz.get('title', 'اختبار')}",
+                        callback_data=f"COURSES:start_quiz_{doc.id}",
+                    )
+                ]
+            )
+
+        keyboard.append(
+            [InlineKeyboardButton("🔙 رجوع", callback_data=f"COURSES:back_course_{course_id}")]
+        )
+        update.message.reply_text(
+            "📝 اختبارات الدورة:\nاختر اختباراً للإجابة عنه.",
+            reply_markup=_build_main_menu_inline_keyboard(keyboard),
+        )
+    except Exception as e:
+        logger.error(f"خطأ في جلب الاختبارات: {e}")
+        update.message.reply_text(
+            "❌ تعذر تحميل الاختبارات حالياً.",
+            reply_markup=MAIN_MENU_INLINE_KB,
+        )
+
+
+def _open_course_shortcut(
+    update: Update, context: CallbackContext, target: str
+):
+    user_id = update.effective_user.id
+    msg = update.message
+    if not firestore_available():
+        msg.reply_text(
+            "❌ خطأ في الاتصال بقاعدة البيانات.",
+            reply_markup=user_main_keyboard(user_id),
+        )
+        return
+
+    courses = _get_user_subscribed_courses(user_id)
+    if not courses:
+        msg.reply_text(
+            "📚 لم تشترك في أي دورة حتى الآن.\nيمكنك الدخول إلى قسم الدورات للتسجيل.",
+            reply_markup=_build_main_menu_inline_keyboard(
+                [[InlineKeyboardButton("🧩 قسم الدورات", callback_data="COURSES:back_user")]]
+            ),
+        )
+        return
+
+    if len(courses) == 1:
+        course_id = courses[0]["id"]
+        if target == "lessons":
+            _send_lessons_list_message(update, context, course_id)
+        else:
+            _send_quizzes_list_message(update, context, course_id)
+        return
+
+    text = "اختر الدورة المطلوبة:\n"
+    keyboard = []
+    for course in courses:
+        course_id = course["id"]
+        course_name = course["name"]
+        callback_data = (
+            f"COURSES:user_lessons_{course_id}"
+            if target == "lessons"
+            else f"COURSES:user_quizzes_{course_id}"
+        )
+        keyboard.append([InlineKeyboardButton(f"📖 {course_name}", callback_data=callback_data)])
+        text += f"• {course_name}\n"
+
+    msg.reply_text(text, reply_markup=_build_main_menu_inline_keyboard(keyboard))
+
+
 # =================== Handlers للمستخدمين العاديين ===================
 
 
@@ -12871,6 +13099,7 @@ def open_courses_menu(update: Update, context: CallbackContext):
         "🎓 قسم الدورات\n\nاختر من الخيارات التالية:",
         reply_markup=COURSES_USER_MENU_KB,
     )
+    _send_main_menu_inline_hint(context, msg.chat_id)
     # إعادة الكيبورد الرئيسي لمنع ظهور زر الرجوع للقائمة الرئيسية في قوائم الدورات
     try:
         kb_msg = msg.reply_text(
@@ -12900,6 +13129,7 @@ def open_courses_admin_menu(update: Update, context: CallbackContext):
         "📋 لوحة إدارة الدورات\n\nاختر ما تريد القيام به:",
         reply_markup=COURSES_ADMIN_MENU_KB,
     )
+    _send_main_menu_inline_hint(context, msg.chat_id)
     try:
         kb_msg = msg.reply_text(
             " ",
@@ -12943,16 +13173,7 @@ def show_available_courses(query: Update.callback_query, context: CallbackContex
         _clear_course_transient_messages(
             context, query.message.chat_id, query.from_user.id if query.from_user else None
         )
-        try:
-            context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=" ",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-        except Exception:
-            logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
-        else:
-            context.user_data.pop("courses_keyboard_msg_id", None)
+        context.user_data.pop("courses_keyboard_msg_id", None)
 
         courses_ref = db.collection(COURSES_COLLECTION)
         docs = courses_ref.where("status", "==", "active").stream()
@@ -13014,16 +13235,7 @@ def show_my_courses(query: Update.callback_query, context: CallbackContext):
 
     try:
         _clear_course_transient_messages(context, query.message.chat_id, user_id)
-        try:
-            context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=" ",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-        except Exception:
-            logger.debug("[COURSES] تعذر تحديث كيبورد المستخدم للقائمة الرئيسية")
-        else:
-            context.user_data.pop("courses_keyboard_msg_id", None)
+        context.user_data.pop("courses_keyboard_msg_id", None)
 
         subs_ref = db.collection(COURSE_SUBSCRIPTIONS_COLLECTION)
         subs_docs = subs_ref.where("user_id", "==", user_id).stream()
@@ -13298,7 +13510,7 @@ def subscribe_to_course(query: Update.callback_query, context: CallbackContext, 
         context.bot.send_message(
             chat_id=query.message.chat_id,
             text="🌍 أرسل اسم بلدك للتسجيل في الدورة.",
-            reply_markup=ReplyKeyboardRemove(),
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton(BTN_CANCEL)]], resize_keyboard=True),
         )
     except Exception as e:
         logger.error(f"خطأ في بدء جمع بيانات التسجيل للدورة: {e}")
