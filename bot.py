@@ -56,6 +56,7 @@ DATA_FILE = "suqya_users.json"
 PORT = int(os.getenv("PORT", 10000))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 AUDIO_STORAGE_CHANNEL_ID = str(os.getenv("AUDIO_STORAGE_CHANNEL_ID", "-1003269735721"))
+OFFICIAL_CHANNEL_ID = os.getenv("OFFICIAL_CHANNEL_ID", "@alkawtherslafia")
 ALLOWED_UPDATES = [
     "message",
     "edited_message",
@@ -1104,6 +1105,51 @@ def get_banned_user_ids():
             if uid != GLOBAL_KEY and rec.get("is_banned", False)]
 
 
+def _get_course_name(course_id: str) -> str:
+    if not course_id:
+        return "دورة"
+    try:
+        doc = db.collection(COURSES_COLLECTION).document(course_id).get()
+        if doc.exists:
+            return doc.to_dict().get("name", "دورة")
+    except Exception as e:
+        logger.error("❌ خطأ في جلب اسم الدورة %s: %s", course_id, e)
+    return "دورة"
+
+
+def _build_bot_link(bot) -> Optional[str]:
+    username = getattr(bot, "username", None)
+    if not username:
+        return None
+    return f"https://t.me/{username}"
+
+
+def _notify_all_users(bot, text: str):
+    for uid in get_all_user_ids():
+        try:
+            bot.send_message(chat_id=uid, text=text)
+        except Exception as e:
+            logger.error("❌ خطأ في إرسال إشعار المستخدم %s: %s", uid, e)
+
+
+def _announce_in_channel(bot, text: str):
+    bot_link = _build_bot_link(bot)
+    if not bot_link:
+        logger.warning("⚠️ تعذر إنشاء رابط البوت لإعلان القناة.")
+        return
+    try:
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📚 الدخول إلى الدورات", url=bot_link)]]
+        )
+        bot.send_message(
+            chat_id=OFFICIAL_CHANNEL_ID,
+            text=text,
+            reply_markup=keyboard,
+        )
+    except Exception as e:
+        logger.error("❌ خطأ في إرسال إعلان القناة: %s", e)
+
+
 def is_admin(user_id: int) -> bool:
     return ADMIN_ID is not None and user_id == ADMIN_ID
 
@@ -1365,6 +1411,20 @@ def _save_lesson(
             "✅ تم إضافة الدرس.",
             reply_markup=_lessons_back_keyboard(course_id),
         )
+        course_name = _get_course_name(course_id)
+        bot_notification = (
+            "📘 تم إطلاق درس جديد\n"
+            f"🧩 اسم الدرس: {title}\n"
+            f"📚 ضمن دورة: {course_name}\n"
+            "تجده في قسم الدورات."
+        )
+        channel_announcement = (
+            "📘 درس جديد متاح الآن\n"
+            f"🧩 اسم الدرس: {title}\n"
+            f"📚 ضمن دورة: {course_name}"
+        )
+        _notify_all_users(msg.bot, bot_notification)
+        _announce_in_channel(msg.bot, channel_announcement)
     except Exception as e:
         logger.error(f"خطأ في إضافة الدرس: {e}")
         msg.reply_text(
@@ -1555,6 +1615,20 @@ def _finalize_quiz_creation_from_message(user_id: int, msg):
                 "✅ تم إضافة الاختبار.",
                 reply_markup=_quizzes_back_keyboard(course_id),
             )
+            course_name = _get_course_name(course_id)
+            bot_notification = (
+                "📝 تم إطلاق اختبار جديد\n"
+                f"🧪 اسم الاختبار: {ctx.get('title')}\n"
+                f"📚 ضمن دورة: {course_name}\n"
+                "الدخول عبر قسم الدورات."
+            )
+            channel_announcement = (
+                "📝 اختبار جديد متاح الآن\n"
+                f"🧪 اسم الاختبار: {ctx.get('title')}\n"
+                f"📚 ضمن دورة: {course_name}"
+            )
+            _notify_all_users(msg.bot, bot_notification)
+            _announce_in_channel(msg.bot, channel_announcement)
     except Exception as e:
         logger.error(f"خطأ في إضافة الاختبار: {e}")
         msg.reply_text("❌ تعذر حفظ الاختبار حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
@@ -1614,6 +1688,20 @@ def _finalize_quiz_creation_from_callback(user_id: int, query: Update.callback_q
                 "✅ تم إضافة الاختبار.",
                 reply_markup=_quizzes_back_keyboard(course_id),
             )
+            course_name = _get_course_name(course_id)
+            bot_notification = (
+                "📝 تم إطلاق اختبار جديد\n"
+                f"🧪 اسم الاختبار: {ctx.get('title')}\n"
+                f"📚 ضمن دورة: {course_name}\n"
+                "الدخول عبر قسم الدورات."
+            )
+            channel_announcement = (
+                "📝 اختبار جديد متاح الآن\n"
+                f"🧪 اسم الاختبار: {ctx.get('title')}\n"
+                f"📚 ضمن دورة: {course_name}"
+            )
+            _notify_all_users(query.bot, bot_notification)
+            _announce_in_channel(query.bot, channel_announcement)
     except Exception as e:
         logger.error(f"خطأ في إضافة الاختبار: {e}")
         safe_edit_message_text(query, "❌ تعذر حفظ الاختبار حالياً.", reply_markup=COURSES_ADMIN_MENU_KB)
@@ -9332,6 +9420,17 @@ def handle_text(update: Update, context: CallbackContext):
                 f"✅ تم إنشاء دورة ({course_name}) بنجاح",
                 reply_markup=COURSES_ADMIN_MENU_KB,
             )
+            bot_notification = (
+                "🚀 تم إطلاق دورة جديدة\n"
+                f"📚 اسم الدورة: {course_name}\n"
+                "يمكنك العثور عليها في قسم الدورات."
+            )
+            channel_announcement = (
+                "🚀 دورة جديدة متاحة الآن\n"
+                f"📚 اسم الدورة: {course_name}"
+            )
+            _notify_all_users(msg.bot, bot_notification)
+            _announce_in_channel(msg.bot, channel_announcement)
         except Exception as e:
             logger.error(f"خطأ في إنشاء الدورة: {e}")
             _reset_course_creation(user_id)
